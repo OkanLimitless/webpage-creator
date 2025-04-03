@@ -19,7 +19,7 @@ export type CloudflareNameserver = string;
 // Get Cloudflare nameservers for a domain
 export async function getNameservers(): Promise<CloudflareNameserver[]> {
   try {
-    const response = await cf.zones.get(CLOUDFLARE_ZONE_ID);
+    const response = await cf.zones.get({ zone_id: CLOUDFLARE_ZONE_ID });
     return response.result?.name_servers || [];
   } catch (error) {
     console.error('Error getting Cloudflare nameservers:', error);
