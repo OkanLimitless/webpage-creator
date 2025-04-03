@@ -36,7 +36,7 @@ export async function createDnsRecord(
 ) {
   try {
     const name = `${subdomain}.${domain}`;
-    const response = await cf.dnsRecords.add({
+    const response = await cf.zones.dns_records.add({
       zone_id: CLOUDFLARE_ZONE_ID,
       type,
       name,
@@ -55,7 +55,7 @@ export async function createDnsRecord(
 // Delete a DNS record
 export async function deleteDnsRecord(recordId: string) {
   try {
-    const response = await cf.dnsRecords.delete({
+    const response = await cf.zones.dns_records.delete({
       zone_id: CLOUDFLARE_ZONE_ID,
       id: recordId
     });
@@ -69,7 +69,7 @@ export async function deleteDnsRecord(recordId: string) {
 // Get DNS records for a domain
 export async function getDnsRecords(domain: string) {
   try {
-    const response = await cf.dnsRecords.browse({
+    const response = await cf.zones.dns_records.browse({
       zone_id: CLOUDFLARE_ZONE_ID,
       name: domain,
     });
