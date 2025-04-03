@@ -81,36 +81,41 @@ export function downloadImage(url: string, filename: string): Promise<string> {
  * Take screenshots of a URL using ScreenshotMachine
  */
 export async function takeScreenshots(url: string, id: string) {
-  // Generate desktop screenshot URL
-  const desktopUrl = generateScreenshotUrl({
-    url,
-    dimension: '1366x768',
-    device: 'desktop',
-    format: 'png',
-  });
+  try {
+    // Generate desktop screenshot URL
+    const desktopUrl = generateScreenshotUrl({
+      url,
+      dimension: '1366x768',
+      device: 'desktop',
+      format: 'png',
+    });
 
-  // Generate mobile screenshot URL
-  const mobileUrl = generateScreenshotUrl({
-    url,
-    dimension: '375x667',
-    device: 'phone',
-    format: 'png',
-  });
+    // Generate mobile screenshot URL
+    const mobileUrl = generateScreenshotUrl({
+      url,
+      dimension: '375x667',
+      device: 'phone',
+      format: 'png',
+    });
 
-  // Define filenames
-  const desktopFilename = `${id}_desktop.png`;
-  const mobileFilename = `${id}_mobile.png`;
+    // Define filenames
+    const desktopFilename = `${id}_desktop.png`;
+    const mobileFilename = `${id}_mobile.png`;
 
-  // Download both screenshots
-  const [desktopScreenshotUrl, mobileScreenshotUrl] = await Promise.all([
-    downloadImage(desktopUrl, desktopFilename),
-    downloadImage(mobileUrl, mobileFilename),
-  ]);
+    // Download both screenshots
+    const [desktopScreenshotUrl, mobileScreenshotUrl] = await Promise.all([
+      downloadImage(desktopUrl, desktopFilename),
+      downloadImage(mobileUrl, mobileFilename),
+    ]);
 
-  return {
-    desktopPath: path.join(screenshotsDir, desktopFilename),
-    mobilePath: path.join(screenshotsDir, mobileFilename),
-    desktopUrl: desktopScreenshotUrl,
-    mobileUrl: mobileScreenshotUrl,
-  };
+    return {
+      desktopPath: path.join(screenshotsDir, desktopFilename),
+      mobilePath: path.join(screenshotsDir, mobileFilename),
+      desktopUrl: desktopScreenshotUrl,
+      mobileUrl: mobileScreenshotUrl,
+    };
+  } catch (error) {
+    console.error('Error taking screenshots:', error);
+    throw error;
+  }
 } 

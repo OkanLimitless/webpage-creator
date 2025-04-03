@@ -19,8 +19,8 @@ export type CloudflareNameserver = string;
 // Get Cloudflare nameservers for a domain
 export async function getNameservers(): Promise<CloudflareNameserver[]> {
   try {
-    const response = await cf.zones.read(CLOUDFLARE_ZONE_ID);
-    return response?.name_servers || [];
+    const response = await cf.zones.get(CLOUDFLARE_ZONE_ID);
+    return response.result?.name_servers || [];
   } catch (error) {
     console.error('Error getting Cloudflare nameservers:', error);
     throw error;
@@ -36,7 +36,8 @@ export async function createDnsRecord(
 ) {
   try {
     const name = `${subdomain}.${domain}`;
-    const response = await cf.dnsRecords.add(CLOUDFLARE_ZONE_ID, {
+    const response = await cf.dnsRecords.add({
+      zone_id: CLOUDFLARE_ZONE_ID,
       type,
       name,
       content,
@@ -54,7 +55,10 @@ export async function createDnsRecord(
 // Delete a DNS record
 export async function deleteDnsRecord(recordId: string) {
   try {
-    const response = await cf.dnsRecords.del(CLOUDFLARE_ZONE_ID, recordId);
+    const response = await cf.dnsRecords.delete({
+      zone_id: CLOUDFLARE_ZONE_ID,
+      id: recordId
+    });
     return response;
   } catch (error) {
     console.error('Error deleting DNS record:', error);
@@ -65,7 +69,8 @@ export async function deleteDnsRecord(recordId: string) {
 // Get DNS records for a domain
 export async function getDnsRecords(domain: string) {
   try {
-    const response = await cf.dnsRecords.browse(CLOUDFLARE_ZONE_ID, {
+    const response = await cf.dnsRecords.browse({
+      zone_id: CLOUDFLARE_ZONE_ID,
       name: domain,
     });
     return response.result;
