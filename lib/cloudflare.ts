@@ -10,8 +10,8 @@ if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ZONE_ID || !CLOUDFLARE_EMAIL) {
 
 // Initialize Cloudflare client
 const cf = new Cloudflare({
-  token: CLOUDFLARE_API_TOKEN,
-  email: CLOUDFLARE_EMAIL,
+  apiKey: CLOUDFLARE_API_TOKEN,
+  apiEmail: CLOUDFLARE_EMAIL,
 });
 
 export type CloudflareNameserver = string;
