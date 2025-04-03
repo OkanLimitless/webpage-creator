@@ -20,7 +20,7 @@ export type CloudflareNameserver = string;
 export async function getNameservers(): Promise<CloudflareNameserver[]> {
   try {
     const response = await cf.zones.get({ zone_id: CLOUDFLARE_ZONE_ID });
-    return response.result?.name_servers || [];
+    return response.name_servers || [];
   } catch (error) {
     console.error('Error getting Cloudflare nameservers:', error);
     throw error;
@@ -73,7 +73,7 @@ export async function getDnsRecords(domain: string) {
       zone_id: CLOUDFLARE_ZONE_ID,
       name: domain,
     });
-    return response.result;
+    return response.result || [];
   } catch (error) {
     console.error('Error getting DNS records:', error);
     throw error;
