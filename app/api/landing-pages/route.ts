@@ -6,16 +6,54 @@ import { createDnsRecord } from '@/lib/cloudflare';
 import { takeScreenshots } from '@/lib/screenshot';
 import mongoose from 'mongoose';
 
+// Flag to check if we're in development mode
+const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
+
+// Mock data for development mode
+const mockLandingPages = [
+  {
+    _id: 'mock-landing-page-1',
+    name: 'Example Landing Page',
+    domainId: {
+      _id: 'mock-domain-1',
+      name: 'example.com',
+    },
+    subdomain: 'landing',
+    affiliateUrl: 'https://example.com/affiliate',
+    originalUrl: 'https://example.com/original',
+    desktopScreenshotUrl: '/screenshots/mock_desktop.png',
+    mobileScreenshotUrl: '/screenshots/mock_mobile.png',
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
 // GET /api/landing-pages - Get all landing pages
 export async function GET() {
   try {
-    await connectToDatabase();
+    const db = await connectToDatabase();
+    
+    // If we're in a mock database situation, return mock data
+    if (isDevelopment && (!db || !db.connection || db.connection.readyState !== 1)) {
+      console.log('Using mock landing pages data');
+      return NextResponse.json(mockLandingPages);
+    }
+    
     const landingPages = await LandingPage.find()
       .populate('domainId', 'name')
       .sort({ createdAt: -1 });
     
     return NextResponse.json(landingPages);
   } catch (error) {
+    console.error('Error fetching landing pages:', error);
+    
+    // If in development mode, return mock data on error
+    if (isDevelopment) {
+      console.log('Returning mock landing pages after error');
+      return NextResponse.json(mockLandingPages);
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch landing pages' },
       { status: 500 }

@@ -128,9 +128,12 @@ export default function Home() {
     try {
       const response = await fetch('/api/domains');
       const data = await response.json();
-      setDomains(data);
+      // Ensure we always have an array, even if the API returns something unexpected
+      setDomains(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching domains:', error);
+      // Set an empty array on error
+      setDomains([]);
     }
   };
   
@@ -139,9 +142,12 @@ export default function Home() {
     try {
       const response = await fetch('/api/landing-pages');
       const data = await response.json();
-      setLandingPages(data);
+      // Ensure we always have an array, even if the API returns something unexpected
+      setLandingPages(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching landing pages:', error);
+      // Set an empty array on error
+      setLandingPages([]);
     }
   };
   
@@ -165,14 +171,15 @@ export default function Home() {
         body: JSON.stringify({ name: domainName }),
       });
       
-      const data = await response.json();
-      
       if (response.ok) {
+        const data = await response.json();
         setDomainName('');
-        fetchDomains();
+        // Add new domain to state
+        setDomains(prev => [...prev, data]);
         alert('Domain added successfully. Please update your domain nameservers to the ones shown in the table.');
       } else {
-        alert(`Error: ${data.error}`);
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to add domain'}`);
       }
     } catch (error) {
       console.error('Error adding domain:', error);
@@ -208,18 +215,19 @@ export default function Home() {
         }),
       });
       
-      const data = await response.json();
-      
       if (response.ok) {
+        const data = await response.json();
         setLandingPageName('');
         setSelectedDomainId('');
         setSubdomain('');
         setAffiliateUrl('');
         setOriginalUrl('');
-        fetchLandingPages();
+        // Add new landing page to state
+        setLandingPages(prev => [...prev, data]);
         alert('Landing page created successfully. It will be available in a few minutes.');
       } else {
-        alert(`Error: ${data.error}`);
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to create landing page'}`);
       }
     } catch (error) {
       console.error('Error adding landing page:', error);
@@ -241,11 +249,12 @@ export default function Home() {
       });
       
       if (response.ok) {
-        fetchDomains();
+        // Remove domain from state
+        setDomains(prev => prev.filter(domain => domain._id !== id));
         alert('Domain deleted successfully');
       } else {
-        const data = await response.json();
-        alert(`Error: ${data.error}`);
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to delete domain'}`);
       }
     } catch (error) {
       console.error('Error deleting domain:', error);
@@ -265,11 +274,12 @@ export default function Home() {
       });
       
       if (response.ok) {
-        fetchLandingPages();
+        // Remove landing page from state
+        setLandingPages(prev => prev.filter(page => page._id !== id));
         alert('Landing page deleted successfully');
       } else {
-        const data = await response.json();
-        alert(`Error: ${data.error}`);
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to delete landing page'}`);
       }
     } catch (error) {
       console.error('Error deleting landing page:', error);
@@ -362,9 +372,13 @@ export default function Home() {
                       <td style={styles.tableCell}>{domain.name}</td>
                       <td style={styles.tableCell}>
                         <ul>
-                          {domain.cloudflareNameservers.map((ns, i) => (
-                            <li key={i}>{ns}</li>
-                          ))}
+                          {Array.isArray(domain.cloudflareNameservers) ? (
+                            domain.cloudflareNameservers.map((ns, i) => (
+                              <li key={i}>{ns}</li>
+                            ))
+                          ) : (
+                            <li>Nameservers not available</li>
+                          )}
                         </ul>
                       </td>
                       <td style={styles.tableCell}>
