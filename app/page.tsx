@@ -49,7 +49,7 @@ const styles = {
   },
   table: {
     width: '100%',
-    borderCollapse: 'collapse',
+    borderCollapse: 'collapse' as 'collapse',
   },
   tableHead: {
     backgroundColor: '#f9f9f9',
