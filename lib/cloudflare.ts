@@ -85,13 +85,19 @@ const cf = {
       };
     }
 
+    console.log(`Checking activation status for zone ID: ${zoneId}`);
+    
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}`, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
       },
     });
-    return response.json();
+    
+    const data = await response.json();
+    console.log(`Zone activation response:`, JSON.stringify(data));
+    
+    return data;
   },
 
   async createDnsRecord(data: any) {
@@ -213,16 +219,25 @@ export async function addDomain(domainName: string) {
 // Check domain activation status
 export async function checkDomainActivation(zoneId: string) {
   try {
+    console.log(`Checking domain activation for zone ${zoneId}`);
     const response = await cf.checkZoneActivation(zoneId);
+    console.log(`Domain activation response:`, JSON.stringify(response));
     
     if (!response.success) {
       console.error('Cloudflare API returned an error:', response.errors || response);
       throw new Error(`Failed to check domain activation: ${JSON.stringify(response.errors || 'Unknown error')}`);
     }
     
+    // Cloudflare may return status as "active", "pending", "initializing", etc.
+    // We'll check if the status is specifically "active" for our verification
+    const status = response.result.status;
+    const isActive = status === 'active';
+    
+    console.log(`Domain status: ${status}, isActive: ${isActive}`);
+    
     return {
-      status: response.result.status,
-      active: response.result.status === 'active',
+      status: status,
+      active: isActive,
     };
   } catch (error) {
     console.error(`Error checking domain activation for zone ${zoneId}:`, error);
