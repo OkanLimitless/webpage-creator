@@ -14,6 +14,18 @@ if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ZONE_ID || !pro
   }
 }
 
+// Helper to ensure valid zone ID
+function validateZoneId(zoneId?: string): string {
+  if (!zoneId) {
+    if (!CLOUDFLARE_ZONE_ID) {
+      console.error('No zone ID provided and no global zone ID configured!');
+      throw new Error('Missing Cloudflare Zone ID');
+    }
+    return CLOUDFLARE_ZONE_ID;
+  }
+  return zoneId;
+}
+
 // Initialize Cloudflare client with different method
 // Directly work with the API
 const cf = {
@@ -113,7 +125,8 @@ const cf = {
     }
     
     // Use the provided zoneId if available, otherwise fall back to the global one
-    const targetZoneId = zoneId || CLOUDFLARE_ZONE_ID;
+    const targetZoneId = validateZoneId(zoneId);
+    console.log(`[cf.createDnsRecord] Using zone ID: ${targetZoneId} for record: ${data.name}`);
     
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${targetZoneId}/dns_records`, {
       method: 'POST',
@@ -135,7 +148,8 @@ const cf = {
     }
 
     // Use the provided zoneId if available, otherwise fall back to the global one
-    const targetZoneId = zoneId || CLOUDFLARE_ZONE_ID;
+    const targetZoneId = validateZoneId(zoneId);
+    console.log(`[cf.deleteDnsRecord] Using zone ID: ${targetZoneId} for record ID: ${recordId}`);
 
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${targetZoneId}/dns_records/${recordId}`, {
       method: 'DELETE',
@@ -159,7 +173,8 @@ const cf = {
     }
 
     // Use the provided zoneId if available, otherwise fall back to the global one
-    const targetZoneId = zoneId || CLOUDFLARE_ZONE_ID;
+    const targetZoneId = validateZoneId(zoneId);
+    console.log(`[cf.getDnsRecords] Using zone ID: ${targetZoneId} for lookup: ${name}`);
 
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${targetZoneId}/dns_records?name=${name}`, {
       headers: {
@@ -256,17 +271,8 @@ export async function checkDomainActivation(zoneId: string) {
 
 // Helper to determine which zone ID to use
 function getEffectiveZoneId(providedZoneId?: string): string {
-  // If a specific zone ID was provided, use it
-  if (providedZoneId) {
-    return providedZoneId;
-  }
-  
-  // Otherwise use the global zone ID
-  if (!CLOUDFLARE_ZONE_ID) {
-    console.warn('No Cloudflare Zone ID provided and no global Zone ID configured');
-  }
-  
-  return CLOUDFLARE_ZONE_ID;
+  const zoneId = validateZoneId(providedZoneId);
+  return zoneId;
 }
 
 // Create a DNS record for a subdomain
@@ -278,9 +284,10 @@ export async function createDnsRecord(
   zoneId?: string
 ) {
   try {
-    const name = `${subdomain}.${domain}`;
+    // For Cloudflare DNS API, we should use just the subdomain as name when it's in the correct zone
+    const name = subdomain;
     const effectiveZoneId = getEffectiveZoneId(zoneId);
-    console.log(`Creating DNS record for ${name} with zone ID: ${effectiveZoneId}`);
+    console.log(`Creating DNS record for ${name} in domain ${domain} with zone ID: ${effectiveZoneId}`);
     
     const response = await cf.createDnsRecord({
       type,
@@ -332,15 +339,20 @@ export async function deleteDnsRecord(recordId: string, zoneId?: string) {
   }
 }
 
-// Get DNS records for a domain
-export async function getDnsRecords(domain: string, zoneId?: string) {
+// Get DNS records for a domain or subdomain
+export async function getDnsRecords(nameOrFqdn: string, zoneId?: string) {
   try {
     const effectiveZoneId = getEffectiveZoneId(zoneId);
-    console.log(`Getting DNS records for ${domain} with zone ID: ${effectiveZoneId}`);
     
-    const records = await cf.getDnsRecords(domain, effectiveZoneId);
+    // If the name contains dots, it might be a full domain name (subdomain.domain.com)
+    // We'll use it as is in that case
+    const name = nameOrFqdn;
     
-    console.log(`Found ${records.length} DNS records for ${domain}`);
+    console.log(`Getting DNS records for ${name} with zone ID: ${effectiveZoneId}`);
+    
+    const records = await cf.getDnsRecords(name, effectiveZoneId);
+    
+    console.log(`Found ${records.length} DNS records for ${name}`);
     
     return records;
   } catch (error) {
@@ -349,7 +361,7 @@ export async function getDnsRecords(domain: string, zoneId?: string) {
     if (isDevelopment) {
       return [{
         id: 'mock-record-id',
-        name: domain,
+        name: nameOrFqdn,
         type: 'CNAME',
         content: 'alias.vercel.com'
       }];

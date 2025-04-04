@@ -89,6 +89,12 @@ export async function POST(request: NextRequest) {
     // Check if the domain has a cloudflareZoneId
     if (!domain.cloudflareZoneId) {
       console.warn(`Domain ${domain.name} does not have a Cloudflare Zone ID. Using default zone.`);
+      
+      // If no zone ID exists for this domain, we can't create the DNS record
+      return NextResponse.json(
+        { error: 'Domain is not properly configured with Cloudflare. Please update domain settings first.' },
+        { status: 400 }
+      );
     } else {
       console.log(`Using domain-specific zone ID for ${domain.name}: ${domain.cloudflareZoneId}`);
     }

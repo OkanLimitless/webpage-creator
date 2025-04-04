@@ -55,12 +55,27 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
     
-    // Delete DNS record from Cloudflare
-    const dnsRecords = await getDnsRecords(`${landingPage.subdomain}.${domain.name}`, domain.cloudflareZoneId);
-    if (dnsRecords && dnsRecords.length > 0) {
-      // Delete all matching DNS records
-      for (const record of dnsRecords) {
-        await deleteDnsRecord(record.id, domain.cloudflareZoneId);
+    // Verify domain has a zone ID
+    if (!domain.cloudflareZoneId) {
+      console.warn(`Domain ${domain.name} missing Cloudflare Zone ID. Cannot remove DNS records.`);
+    } else {
+      console.log(`Using zone ID ${domain.cloudflareZoneId} to delete DNS records`);
+      
+      // Delete DNS record from Cloudflare - using just the subdomain for lookup
+      // We need to use the FQDN format for lookup but only subdomain for zone-scoped operations
+      const fqdn = `${landingPage.subdomain}.${domain.name}`;
+      console.log(`Looking up DNS records for ${fqdn}`);
+      
+      // Get records matching the full domain name
+      const dnsRecords = await getDnsRecords(fqdn, domain.cloudflareZoneId);
+      if (dnsRecords && dnsRecords.length > 0) {
+        // Delete all matching DNS records
+        for (const record of dnsRecords) {
+          console.log(`Deleting DNS record ${record.id} with name ${record.name}`);
+          await deleteDnsRecord(record.id, domain.cloudflareZoneId);
+        }
+      } else {
+        console.warn(`No DNS records found for ${fqdn}`);
       }
     }
     
