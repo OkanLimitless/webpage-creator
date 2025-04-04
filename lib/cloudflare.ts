@@ -289,12 +289,15 @@ export async function createDnsRecord(
     const effectiveZoneId = getEffectiveZoneId(zoneId);
     console.log(`Creating DNS record for ${name} in domain ${domain} with zone ID: ${effectiveZoneId}`);
     
+    // Check if this is a record pointing to Vercel
+    const isVercelRecord = content.includes('vercel.com');
+    
     const response = await cf.createDnsRecord({
       type,
       name,
       content,
       ttl: 1, // Auto TTL
-      proxied: true,
+      proxied: isVercelRecord ? false : true, // Disable proxying for Vercel records
     }, effectiveZoneId);
     
     console.log(`DNS record creation response:`, JSON.stringify(response));

@@ -182,4 +182,134 @@ export async function deleteDomainFromVercel(domainName: string) {
     console.error(`Error deleting domain ${domainName} from Vercel:`, error);
     throw error;
   }
+}
+
+/**
+ * Add both a domain and its subdomain to Vercel
+ * @param domain The main domain
+ * @param subdomain The subdomain part
+ * @returns Results of both operations
+ */
+export async function addDomainAndSubdomainToVercel(domain: string, subdomain: string) {
+  try {
+    console.log(`Adding domain ${domain} and subdomain ${subdomain}.${domain} to Vercel...`);
+    
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
+      console.log('Using mock Vercel domain addition in development mode');
+      return {
+        success: true,
+        domain: {
+          name: domain,
+          status: 'added',
+        },
+        subdomain: {
+          name: `${subdomain}.${domain}`,
+          status: 'added',
+        },
+        message: 'Domain and subdomain added to Vercel (mock)'
+      };
+    }
+    
+    // Add main domain first
+    let domainResult;
+    try {
+      domainResult = await addDomainToVercel(domain);
+      console.log(`Main domain ${domain} added to Vercel`);
+    } catch (error) {
+      console.warn(`Could not add main domain ${domain} to Vercel, it might already exist:`, error);
+      domainResult = { success: false, error };
+    }
+    
+    // Then add subdomain
+    const fullSubdomain = `${subdomain}.${domain}`;
+    let subdomainResult;
+    try {
+      subdomainResult = await addDomainToVercel(fullSubdomain);
+      console.log(`Subdomain ${fullSubdomain} added to Vercel`);
+    } catch (error) {
+      console.warn(`Could not add subdomain ${fullSubdomain} to Vercel, it might already exist:`, error);
+      subdomainResult = { success: false, error };
+    }
+    
+    return {
+      success: domainResult.success || subdomainResult.success,
+      domain: domainResult,
+      subdomain: subdomainResult,
+      message: `Domain ${domain} and subdomain ${fullSubdomain} registration with Vercel attempted`
+    };
+  } catch (error) {
+    console.error(`Error adding domain and subdomain to Vercel:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Check if a domain exists in Vercel project
+ * @param domainName The domain name to check
+ * @returns Status of the domain in Vercel
+ */
+export async function checkDomainInVercel(domainName: string) {
+  try {
+    console.log(`Checking if domain ${domainName} exists in Vercel project...`);
+    
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
+      console.log('Using mock Vercel domain check in development mode');
+      return {
+        exists: true,
+        configured: true,
+        domainName,
+        message: 'Domain exists in Vercel (mock)'
+      };
+    }
+    
+    // Prepare API endpoint
+    let url = `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains/${domainName}`;
+    
+    // Add team ID if available
+    if (VERCEL_TEAM_ID) {
+      url += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make API request
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    // If 404, domain doesn't exist
+    if (response.status === 404) {
+      return {
+        exists: false,
+        configured: false,
+        domainName,
+        message: `Domain ${domainName} is not configured in Vercel`
+      };
+    }
+    
+    const data = await response.json();
+    console.log(`Vercel domain check response:`, JSON.stringify(data));
+    
+    return {
+      exists: true,
+      configured: data.verified === true,
+      domainName,
+      vercelDomain: data,
+      message: data.verified 
+        ? `Domain ${domainName} is properly configured in Vercel` 
+        : `Domain ${domainName} exists in Vercel but is not verified`
+    };
+  } catch (error) {
+    console.error(`Error checking domain ${domainName} in Vercel:`, error);
+    return {
+      exists: false,
+      configured: false,
+      domainName,
+      error,
+      message: `Error checking domain in Vercel: ${error}`
+    };
+  }
 } 

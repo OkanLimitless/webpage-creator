@@ -375,6 +375,50 @@ export default function Home() {
     }
   };
   
+  // Add this function to check domain configuration
+  const checkDomainFullConfig = async (id: string, repair: boolean = false) => {
+    try {
+      const response = await fetch(`/api/domains/${id}/check-full-config${repair ? '?repair=true' : ''}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Format the next steps as bullet points
+        const nextStepsList = data.nextSteps.map((step: string) => `• ${step}`).join("\n");
+        
+        // Create a detailed message
+        let message = `Domain: ${data.domain}\n\n`;
+        message += `Overall Status: ${data.overallStatus === 'fully_configured' ? '✅ Fully Configured' : '⚠️ Issues Detected'}\n\n`;
+        message += `Cloudflare Status: ${data.cloudflare.active ? '✅ Active' : '❌ Not Active'}\n`;
+        message += `Vercel Status: ${data.vercel.exists ? (data.vercel.configured ? '✅ Configured' : '⚠️ Not Verified') : '❌ Not Added'}\n\n`;
+        message += `Next Steps:\n${nextStepsList}`;
+        
+        if (repair && data.repair?.performed) {
+          message += "\n\nRepair Actions Taken:";
+          if (data.repair.results.cloudflare) {
+            message += `\n• Cloudflare: ${data.repair.results.cloudflare.action} (${data.repair.results.cloudflare.success ? 'Success' : 'Failed'})`;
+          }
+          if (data.repair.results.vercel) {
+            message += `\n• Vercel: ${data.repair.results.vercel.action} (${data.repair.results.vercel.success ? 'Success' : 'Failed'})`;
+          }
+        }
+        
+        alert(message);
+        
+        // Refresh domains if a repair was performed
+        if (repair) {
+          fetchDomains();
+        }
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to check domain configuration'}`);
+      }
+    } catch (error) {
+      console.error('Error checking domain configuration:', error);
+      alert('An error occurred while checking domain configuration');
+    }
+  };
+  
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -490,6 +534,26 @@ export default function Home() {
                             onClick={() => updateZoneId(domain._id)}
                           >
                             Update Zone ID
+                          </button>
+                          <button 
+                            style={{
+                              ...styles.button,
+                              backgroundColor: '#17a2b8',
+                              marginLeft: '5px',
+                            }}
+                            onClick={() => checkDomainFullConfig(domain._id)}
+                          >
+                            Full Config Check
+                          </button>
+                          <button 
+                            style={{
+                              ...styles.button,
+                              backgroundColor: '#fd7e14',
+                              marginLeft: '5px',
+                            }}
+                            onClick={() => checkDomainFullConfig(domain._id, true)}
+                          >
+                            Repair Config
                           </button>
                         </div>
                       </td>
