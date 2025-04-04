@@ -2,6 +2,7 @@
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || 'development_key';
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || 'development_zone';
 const CLOUDFLARE_EMAIL = process.env.CLOUDFLARE_EMAIL || 'development@example.com';
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID || '';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
@@ -28,6 +29,63 @@ const cf = {
     }
 
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    return response.json();
+  },
+
+  async createZone(domainName: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+      return {
+        success: true,
+        result: {
+          id: 'mock-zone-id',
+          name: domainName,
+          name_servers: ['ns1.mockdns.com', 'ns2.mockdns.com'],
+          status: 'pending',
+          verification_key: 'mock-verification-key',
+        }
+      };
+    }
+
+    if (!CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error('Cloudflare account ID is required to create zones');
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+      body: JSON.stringify({
+        name: domainName,
+        account: {
+          id: CLOUDFLARE_ACCOUNT_ID
+        },
+        type: 'full',
+      }),
+    });
+    return response.json();
+  },
+
+  async checkZoneActivation(zoneId: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return {
+        success: true,
+        result: {
+          id: zoneId,
+          status: 'active',
+        }
+      };
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}`, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
@@ -124,6 +182,50 @@ export async function getNameservers(): Promise<CloudflareNameserver[]> {
     if (isDevelopment) {
       return ['ns1.mockdns.com', 'ns2.mockdns.com'];
     }
+    throw error;
+  }
+}
+
+// Add a domain to Cloudflare
+export async function addDomain(domainName: string) {
+  try {
+    console.log(`Adding domain ${domainName} to Cloudflare...`);
+    const response = await cf.createZone(domainName);
+    console.log('Zone creation response:', JSON.stringify(response));
+
+    if (!response.success) {
+      console.error('Cloudflare API returned an error:', response.errors || response);
+      throw new Error(`Failed to add domain to Cloudflare: ${JSON.stringify(response.errors || 'Unknown error')}`);
+    }
+
+    return {
+      zoneId: response.result.id,
+      nameServers: response.result.name_servers,
+      status: response.result.status,
+      verificationKey: response.result.verification_key
+    };
+  } catch (error) {
+    console.error(`Error adding domain ${domainName} to Cloudflare:`, error);
+    throw error;
+  }
+}
+
+// Check domain activation status
+export async function checkDomainActivation(zoneId: string) {
+  try {
+    const response = await cf.checkZoneActivation(zoneId);
+    
+    if (!response.success) {
+      console.error('Cloudflare API returned an error:', response.errors || response);
+      throw new Error(`Failed to check domain activation: ${JSON.stringify(response.errors || 'Unknown error')}`);
+    }
+    
+    return {
+      status: response.result.status,
+      active: response.result.status === 'active',
+    };
+  } catch (error) {
+    console.error(`Error checking domain activation for zone ${zoneId}:`, error);
     throw error;
   }
 }

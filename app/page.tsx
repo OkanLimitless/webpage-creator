@@ -83,6 +83,9 @@ interface Domain {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  cloudflareZoneId?: string;
+  verificationStatus: string;
+  verificationKey?: string;
 }
 
 // Landing page type
@@ -303,6 +306,26 @@ export default function Home() {
     return `http://${landingPage.subdomain}.${domainName}`;
   };
   
+  // Add this function to check verification status
+  const checkVerification = async (id: string) => {
+    try {
+      const response = await fetch(`/api/domains/${id}/verify`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message);
+        // Refresh domains list to update status
+        fetchDomains();
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to check verification status'}`);
+      }
+    } catch (error) {
+      console.error('Error checking verification:', error);
+      alert('An error occurred while checking verification status');
+    }
+  };
+  
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -363,6 +386,7 @@ export default function Home() {
                     <th style={styles.tableCell}>Domain</th>
                     <th style={styles.tableCell}>Nameservers</th>
                     <th style={styles.tableCell}>Status</th>
+                    <th style={styles.tableCell}>Verification</th>
                     <th style={styles.tableCell}>Actions</th>
                   </tr>
                 </thead>
@@ -383,6 +407,32 @@ export default function Home() {
                       </td>
                       <td style={styles.tableCell}>
                         {domain.isActive ? 'Active' : 'Inactive'}
+                      </td>
+                      <td style={styles.tableCell}>
+                        <div>
+                          {domain.verificationStatus === 'pending' && (
+                            <span style={{ color: 'orange' }}>Pending</span>
+                          )}
+                          {domain.verificationStatus === 'active' && (
+                            <span style={{ color: 'green' }}>Verified</span>
+                          )}
+                          {domain.verificationStatus === 'inactive' && (
+                            <span style={{ color: 'red' }}>Not Verified</span>
+                          )}
+                          {domain.verificationStatus === 'error' && (
+                            <span style={{ color: 'red' }}>Error</span>
+                          )}
+                          <button 
+                            style={{
+                              ...styles.button,
+                              backgroundColor: '#0070f3',
+                              marginLeft: '10px',
+                            }}
+                            onClick={() => checkVerification(domain._id)}
+                          >
+                            Check
+                          </button>
+                        </div>
                       </td>
                       <td style={styles.tableCell}>
                         <button 

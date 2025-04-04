@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain, IDomain } from '@/lib/models/Domain';
-import { getNameservers } from '@/lib/cloudflare';
+import { getNameservers, addDomain as addDomainToCloudflare } from '@/lib/cloudflare';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
@@ -12,6 +12,9 @@ const mockDomains = [
     _id: 'mock-domain-1',
     name: 'example.com',
     cloudflareNameservers: ['ns1.mockdns.com', 'ns2.mockdns.com'],
+    cloudflareZoneId: 'mock-zone-id',
+    verificationStatus: 'pending',
+    verificationKey: 'mock-verification-key',
     isActive: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -71,27 +74,54 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log('Fetching nameservers from Cloudflare...');
+    console.log('Adding domain to Cloudflare...');
     console.log('Environment check:', {
       hasToken: !!process.env.CLOUDFLARE_API_TOKEN,
       hasZoneId: !!process.env.CLOUDFLARE_ZONE_ID,
       hasEmail: !!process.env.CLOUDFLARE_EMAIL,
+      hasAccountId: !!process.env.CLOUDFLARE_ACCOUNT_ID,
       isDev: isDevelopment,
       isVercel: process.env.VERCEL === '1'
     });
     
-    // Fetch nameservers from Cloudflare
-    const cloudflareNameservers = await getNameservers();
-    console.log('Nameservers retrieved:', cloudflareNameservers);
-    
-    // Create new domain
-    const domain = await Domain.create({
-      name,
-      cloudflareNameservers,
-      isActive: true,
-    });
-    
-    return NextResponse.json(domain, { status: 201 });
+    try {
+      // Try to add the domain to Cloudflare
+      const cfResult = await addDomainToCloudflare(name);
+      
+      // Create domain with Cloudflare information
+      const domain = await Domain.create({
+        name,
+        cloudflareNameservers: cfResult.nameServers,
+        cloudflareZoneId: cfResult.zoneId,
+        verificationStatus: cfResult.status,
+        verificationKey: cfResult.verificationKey,
+        isActive: true,
+      });
+      
+      return NextResponse.json({
+        ...domain.toJSON(),
+        message: 'Domain added successfully. Please update your domain nameservers to the ones shown in the table to complete verification.',
+      }, { status: 201 });
+    } catch (error) {
+      console.error('Error adding domain to Cloudflare:', error);
+      
+      // If Cloudflare fails, fall back to just getting nameservers
+      console.log('Falling back to fetching global nameservers...');
+      const cloudflareNameservers = await getNameservers();
+      
+      // Create domain with just nameservers
+      const domain = await Domain.create({
+        name,
+        cloudflareNameservers,
+        verificationStatus: 'pending',
+        isActive: true,
+      });
+      
+      return NextResponse.json({
+        ...domain.toJSON(),
+        message: 'Domain added with global nameservers. Please update your domain nameservers to the ones shown in the table.',
+      }, { status: 201 });
+    }
   } catch (error) {
     console.error('Error creating domain:', error);
     return NextResponse.json(
