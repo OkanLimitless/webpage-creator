@@ -1,8 +1,6 @@
 import { takeScreenshots as takeScreenshotsMachine } from './screenshotMachine';
 
 export interface ScreenshotResult {
-  desktopPath: string;
-  mobilePath: string;
   desktopUrl: string;
   mobileUrl: string;
 }

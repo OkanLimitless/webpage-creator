@@ -1,28 +1,11 @@
-import fs from 'fs';
-import path from 'path';
-import https from 'https';
+import { generateUniqueFilename, uploadImageFromUrl } from './gcsStorage';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
+const isVercel = process.env.VERCEL === '1';
 
 // ScreenshotMachine API key
 const SCREENSHOT_MACHINE_KEY = process.env.SCREENSHOT_MACHINE_KEY || 'b7bbb0'; // Fallback to provided key
-
-// Directory to store screenshots
-const screenshotsDir = path.join(process.cwd(), 'public', 'screenshots');
-
-// Ensure screenshots directory exists
-try {
-  if (!fs.existsSync(screenshotsDir)) {
-    fs.mkdirSync(screenshotsDir, { recursive: true });
-  }
-} catch (error) {
-  if (isDevelopment) {
-    console.warn('Failed to create screenshots directory:', error);
-  } else {
-    throw error;
-  }
-}
 
 /**
  * Generate a URL for the ScreenshotMachine API
@@ -62,51 +45,7 @@ export function generateScreenshotUrl(options: {
 }
 
 /**
- * Download an image from a URL and save it to the screenshots directory
- */
-export function downloadImage(url: string, filename: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const filepath = path.join(screenshotsDir, filename);
-    
-    // Create a fallback mechanism for environments where file system access might be restricted
-    try {
-      const file = fs.createWriteStream(filepath);
-
-      https.get(url, (response) => {
-        if (response.statusCode !== 200) {
-          reject(new Error(`Failed to download image: ${response.statusCode}`));
-          return;
-        }
-
-        response.pipe(file);
-
-        file.on('finish', () => {
-          file.close();
-          resolve(`/screenshots/${filename}`);
-        });
-      }).on('error', (err) => {
-        fs.unlink(filepath, () => {}); // Delete the file if download failed
-        
-        if (isDevelopment) {
-          console.warn('Failed to download image:', err);
-          resolve(`/screenshots/${filename}`); // In development, continue anyway
-        } else {
-          reject(err);
-        }
-      });
-    } catch (error) {
-      if (isDevelopment) {
-        console.warn('Failed to handle file system operations:', error);
-        resolve(`/screenshots/${filename}`); // In development, continue anyway
-      } else {
-        reject(error);
-      }
-    }
-  });
-}
-
-/**
- * Take screenshots of a URL using ScreenshotMachine
+ * Take screenshots of a URL using ScreenshotMachine and store in Google Cloud Storage
  */
 export async function takeScreenshots(url: string, id: string) {
   try {
@@ -127,50 +66,40 @@ export async function takeScreenshots(url: string, id: string) {
     });
 
     // Define filenames
-    const desktopFilename = `${id}_desktop.png`;
-    const mobileFilename = `${id}_mobile.png`;
+    const desktopFilename = generateUniqueFilename(`${id}_desktop`);
+    const mobileFilename = generateUniqueFilename(`${id}_mobile`);
 
     try {
-      // Download both screenshots
+      // Upload both screenshots to Google Cloud Storage
       const [desktopScreenshotUrl, mobileScreenshotUrl] = await Promise.all([
-        downloadImage(desktopUrl, desktopFilename),
-        downloadImage(mobileUrl, mobileFilename),
+        uploadImageFromUrl(desktopUrl, desktopFilename),
+        uploadImageFromUrl(mobileUrl, mobileFilename),
       ]);
 
       return {
-        desktopPath: path.join(screenshotsDir, desktopFilename),
-        mobilePath: path.join(screenshotsDir, mobileFilename),
         desktopUrl: desktopScreenshotUrl,
         mobileUrl: mobileScreenshotUrl,
       };
     } catch (error) {
-      // In development, fallback to placeholder images
-      if (isDevelopment) {
-        console.warn('Failed to download screenshots, using placeholders:', error);
-        return {
-          desktopPath: path.join(screenshotsDir, desktopFilename),
-          mobilePath: path.join(screenshotsDir, mobileFilename),
-          desktopUrl: `/screenshots/${desktopFilename}`,
-          mobileUrl: `/screenshots/${mobileFilename}`,
-        };
-      }
-      throw error;
+      // In development or Vercel, fallback to placeholder URLs
+      console.warn('Failed to upload screenshots, using placeholder URLs:', error);
+      const bucketName = process.env.GCS_BUCKET_NAME || 'webpage-creator-screenshots';
+      return {
+        desktopUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${desktopFilename}`,
+        mobileUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${mobileFilename}`,
+      };
     }
   } catch (error) {
     console.error('Error taking screenshots:', error);
     
-    // In development, fallback to placeholder values
-    if (isDevelopment) {
-      const desktopFilename = `${id}_desktop.png`;
-      const mobileFilename = `${id}_mobile.png`;
-      return {
-        desktopPath: path.join(screenshotsDir, desktopFilename),
-        mobilePath: path.join(screenshotsDir, mobileFilename),
-        desktopUrl: `/screenshots/${desktopFilename}`,
-        mobileUrl: `/screenshots/${mobileFilename}`,
-      };
-    }
-    
-    throw error;
+    // In development or Vercel, fallback to placeholder values
+    const desktopFilename = generateUniqueFilename(`${id}_desktop`);
+    const mobileFilename = generateUniqueFilename(`${id}_mobile`);
+    const bucketName = process.env.GCS_BUCKET_NAME || 'webpage-creator-screenshots';
+
+    return {
+      desktopUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${desktopFilename}`,
+      mobileUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${mobileFilename}`,
+    };
   }
 } 
