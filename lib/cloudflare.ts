@@ -305,4 +305,57 @@ export async function getDnsRecords(domain: string) {
     }
     throw error;
   }
+}
+
+// Get Cloudflare zone ID by domain name
+export async function getZoneIdByName(domainName: string): Promise<string | null> {
+  try {
+    console.log(`Getting zone ID for domain: ${domainName}`);
+    
+    // In development with missing credentials, return mock data
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return 'mock-zone-id';
+    }
+    
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones?name=${domainName}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    
+    const data = await response.json();
+    console.log(`Zone lookup response:`, JSON.stringify(data));
+    
+    if (!data.success || !data.result || data.result.length === 0) {
+      console.error('Failed to find zone by domain name:', data.errors || data);
+      return null;
+    }
+    
+    return data.result[0].id;
+  } catch (error) {
+    console.error(`Error getting zone ID for domain ${domainName}:`, error);
+    return null;
+  }
+}
+
+// Check domain activation status by domain name
+export async function checkDomainActivationByName(domainName: string) {
+  try {
+    console.log(`Checking domain activation by name: ${domainName}`);
+    // First get the zone ID
+    const zoneId = await getZoneIdByName(domainName);
+    
+    if (!zoneId) {
+      throw new Error(`Could not find zone ID for domain: ${domainName}`);
+    }
+    
+    console.log(`Found zone ID for ${domainName}: ${zoneId}`);
+    
+    // Now check activation using the zone ID
+    return await checkDomainActivation(zoneId);
+  } catch (error) {
+    console.error(`Error checking domain activation by name ${domainName}:`, error);
+    throw error;
+  }
 } 
