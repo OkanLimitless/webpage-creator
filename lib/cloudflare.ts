@@ -100,9 +100,9 @@ const cf = {
     return data;
   },
 
-  async createDnsRecord(data: any) {
+  async createDnsRecord(data: any, zoneId?: string) {
     // In development with missing credentials, return mock success
-    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ZONE_ID)) {
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || (!process.env.CLOUDFLARE_ZONE_ID && !zoneId))) {
       return {
         success: true,
         result: {
@@ -111,8 +111,11 @@ const cf = {
         }
       };
     }
-
-    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records`, {
+    
+    // Use the provided zoneId if available, otherwise fall back to the global one
+    const targetZoneId = zoneId || CLOUDFLARE_ZONE_ID;
+    
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${targetZoneId}/dns_records`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -123,15 +126,18 @@ const cf = {
     return response.json();
   },
 
-  async deleteDnsRecord(recordId: string) {
+  async deleteDnsRecord(recordId: string, zoneId?: string) {
     // In development with missing credentials, return mock success
-    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ZONE_ID)) {
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || (!process.env.CLOUDFLARE_ZONE_ID && !zoneId))) {
       return {
         success: true
       };
     }
 
-    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${recordId}`, {
+    // Use the provided zoneId if available, otherwise fall back to the global one
+    const targetZoneId = zoneId || CLOUDFLARE_ZONE_ID;
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${targetZoneId}/dns_records/${recordId}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -141,9 +147,9 @@ const cf = {
     return response.json();
   },
 
-  async getDnsRecords(name: string) {
+  async getDnsRecords(name: string, zoneId?: string) {
     // In development with missing credentials, return mock data
-    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ZONE_ID)) {
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || (!process.env.CLOUDFLARE_ZONE_ID && !zoneId))) {
       return [{
         id: 'mock-record-id',
         name: name,
@@ -152,7 +158,10 @@ const cf = {
       }];
     }
 
-    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?name=${name}`, {
+    // Use the provided zoneId if available, otherwise fall back to the global one
+    const targetZoneId = zoneId || CLOUDFLARE_ZONE_ID;
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${targetZoneId}/dns_records?name=${name}`, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
@@ -245,22 +254,47 @@ export async function checkDomainActivation(zoneId: string) {
   }
 }
 
+// Helper to determine which zone ID to use
+function getEffectiveZoneId(providedZoneId?: string): string {
+  // If a specific zone ID was provided, use it
+  if (providedZoneId) {
+    return providedZoneId;
+  }
+  
+  // Otherwise use the global zone ID
+  if (!CLOUDFLARE_ZONE_ID) {
+    console.warn('No Cloudflare Zone ID provided and no global Zone ID configured');
+  }
+  
+  return CLOUDFLARE_ZONE_ID;
+}
+
 // Create a DNS record for a subdomain
 export async function createDnsRecord(
   subdomain: string, 
   domain: string,
   type: 'CNAME' = 'CNAME', 
-  content: string = 'alias.vercel.com'
+  content: string = 'alias.vercel.com',
+  zoneId?: string
 ) {
   try {
     const name = `${subdomain}.${domain}`;
+    const effectiveZoneId = getEffectiveZoneId(zoneId);
+    console.log(`Creating DNS record for ${name} with zone ID: ${effectiveZoneId}`);
+    
     const response = await cf.createDnsRecord({
       type,
       name,
       content,
       ttl: 1, // Auto TTL
       proxied: true,
-    });
+    }, zoneId);
+    
+    console.log(`DNS record creation response:`, JSON.stringify(response));
+    
+    if (!response.success) {
+      console.error('Cloudflare API returned an error:', response.errors || response);
+    }
     
     return response;
   } catch (error) {
@@ -274,9 +308,19 @@ export async function createDnsRecord(
 }
 
 // Delete a DNS record
-export async function deleteDnsRecord(recordId: string) {
+export async function deleteDnsRecord(recordId: string, zoneId?: string) {
   try {
-    const response = await cf.deleteDnsRecord(recordId);
+    const effectiveZoneId = getEffectiveZoneId(zoneId);
+    console.log(`Deleting DNS record ${recordId} with zone ID: ${effectiveZoneId}`);
+    
+    const response = await cf.deleteDnsRecord(recordId, zoneId);
+    
+    console.log(`DNS record deletion response:`, JSON.stringify(response));
+    
+    if (!response.success) {
+      console.error('Cloudflare API returned an error:', response.errors || response);
+    }
+    
     return response;
   } catch (error) {
     console.error('Error deleting DNS record:', error);
@@ -289,9 +333,16 @@ export async function deleteDnsRecord(recordId: string) {
 }
 
 // Get DNS records for a domain
-export async function getDnsRecords(domain: string) {
+export async function getDnsRecords(domain: string, zoneId?: string) {
   try {
-    return await cf.getDnsRecords(domain);
+    const effectiveZoneId = getEffectiveZoneId(zoneId);
+    console.log(`Getting DNS records for ${domain} with zone ID: ${effectiveZoneId}`);
+    
+    const records = await cf.getDnsRecords(domain, zoneId);
+    
+    console.log(`Found ${records.length} DNS records for ${domain}`);
+    
+    return records;
   } catch (error) {
     console.error('Error getting DNS records:', error);
     // Return mock data in case of error

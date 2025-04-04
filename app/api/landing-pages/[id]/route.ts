@@ -56,11 +56,11 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
     
     // Delete DNS record from Cloudflare
-    const dnsRecords = await getDnsRecords(`${landingPage.subdomain}.${domain.name}`);
+    const dnsRecords = await getDnsRecords(`${landingPage.subdomain}.${domain.name}`, domain.cloudflareZoneId);
     if (dnsRecords && dnsRecords.length > 0) {
       // Delete all matching DNS records
       for (const record of dnsRecords) {
-        await deleteDnsRecord(record.id);
+        await deleteDnsRecord(record.id, domain.cloudflareZoneId);
       }
     }
     

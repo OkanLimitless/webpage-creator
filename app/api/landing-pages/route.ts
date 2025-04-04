@@ -86,6 +86,11 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Check if the domain has a cloudflareZoneId
+    if (!domain.cloudflareZoneId) {
+      console.warn(`Domain ${domain.name} does not have a Cloudflare Zone ID. Using default zone.`);
+    }
+    
     // Check if subdomain is already in use for this domain
     const existingPage = await LandingPage.findOne({
       domainId,
@@ -100,7 +105,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Create DNS record in Cloudflare
-    await createDnsRecord(subdomain, domain.name);
+    await createDnsRecord(subdomain, domain.name, 'CNAME', 'alias.vercel.com', domain.cloudflareZoneId);
     
     // Generate a temporary ID for the landing page (for screenshots)
     const tempId = new mongoose.Types.ObjectId().toString();
