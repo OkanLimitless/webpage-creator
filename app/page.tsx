@@ -326,6 +326,28 @@ export default function Home() {
     }
   };
   
+  // Add this function to update zone ID
+  const updateZoneId = async (id: string) => {
+    try {
+      const response = await fetch(`/api/domains/${id}/update-zone`, {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message);
+        // Refresh domains list to update status
+        fetchDomains();
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to update zone ID'}`);
+      }
+    } catch (error) {
+      console.error('Error updating zone ID:', error);
+      alert('An error occurred while updating zone ID');
+    }
+  };
+  
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -431,6 +453,16 @@ export default function Home() {
                             onClick={() => checkVerification(domain._id)}
                           >
                             Check
+                          </button>
+                          <button 
+                            style={{
+                              ...styles.button,
+                              backgroundColor: '#28a745',
+                              marginLeft: '5px',
+                            }}
+                            onClick={() => updateZoneId(domain._id)}
+                          >
+                            Update Zone ID
                           </button>
                         </div>
                       </td>
