@@ -343,17 +343,35 @@ export async function getZoneIdByName(domainName: string): Promise<string | null
 export async function checkDomainActivationByName(domainName: string) {
   try {
     console.log(`Checking domain activation by name: ${domainName}`);
-    // First get the zone ID
-    const zoneId = await getZoneIdByName(domainName);
     
-    if (!zoneId) {
-      throw new Error(`Could not find zone ID for domain: ${domainName}`);
+    // Get zone information directly
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones?name=${domainName}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    
+    const data = await response.json();
+    console.log(`Zone lookup response:`, JSON.stringify(data));
+    
+    if (!data.success || !data.result || data.result.length === 0) {
+      console.error('Failed to find zone by domain name:', data.errors || data);
+      throw new Error(`Could not find zone for domain: ${domainName}`);
     }
     
-    console.log(`Found zone ID for ${domainName}: ${zoneId}`);
+    // Get zone status directly from the lookup response
+    const zoneInfo = data.result[0];
+    const status = zoneInfo.status;
+    const isActive = status === 'active';
     
-    // Now check activation using the zone ID
-    return await checkDomainActivation(zoneId);
+    console.log(`Domain status from lookup: ${status}, isActive: ${isActive}`);
+    
+    return {
+      status: status,
+      active: isActive,
+      zoneId: zoneInfo.id
+    };
   } catch (error) {
     console.error(`Error checking domain activation by name ${domainName}:`, error);
     throw error;
