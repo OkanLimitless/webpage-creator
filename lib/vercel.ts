@@ -16,9 +16,9 @@ if (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID) {
 }
 
 /**
- * Add a domain to Vercel project
+ * Add a domain to Vercel project and get DNS configuration requirements
  * @param domainName The domain name to add
- * @returns Response from Vercel API
+ * @returns Response from Vercel API including required DNS records
  */
 export async function addDomainToVercel(domainName: string) {
   try {
@@ -30,7 +30,14 @@ export async function addDomainToVercel(domainName: string) {
       return {
         success: true,
         domainName,
-        message: 'Domain added to Vercel (mock)'
+        message: 'Domain added to Vercel (mock)',
+        configurationDnsRecords: [
+          {
+            name: domainName.includes('.') ? domainName.split('.')[0] : '@', // @ for root, subdomain name otherwise
+            type: 'CNAME',
+            value: 'cname.vercel-dns.com'
+          }
+        ]
       };
     }
     
@@ -59,11 +66,28 @@ export async function addDomainToVercel(domainName: string) {
       throw new Error(`Failed to add domain to Vercel: ${JSON.stringify(data)}`);
     }
     
+    // Get the verification records if available
+    let configurationRecords = [];
+    if (data.verification && Array.isArray(data.verification)) {
+      configurationRecords = data.verification.map((record: any) => ({
+        name: record.domain.split('.')[0] === domainName ? '@' : record.domain.split('.')[0],
+        type: record.type,
+        value: record.value
+      }));
+    }
+    
     return {
       success: true,
       domainName,
       vercelDomain: data,
-      message: 'Domain added to Vercel successfully'
+      configurationDnsRecords: configurationRecords.length > 0 ? configurationRecords : [
+        {
+          name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+          type: 'CNAME',
+          value: 'cname.vercel-dns.com'
+        }
+      ],
+      message: 'Domain added to Vercel successfully. Check the configurationDnsRecords for required DNS settings.'
     };
   } catch (error) {
     console.error(`Error adding domain ${domainName} to Vercel:`, error);
@@ -185,66 +209,6 @@ export async function deleteDomainFromVercel(domainName: string) {
 }
 
 /**
- * Add both a domain and its subdomain to Vercel
- * @param domain The main domain
- * @param subdomain The subdomain part
- * @returns Results of both operations
- */
-export async function addDomainAndSubdomainToVercel(domain: string, subdomain: string) {
-  try {
-    console.log(`Adding domain ${domain} and subdomain ${subdomain}.${domain} to Vercel...`);
-    
-    // In development with missing credentials, return mock success
-    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
-      console.log('Using mock Vercel domain addition in development mode');
-      return {
-        success: true,
-        domain: {
-          name: domain,
-          status: 'added',
-        },
-        subdomain: {
-          name: `${subdomain}.${domain}`,
-          status: 'added',
-        },
-        message: 'Domain and subdomain added to Vercel (mock)'
-      };
-    }
-    
-    // Add main domain first
-    let domainResult;
-    try {
-      domainResult = await addDomainToVercel(domain);
-      console.log(`Main domain ${domain} added to Vercel`);
-    } catch (error) {
-      console.warn(`Could not add main domain ${domain} to Vercel, it might already exist:`, error);
-      domainResult = { success: false, error };
-    }
-    
-    // Then add subdomain
-    const fullSubdomain = `${subdomain}.${domain}`;
-    let subdomainResult;
-    try {
-      subdomainResult = await addDomainToVercel(fullSubdomain);
-      console.log(`Subdomain ${fullSubdomain} added to Vercel`);
-    } catch (error) {
-      console.warn(`Could not add subdomain ${fullSubdomain} to Vercel, it might already exist:`, error);
-      subdomainResult = { success: false, error };
-    }
-    
-    return {
-      success: domainResult.success || subdomainResult.success,
-      domain: domainResult,
-      subdomain: subdomainResult,
-      message: `Domain ${domain} and subdomain ${fullSubdomain} registration with Vercel attempted`
-    };
-  } catch (error) {
-    console.error(`Error adding domain and subdomain to Vercel:`, error);
-    throw error;
-  }
-}
-
-/**
  * Check if a domain exists in Vercel project
  * @param domainName The domain name to check
  * @returns Status of the domain in Vercel
@@ -311,5 +275,103 @@ export async function checkDomainInVercel(domainName: string) {
       error,
       message: `Error checking domain in Vercel: ${error}`
     };
+  }
+}
+
+/**
+ * Add both a domain and its subdomain to Vercel
+ * @param domain The main domain
+ * @param subdomain The subdomain part
+ * @returns Results of both operations
+ */
+export async function addDomainAndSubdomainToVercel(domain: string, subdomain: string) {
+  try {
+    console.log(`Adding domain ${domain} and subdomain ${subdomain}.${domain} to Vercel...`);
+    
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
+      console.log('Using mock Vercel domain addition in development mode');
+      return {
+        success: true,
+        domain: {
+          name: domain,
+          status: 'added',
+          configurationDnsRecords: [
+            {
+              name: '@',
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ]
+        },
+        subdomain: {
+          name: `${subdomain}.${domain}`,
+          status: 'added',
+          configurationDnsRecords: [
+            {
+              name: subdomain,
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ]
+        },
+        message: 'Domain and subdomain added to Vercel (mock)'
+      };
+    }
+    
+    // Add main domain first
+    let domainResult;
+    try {
+      domainResult = await addDomainToVercel(domain);
+      console.log(`Main domain ${domain} added to Vercel`);
+    } catch (error) {
+      console.warn(`Could not add main domain ${domain} to Vercel, it might already exist:`, error);
+      domainResult = { 
+        success: false, 
+        error,
+        configurationDnsRecords: [
+          {
+            name: '@',
+            type: 'CNAME',
+            value: 'cname.vercel-dns.com'
+          }
+        ]
+      };
+    }
+    
+    // Then add subdomain
+    const fullSubdomain = `${subdomain}.${domain}`;
+    let subdomainResult;
+    try {
+      subdomainResult = await addDomainToVercel(fullSubdomain);
+      console.log(`Subdomain ${fullSubdomain} added to Vercel`);
+    } catch (error) {
+      console.warn(`Could not add subdomain ${fullSubdomain} to Vercel, it might already exist:`, error);
+      subdomainResult = { 
+        success: false, 
+        error,
+        configurationDnsRecords: [
+          {
+            name: subdomain,
+            type: 'CNAME',
+            value: 'cname.vercel-dns.com'
+          }
+        ]
+      };
+    }
+    
+    return {
+      success: domainResult.success || subdomainResult.success,
+      domain: domainResult,
+      subdomain: subdomainResult,
+      message: `Domain ${domain} and subdomain ${fullSubdomain} registration with Vercel attempted`,
+      dnsRecords: {
+        domain: domainResult.configurationDnsRecords || [],
+        subdomain: subdomainResult.configurationDnsRecords || []
+      }
+    };
+  } catch (error) {
+    console.error(`Error adding domain and subdomain to Vercel:`, error);
+    throw error;
   }
 } 

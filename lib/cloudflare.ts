@@ -280,7 +280,7 @@ export async function createDnsRecord(
   subdomain: string, 
   domain: string,
   type: 'CNAME' = 'CNAME', 
-  content: string = 'alias.vercel.com',
+  content: string = 'cname.vercel-dns.com',
   zoneId?: string
 ) {
   try {
@@ -290,14 +290,14 @@ export async function createDnsRecord(
     console.log(`Creating DNS record for ${name} in domain ${domain} with zone ID: ${effectiveZoneId}`);
     
     // Check if this is a record pointing to Vercel
-    const isVercelRecord = content.includes('vercel.com');
+    const isVercelRecord = content.includes('vercel');
     
     const response = await cf.createDnsRecord({
       type,
       name,
       content,
       ttl: 1, // Auto TTL
-      proxied: isVercelRecord ? false : true, // Disable proxying for Vercel records
+      proxied: false, // IMPORTANT: Always false for Vercel records to avoid redirect loops
     }, effectiveZoneId);
     
     console.log(`DNS record creation response:`, JSON.stringify(response));

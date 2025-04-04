@@ -113,18 +113,33 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Create DNS record in Cloudflare
-    await createDnsRecord(subdomain, domain.name, 'CNAME', 'alias.vercel.com', domain.cloudflareZoneId);
-    
-    // Add both the domain and subdomain to Vercel
-    let vercelResult = null;
+    // Add both the domain and subdomain to Vercel first
+    console.log(`Adding domain ${domain.name} and subdomain ${subdomain}.${domain.name} to Vercel`);
+    let vercelResult;
     try {
       vercelResult = await addDomainAndSubdomainToVercel(domain.name, subdomain);
       console.log(`Domain and subdomain added to Vercel: ${domain.name} and ${subdomain}.${domain.name}`);
     } catch (vercelError) {
       console.error(`Error adding domain/subdomain to Vercel: ${domain.name}/${subdomain}`, vercelError);
-      // We continue even if Vercel fails, as we can retry later
+      return NextResponse.json(
+        { error: `Failed to add domain to Vercel: ${vercelError.message || 'Unknown error'}` },
+        { status: 500 }
+      );
     }
+    
+    // Extract the required DNS record information
+    const subdomainDnsRecords = vercelResult.dnsRecords?.subdomain || [];
+    
+    // Get the Vercel DNS target - default to cname.vercel-dns.com if not provided
+    let vercelDnsTarget = 'cname.vercel-dns.com';
+    const cnameRecord = subdomainDnsRecords.find(record => record.type === 'CNAME');
+    if (cnameRecord && cnameRecord.value) {
+      vercelDnsTarget = cnameRecord.value;
+    }
+    
+    // Create DNS record in Cloudflare using Vercel's recommended value
+    console.log(`Creating DNS record in Cloudflare for ${subdomain}.${domain.name} pointing to ${vercelDnsTarget}`);
+    await createDnsRecord(subdomain, domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId);
     
     // Generate a temporary ID for the landing page (for screenshots)
     const tempId = new mongoose.Types.ObjectId().toString();
@@ -144,11 +159,17 @@ export async function POST(request: NextRequest) {
       isActive: true,
     });
     
+    // Return comprehensive information about the setup
     return NextResponse.json({
       ...landingPage.toJSON(),
       vercelStatus: vercelResult ? 'both_added' : 'failed',
       fullDomain: `${subdomain}.${domain.name}`,
-      message: `Landing page created with subdomain ${subdomain}.${domain.name}. It may take a few minutes for DNS to propagate.`,
+      dnsConfiguration: {
+        target: vercelDnsTarget,
+        type: 'CNAME',
+        proxied: false
+      },
+      message: `Landing page created with subdomain ${subdomain}.${domain.name}. DNS record created pointing to ${vercelDnsTarget}. It may take a few minutes for DNS to propagate.`,
     }, { status: 201 });
   } catch (error) {
     console.error('Error creating landing page:', error);
