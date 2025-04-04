@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { LandingPage } from '@/lib/models/LandingPage';
-import { Domain } from '@/lib/models/Domain';
+import { Domain, IDomain } from '@/lib/models/Domain';
 import { getDnsRecords } from '@/lib/cloudflare';
 import { addDomainToVercel } from '@/lib/vercel';
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     
     // Get domain info
-    const domain = landingPage.domainId as unknown as Domain;
+    const domain = landingPage.domainId as unknown as IDomain;
     if (!domain) {
       return NextResponse.json(
         { error: 'Domain not found for this landing page' },
