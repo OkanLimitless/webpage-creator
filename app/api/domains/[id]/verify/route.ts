@@ -35,6 +35,14 @@ export async function GET(request: NextRequest, { params }: Params) {
     try {
       console.log(`Checking activation status by name for ${domain.name}`);
       activationStatus = await checkDomainActivationByName(domain.name);
+      
+      // Update the cloudflareZoneId if it's missing or different
+      if (activationStatus.zoneId) {
+        if (!domain.cloudflareZoneId || domain.cloudflareZoneId !== activationStatus.zoneId) {
+          console.log(`Updating zone ID for ${domain.name} from ${domain.cloudflareZoneId || 'none'} to ${activationStatus.zoneId}`);
+          domain.cloudflareZoneId = activationStatus.zoneId;
+        }
+      }
     } catch (domainNameError) {
       console.error(`Error checking by domain name, falling back to zone ID: ${domainNameError}`);
       
