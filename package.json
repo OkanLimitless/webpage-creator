@@ -7,13 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:screenshot": "ts-node tools/test-screenshot.ts"
+    "test:screenshot": "ts-node tools/test-screenshot.ts",
+    "test:blob": "ts-node tools/test-vercel-blob.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.8.0",
     "@types/node": "20.11.30",
     "@types/react": "18.2.67",
     "@types/react-dom": "18.2.22",
+    "@vercel/blob": "^0.23.1",
     "eslint": "8.57.0",
     "eslint-config-next": "14.1.4",
     "mongodb": "^6.5.0",

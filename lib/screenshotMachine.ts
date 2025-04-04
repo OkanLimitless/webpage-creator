@@ -1,4 +1,4 @@
-import { generateUniqueFilename } from './gcsStorage';
+import { generateUniqueFilename, uploadImageToVercelBlob } from './vercelBlobStorage';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
@@ -49,46 +49,58 @@ export function generateScreenshotUrl(options: {
 }
 
 /**
- * Take screenshots of a URL using ScreenshotMachine and store in Google Cloud Storage
+ * Take screenshots of a URL using ScreenshotMachine and store in Vercel Blob Storage
  */
 export async function takeScreenshots(url: string, id: string) {
   try {
-    // In Vercel environment, just return placeholder URLs to avoid GCS issues
-    if (isVercel) {
-      console.log('Vercel environment detected, using placeholder images');
-      const desktopFilename = generateUniqueFilename(`${id}_desktop`);
-      const mobileFilename = generateUniqueFilename(`${id}_mobile`);
-      
-      return {
-        desktopUrl: DEFAULT_DESKTOP_PLACEHOLDER,
-        mobileUrl: DEFAULT_MOBILE_PLACEHOLDER
-      };
-    }
-    
-    // Generate desktop screenshot URL
-    const desktopUrl = generateScreenshotUrl({
+    // Define filenames
+    const desktopFilename = generateUniqueFilename(`${id}_desktop`);
+    const mobileFilename = generateUniqueFilename(`${id}_mobile`);
+
+    // Generate desktop screenshot URL from ScreenshotMachine
+    const desktopScreenshotUrl = generateScreenshotUrl({
       url,
       dimension: '1366x768',
       device: 'desktop',
       format: 'png',
     });
 
-    // Generate mobile screenshot URL
-    const mobileUrl = generateScreenshotUrl({
+    // Generate mobile screenshot URL from ScreenshotMachine
+    const mobileScreenshotUrl = generateScreenshotUrl({
       url,
       dimension: '375x667',
       device: 'phone',
       format: 'png',
     });
 
-    // Define filenames
-    const desktopFilename = generateUniqueFilename(`${id}_desktop`);
-    const mobileFilename = generateUniqueFilename(`${id}_mobile`);
+    // In development or if not on Vercel, just return the ScreenshotMachine URLs directly
+    if (isDevelopment || !isVercel) {
+      console.log('Development or non-Vercel environment, using ScreenshotMachine URLs directly');
+      return {
+        desktopUrl: desktopScreenshotUrl,
+        mobileUrl: mobileScreenshotUrl
+      };
+    }
     
-    // Just return the ScreenshotMachine URLs directly
+    console.log('Vercel environment detected, uploading screenshots to Vercel Blob Storage');
+    
+    // Upload desktop screenshot to Vercel Blob
+    const desktopBlobUrl = await uploadImageToVercelBlob(
+      desktopScreenshotUrl, 
+      desktopFilename
+    );
+    
+    // Upload mobile screenshot to Vercel Blob
+    const mobileBlobUrl = await uploadImageToVercelBlob(
+      mobileScreenshotUrl,
+      mobileFilename
+    );
+    
+    console.log('Successfully uploaded screenshots to Vercel Blob Storage');
+    
     return {
-      desktopUrl: desktopUrl,
-      mobileUrl: mobileUrl
+      desktopUrl: desktopBlobUrl,
+      mobileUrl: mobileBlobUrl
     };
   } catch (error) {
     console.error('Error taking screenshots:', error);

@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['storage.googleapis.com', 'bestdiscountsstore.com', 'api.screenshotmachine.com'],
+    domains: ['storage.googleapis.com', 'bestdiscountsstore.com', 'api.screenshotmachine.com', 'public.blob.vercel-storage.com'],
   },
   // Add configuration for handling domains and subdomains
   async headers() {
