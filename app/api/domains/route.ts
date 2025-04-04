@@ -71,8 +71,18 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    console.log('Fetching nameservers from Cloudflare...');
+    console.log('Environment check:', {
+      hasToken: !!process.env.CLOUDFLARE_API_TOKEN,
+      hasZoneId: !!process.env.CLOUDFLARE_ZONE_ID,
+      hasEmail: !!process.env.CLOUDFLARE_EMAIL,
+      isDev: isDevelopment,
+      isVercel: process.env.VERCEL === '1'
+    });
+    
     // Fetch nameservers from Cloudflare
     const cloudflareNameservers = await getNameservers();
+    console.log('Nameservers retrieved:', cloudflareNameservers);
     
     // Create new domain
     const domain = await Domain.create({

@@ -30,8 +30,7 @@ const cf = {
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}`, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Auth-Email': CLOUDFLARE_EMAIL,
-        'X-Auth-Key': CLOUDFLARE_API_TOKEN,
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
       },
     });
     return response.json();
@@ -53,8 +52,7 @@ const cf = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Auth-Email': CLOUDFLARE_EMAIL,
-        'X-Auth-Key': CLOUDFLARE_API_TOKEN,
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
       },
       body: JSON.stringify(data),
     });
@@ -73,8 +71,7 @@ const cf = {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        'X-Auth-Email': CLOUDFLARE_EMAIL,
-        'X-Auth-Key': CLOUDFLARE_API_TOKEN,
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
       },
     });
     return response.json();
@@ -94,8 +91,7 @@ const cf = {
     const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?name=${name}`, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Auth-Email': CLOUDFLARE_EMAIL,
-        'X-Auth-Key': CLOUDFLARE_API_TOKEN,
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
       },
     });
     const data = await response.json();
@@ -108,7 +104,19 @@ export type CloudflareNameserver = string;
 // Get Cloudflare nameservers for a domain
 export async function getNameservers(): Promise<CloudflareNameserver[]> {
   try {
+    console.log('Getting zone info from Cloudflare...');
     const response = await cf.getZone();
+    console.log('Zone API response:', JSON.stringify(response));
+    
+    if (!response.success) {
+      console.error('Cloudflare API returned an error:', response.errors || response);
+      // Return mock data in case of API error
+      if (isDevelopment) {
+        return ['ns1.mockdns.com', 'ns2.mockdns.com'];
+      }
+      throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors || 'Unknown error')}`);
+    }
+    
     return response.result?.name_servers || [];
   } catch (error) {
     console.error('Error getting Cloudflare nameservers:', error);
