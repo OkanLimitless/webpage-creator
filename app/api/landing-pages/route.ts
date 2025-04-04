@@ -119,10 +119,10 @@ export async function POST(request: NextRequest) {
     try {
       vercelResult = await addDomainAndSubdomainToVercel(domain.name, subdomain);
       console.log(`Domain and subdomain added to Vercel: ${domain.name} and ${subdomain}.${domain.name}`);
-    } catch (vercelError) {
-      console.error(`Error adding domain/subdomain to Vercel: ${domain.name}/${subdomain}`, vercelError);
+    } catch (error: any) {
+      console.error(`Error adding domain/subdomain to Vercel: ${domain.name}/${subdomain}`, error);
       return NextResponse.json(
-        { error: `Failed to add domain to Vercel: ${vercelError.message || 'Unknown error'}` },
+        { error: `Failed to add domain to Vercel: ${error.message || 'Unknown error'}` },
         { status: 500 }
       );
     }
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
     
     // Get the Vercel DNS target - default to cname.vercel-dns.com if not provided
     let vercelDnsTarget = 'cname.vercel-dns.com';
-    const cnameRecord = subdomainDnsRecords.find(record => record.type === 'CNAME');
+    const cnameRecord = subdomainDnsRecords.find((record: { type: string; value?: string }) => record.type === 'CNAME');
     if (cnameRecord && cnameRecord.value) {
       vercelDnsTarget = cnameRecord.value;
     }

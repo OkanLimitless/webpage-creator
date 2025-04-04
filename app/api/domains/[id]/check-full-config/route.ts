@@ -10,6 +10,27 @@ interface Params {
   };
 }
 
+// Define types for Cloudflare and Vercel status responses
+interface CloudflareStatus {
+  status: string;
+  active: boolean;
+  zoneId?: string;
+  error?: any;
+}
+
+interface VercelStatus {
+  exists: boolean;
+  configured: boolean;
+  domainName?: string;
+  vercelDomain?: any;
+  error?: any;
+}
+
+interface RepairResult {
+  cloudflare: null | { action: string; success: boolean };
+  vercel: null | { action: string; success: boolean; result?: any; error?: any };
+}
+
 // GET /api/domains/[id]/check-full-config - Check complete configuration status
 export async function GET(request: NextRequest, { params }: Params) {
   try {
@@ -33,9 +54,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     const repair = request.nextUrl.searchParams.get('repair') === 'true';
     
     // Check Cloudflare status
-    let cloudflareStatus = null;
+    let cloudflareStatus: CloudflareStatus = { status: 'unknown', active: false };
     try {
-      cloudflareStatus = await checkDomainActivationByName(domain.name);
+      cloudflareStatus = await checkDomainActivationByName(domain.name) as CloudflareStatus;
       console.log(`Cloudflare status for ${domain.name}:`, cloudflareStatus);
     } catch (error) {
       console.error(`Error checking Cloudflare status for ${domain.name}:`, error);
@@ -43,9 +64,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     
     // Check Vercel status
-    let vercelStatus = null;
+    let vercelStatus: VercelStatus = { exists: false, configured: false };
     try {
-      vercelStatus = await checkDomainInVercel(domain.name);
+      vercelStatus = await checkDomainInVercel(domain.name) as VercelStatus;
       console.log(`Vercel status for ${domain.name}:`, vercelStatus);
     } catch (error) {
       console.error(`Error checking Vercel status for ${domain.name}:`, error);
@@ -53,7 +74,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     
     // Perform repairs if requested
-    let repairResult = null;
+    let repairResult: RepairResult | undefined = undefined;
     if (repair) {
       repairResult = {
         cloudflare: null,
@@ -114,8 +135,8 @@ export async function GET(request: NextRequest, { params }: Params) {
 }
 
 // Helper function to determine next steps based on configuration status
-function determineNextSteps(cloudflareStatus: any, vercelStatus: any): string[] {
-  const steps = [];
+function determineNextSteps(cloudflareStatus: CloudflareStatus, vercelStatus: VercelStatus): string[] {
+  const steps: string[] = [];
   
   // Cloudflare issues
   if (!cloudflareStatus.active) {
@@ -128,7 +149,7 @@ function determineNextSteps(cloudflareStatus: any, vercelStatus: any): string[] 
     steps.push('Add your domain to Vercel project (use the "Repair" option)');
   } else if (!vercelStatus.configured) {
     steps.push('Verify your domain in Vercel (check Vercel dashboard)');
-    steps.push('Ensure CNAME records are properly set to alias.vercel.com');
+    steps.push('Ensure CNAME records are properly set to cname.vercel-dns.com');
   }
   
   // If everything looks good
