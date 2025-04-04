@@ -1,4 +1,4 @@
-import { generateUniqueFilename, uploadImageFromUrl } from './gcsStorage';
+import { generateUniqueFilename } from './gcsStorage';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
@@ -6,6 +6,10 @@ const isVercel = process.env.VERCEL === '1';
 
 // ScreenshotMachine API key
 const SCREENSHOT_MACHINE_KEY = process.env.SCREENSHOT_MACHINE_KEY || 'b7bbb0'; // Fallback to provided key
+
+// Default placeholder images (public URLs that always work)
+const DEFAULT_DESKTOP_PLACEHOLDER = 'https://via.placeholder.com/1366x768?text=Desktop+Placeholder';
+const DEFAULT_MOBILE_PLACEHOLDER = 'https://via.placeholder.com/375x667?text=Mobile+Placeholder';
 
 /**
  * Generate a URL for the ScreenshotMachine API
@@ -49,6 +53,18 @@ export function generateScreenshotUrl(options: {
  */
 export async function takeScreenshots(url: string, id: string) {
   try {
+    // In Vercel environment, just return placeholder URLs to avoid GCS issues
+    if (isVercel) {
+      console.log('Vercel environment detected, using placeholder images');
+      const desktopFilename = generateUniqueFilename(`${id}_desktop`);
+      const mobileFilename = generateUniqueFilename(`${id}_mobile`);
+      
+      return {
+        desktopUrl: DEFAULT_DESKTOP_PLACEHOLDER,
+        mobileUrl: DEFAULT_MOBILE_PLACEHOLDER
+      };
+    }
+    
     // Generate desktop screenshot URL
     const desktopUrl = generateScreenshotUrl({
       url,
@@ -68,38 +84,19 @@ export async function takeScreenshots(url: string, id: string) {
     // Define filenames
     const desktopFilename = generateUniqueFilename(`${id}_desktop`);
     const mobileFilename = generateUniqueFilename(`${id}_mobile`);
-
-    try {
-      // Upload both screenshots to Google Cloud Storage
-      const [desktopScreenshotUrl, mobileScreenshotUrl] = await Promise.all([
-        uploadImageFromUrl(desktopUrl, desktopFilename),
-        uploadImageFromUrl(mobileUrl, mobileFilename),
-      ]);
-
-      return {
-        desktopUrl: desktopScreenshotUrl,
-        mobileUrl: mobileScreenshotUrl,
-      };
-    } catch (error) {
-      // In development or Vercel, fallback to placeholder URLs
-      console.warn('Failed to upload screenshots, using placeholder URLs:', error);
-      const bucketName = process.env.GCS_BUCKET_NAME || 'webpage-creator-screenshots';
-      return {
-        desktopUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${desktopFilename}`,
-        mobileUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${mobileFilename}`,
-      };
-    }
+    
+    // Just return the ScreenshotMachine URLs directly
+    return {
+      desktopUrl: desktopUrl,
+      mobileUrl: mobileUrl
+    };
   } catch (error) {
     console.error('Error taking screenshots:', error);
     
-    // In development or Vercel, fallback to placeholder values
-    const desktopFilename = generateUniqueFilename(`${id}_desktop`);
-    const mobileFilename = generateUniqueFilename(`${id}_mobile`);
-    const bucketName = process.env.GCS_BUCKET_NAME || 'webpage-creator-screenshots';
-
+    // Fallback to placeholder values
     return {
-      desktopUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${desktopFilename}`,
-      mobileUrl: `https://storage.googleapis.com/${bucketName}/screenshots/${mobileFilename}`,
+      desktopUrl: DEFAULT_DESKTOP_PLACEHOLDER,
+      mobileUrl: DEFAULT_MOBILE_PLACEHOLDER
     };
   }
 } 
