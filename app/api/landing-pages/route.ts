@@ -4,6 +4,7 @@ import { Domain } from '@/lib/models/Domain';
 import { LandingPage, ILandingPage } from '@/lib/models/LandingPage';
 import { createDnsRecord } from '@/lib/cloudflare';
 import { takeScreenshots } from '@/lib/screenshot';
+import { addDomainToVercel } from '@/lib/vercel';
 import mongoose from 'mongoose';
 
 // Flag to check if we're in development mode
@@ -115,6 +116,17 @@ export async function POST(request: NextRequest) {
     // Create DNS record in Cloudflare
     await createDnsRecord(subdomain, domain.name, 'CNAME', 'alias.vercel.com', domain.cloudflareZoneId);
     
+    // Add the subdomain to Vercel
+    const fullDomain = `${subdomain}.${domain.name}`;
+    let vercelResult = null;
+    try {
+      vercelResult = await addDomainToVercel(fullDomain);
+      console.log(`Subdomain added to Vercel: ${fullDomain}`);
+    } catch (vercelError) {
+      console.error(`Error adding subdomain to Vercel: ${fullDomain}`, vercelError);
+      // We continue even if Vercel fails, as we can retry later
+    }
+    
     // Generate a temporary ID for the landing page (for screenshots)
     const tempId = new mongoose.Types.ObjectId().toString();
     
@@ -133,7 +145,11 @@ export async function POST(request: NextRequest) {
       isActive: true,
     });
     
-    return NextResponse.json(landingPage, { status: 201 });
+    return NextResponse.json({
+      ...landingPage.toJSON(),
+      vercelStatus: vercelResult ? 'added' : 'failed',
+      fullDomain,
+    }, { status: 201 });
   } catch (error) {
     console.error('Error creating landing page:', error);
     return NextResponse.json(

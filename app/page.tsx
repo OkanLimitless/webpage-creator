@@ -348,6 +348,33 @@ export default function Home() {
     }
   };
   
+  // Add this function to check landing page configuration
+  const checkLandingPageConfig = async (id: string, repair: boolean = false) => {
+    try {
+      const response = await fetch(`/api/landing-pages/${id}/check-config${repair ? '?repair=true' : ''}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Create a readable message based on the response
+        let message = data.message;
+        if (repair && data.repair?.result?.success) {
+          message += "\n\nRepair successful! The domain has been added to Vercel.";
+        } else if (repair && !data.repair?.result?.success) {
+          message += "\n\nRepair failed. You may need to add the domain manually in Vercel.";
+        }
+        
+        alert(message);
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to check landing page configuration'}`);
+      }
+    } catch (error) {
+      console.error('Error checking landing page configuration:', error);
+      alert('An error occurred while checking landing page configuration');
+    }
+  };
+  
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -589,6 +616,25 @@ export default function Home() {
                           onClick={() => deleteLandingPage(page._id)}
                         >
                           Delete
+                        </button>
+                        <button 
+                          style={{
+                            ...styles.button,
+                            backgroundColor: '#6c757d',
+                            marginRight: '5px',
+                          }}
+                          onClick={() => checkLandingPageConfig(page._id)}
+                        >
+                          Check Config
+                        </button>
+                        <button 
+                          style={{
+                            ...styles.button,
+                            backgroundColor: '#28a745',
+                          }}
+                          onClick={() => checkLandingPageConfig(page._id, true)}
+                        >
+                          Repair
                         </button>
                       </td>
                     </tr>
