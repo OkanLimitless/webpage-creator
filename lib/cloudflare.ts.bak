@@ -313,7 +313,7 @@ export async function deleteDnsRecord(recordId: string, zoneId?: string) {
     const effectiveZoneId = getEffectiveZoneId(zoneId);
     console.log(`Deleting DNS record ${recordId} with zone ID: ${effectiveZoneId}`);
     
-    const response = await cf.deleteDnsRecord(recordId, effectiveZoneId);
+    const response = await cf.deleteDnsRecord(recordId, zoneId);
     
     console.log(`DNS record deletion response:`, JSON.stringify(response));
     
@@ -338,7 +338,7 @@ export async function getDnsRecords(domain: string, zoneId?: string) {
     const effectiveZoneId = getEffectiveZoneId(zoneId);
     console.log(`Getting DNS records for ${domain} with zone ID: ${effectiveZoneId}`);
     
-    const records = await cf.getDnsRecords(domain, effectiveZoneId);
+    const records = await cf.getDnsRecords(domain, zoneId);
     
     console.log(`Found ${records.length} DNS records for ${domain}`);
     
@@ -416,15 +416,4 @@ export async function checkDomainActivationByName(domainName: string) {
     const status = zoneInfo.status;
     const isActive = status === 'active';
     
-    console.log(`Domain status from lookup: ${status}, isActive: ${isActive}`);
-    
-    return {
-      status: status,
-      active: isActive,
-      zoneId: zoneInfo.id
-    };
-  } catch (error) {
-    console.error(`Error checking domain activation by name ${domainName}:`, error);
-    throw error;
-  }
-}
+    console.log(`

@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
     // Check if the domain has a cloudflareZoneId
     if (!domain.cloudflareZoneId) {
       console.warn(`Domain ${domain.name} does not have a Cloudflare Zone ID. Using default zone.`);
+    } else {
+      console.log(`Using domain-specific zone ID for ${domain.name}: ${domain.cloudflareZoneId}`);
     }
     
     // Check if subdomain is already in use for this domain
