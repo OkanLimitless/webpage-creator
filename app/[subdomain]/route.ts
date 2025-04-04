@@ -98,7 +98,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         'X-Content-Type-Options': 'nosniff',
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error serving landing page:', error);
     console.log('----------- SUBDOMAIN ROUTE HANDLER ERROR END -----------');
     return new NextResponse('Internal Server Error: ' + (error.message || 'Unknown error'), { 
