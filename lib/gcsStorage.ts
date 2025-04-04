@@ -1,5 +1,6 @@
 import { Storage } from '@google-cloud/storage';
 import crypto from 'crypto';
+import https from 'https';
 
 // Flag to check environment
 const isVercel = process.env.VERCEL === '1';
@@ -30,39 +31,83 @@ if (isVercel) {
 
 const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'webpage-creator-screenshots';
 
-// Upload file to Google Cloud Storage
+// Simpler function to fetch image data as a buffer
+function fetchImageBuffer(url: string): Promise<{ buffer: Buffer; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to fetch image: ${response.statusCode}`));
+        return;
+      }
+      
+      const contentType = response.headers['content-type'] || 'image/png';
+      const chunks: Buffer[] = [];
+      
+      response.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+      
+      response.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve({ buffer, contentType });
+      });
+      
+      response.on('error', (err) => {
+        reject(err);
+      });
+    }).on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+// Alternative implementation using a direct HTTP upload approach
 export async function uploadImageFromUrl(
   url: string, 
   filename: string
 ): Promise<string> {
-  const bucket = storage.bucket(BUCKET_NAME);
-  const file = bucket.file(`screenshots/${filename}`);
+  const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/screenshots/${filename}`;
   
   try {
-    // Fetch the image from the URL
-    const response = await fetch(url);
+    console.log(`Fetching image from: ${url}`);
     
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status}`);
-    }
+    // Use our simple fetch function instead of the global fetch
+    const { buffer, contentType } = await fetchImageBuffer(url);
     
-    const buffer = await response.arrayBuffer();
+    console.log(`Successfully fetched image (${buffer.length} bytes), uploading to GCS...`);
     
-    // Upload the image
-    await file.save(Buffer.from(buffer), {
-      contentType: response.headers.get('content-type') || 'image/png',
-      public: true,
+    // Use simple file upload without streaming
+    const bucket = storage.bucket(BUCKET_NAME);
+    const file = bucket.file(`screenshots/${filename}`);
+    
+    // Use the simpler upload method to avoid AbortSignal issues
+    await new Promise<void>((resolve, reject) => {
+      file.createWriteStream({
+        metadata: {
+          contentType: contentType,
+          predefinedAcl: 'publicRead'
+        }
+      })
+      .on('error', (err) => {
+        console.error('Error in upload stream:', err);
+        reject(err);
+      })
+      .on('finish', () => {
+        console.log('Upload successful');
+        resolve();
+      })
+      .end(buffer);
     });
     
-    // Return the public URL
-    return `https://storage.googleapis.com/${BUCKET_NAME}/screenshots/${filename}`;
+    console.log(`Upload complete, public URL: ${publicUrl}`);
+    return publicUrl;
   } catch (error) {
     console.error('Error uploading image to GCS:', error);
     
     // Return a mock URL in case of error
     if (process.env.NODE_ENV === 'development' || isVercel) {
       console.warn('Returning mock URL due to upload failure');
-      return `https://storage.googleapis.com/${BUCKET_NAME}/screenshots/${filename}`;
+      return publicUrl;
     }
     
     throw error;
