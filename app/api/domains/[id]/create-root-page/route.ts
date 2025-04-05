@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain } from '@/lib/models/Domain';
 import { RootPage } from '@/lib/models/RootPage';
-import { addDomainToVercel } from '@/lib/vercel';
-import { createDnsRecord } from '@/lib/cloudflare';
+import { addDomainToVercel, checkDomainInVercel, verifyDomainInVercel } from '@/lib/vercel';
+import { createDnsRecord, getDnsRecords } from '@/lib/cloudflare';
 
 interface Params {
   params: {
@@ -47,12 +47,41 @@ export async function POST(request: NextRequest, { params }: Params) {
     const body = await request.json().catch(() => ({}));
     const { companyName, primaryColor } = body;
     
+    // First check if the domain already exists in Vercel
+    console.log(`Checking if domain ${domain.name} already exists in Vercel...`);
+    let vercelDomainStatus;
+    try {
+      vercelDomainStatus = await checkDomainInVercel(domain.name);
+      console.log(`Vercel domain status:`, vercelDomainStatus);
+    } catch (error) {
+      console.error(`Error checking domain in Vercel:`, error);
+      // Continue even if check fails
+    }
+    
     // Ensure domain is properly registered with Vercel
     console.log(`Ensuring domain ${domain.name} is registered with Vercel...`);
     let vercelResult;
     try {
-      vercelResult = await addDomainToVercel(domain.name);
-      console.log(`Domain ${domain.name} registered with Vercel:`, vercelResult);
+      // Only add if not already configured
+      if (!vercelDomainStatus?.exists) {
+        vercelResult = await addDomainToVercel(domain.name);
+        console.log(`Domain ${domain.name} registered with Vercel:`, vercelResult);
+        
+        // Trigger verification if domain was added
+        if (vercelResult?.success) {
+          console.log(`Triggering domain verification for ${domain.name} in Vercel...`);
+          try {
+            const verifyResult = await verifyDomainInVercel(domain.name);
+            console.log(`Domain verification result:`, verifyResult);
+          } catch (verifyError) {
+            console.error(`Error verifying domain with Vercel:`, verifyError);
+            // Continue even if verification fails
+          }
+        }
+      } else {
+        console.log(`Domain ${domain.name} already exists in Vercel, skipping registration`);
+        vercelResult = { success: true, alreadyConfigured: true };
+      }
     } catch (error) {
       console.error(`Error registering domain with Vercel:`, error);
       // Continue even if Vercel registration fails - we'll show a warning
@@ -71,41 +100,69 @@ export async function POST(request: NextRequest, { params }: Params) {
       dnsResult.messages.push('Domain has no Cloudflare Zone ID. Please update domain zone ID first.');
     } else {
       try {
-        // Create A record for root domain pointing to Vercel using direct Cloudflare API
-        // Since our createDnsRecord function only supports CNAME, we'll manually add the A record
-        const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
-        if (!CF_API_TOKEN) {
-          throw new Error('Cloudflare API token is not configured');
-        }
+        // Check existing DNS records first
+        console.log(`Checking existing DNS records for ${domain.name}`);
+        const existingRecords = await getDnsRecords(domain.name, domain.cloudflareZoneId);
+        console.log(`Found ${existingRecords.length} existing DNS records`);
         
-        // First, create the A record for the root domain
-        console.log(`Creating A record for root domain ${domain.name}...`);
-        const aRecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${domain.cloudflareZoneId}/dns_records`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${CF_API_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            type: 'A',
-            name: '@',
-            content: '76.76.21.21',
-            ttl: 1,
-            proxied: false
-          })
-        });
+        // Check if there's already a Vercel A record for the root domain
+        const rootARecord = existingRecords.find((r: any) => 
+          r.type === 'A' && 
+          (r.name === domain.name || r.name === '@') && 
+          r.content === '76.76.21.21'
+        );
         
-        const aRecordData = await aRecordResponse.json();
-        if (aRecordData.success) {
-          dnsResult.messages.push(`Created A record for ${domain.name} pointing to 76.76.21.21`);
+        // Create A record for root domain pointing to Vercel only if it doesn't already exist
+        if (!rootARecord) {
+          console.log(`Creating A record for root domain ${domain.name}...`);
+          const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+          if (!CF_API_TOKEN) {
+            throw new Error('Cloudflare API token is not configured');
+          }
+          
+          // Create the A record for the root domain
+          const aRecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${domain.cloudflareZoneId}/dns_records`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${CF_API_TOKEN}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              type: 'A',
+              name: '@',
+              content: '76.76.21.21',
+              ttl: 1,
+              proxied: false
+            })
+          });
+          
+          const aRecordData = await aRecordResponse.json();
+          if (aRecordData.success) {
+            dnsResult.messages.push(`Created A record for ${domain.name} pointing to 76.76.21.21`);
+          } else {
+            console.error(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
+            dnsResult.messages.push(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
+          }
         } else {
-          console.error(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
-          dnsResult.messages.push(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
+          console.log(`A record for root domain already exists, skipping creation`);
+          dnsResult.messages.push(`A record for ${domain.name} already exists pointing to 76.76.21.21`);
         }
         
-        // Then, create the CNAME record for www subdomain
-        await createDnsRecord('www', domain.name, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId);
-        dnsResult.messages.push(`Created CNAME record for www.${domain.name} pointing to cname.vercel-dns.com`);
+        // Check if there's already a www CNAME record
+        const wwwCnameRecord = existingRecords.find((r: any) => 
+          r.type === 'CNAME' && 
+          (r.name === `www.${domain.name}` || r.name === 'www') && 
+          r.content.includes('vercel')
+        );
+        
+        // Create the CNAME record for www subdomain if it doesn't exist
+        if (!wwwCnameRecord) {
+          await createDnsRecord('www', domain.name, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId);
+          dnsResult.messages.push(`Created CNAME record for www.${domain.name} pointing to cname.vercel-dns.com`);
+        } else {
+          console.log(`CNAME record for www subdomain already exists, skipping creation`);
+          dnsResult.messages.push(`CNAME record for www.${domain.name} already exists`);
+        }
         
         dnsResult.success = true;
       } catch (error: any) {

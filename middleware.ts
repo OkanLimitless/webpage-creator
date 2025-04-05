@@ -42,33 +42,49 @@ export function middleware(request: NextRequest) {
     // Root domain request - explicitly rewrite to (root) route handler
     console.log(`[Middleware] Root domain request: ${hostname}${pathname}`);
     
-    // Create an absolute URL using the current URL's origin for the rewrite
-    // This ensures we maintain the correct protocol and domain when rewriting
-    const url = new URL(request.url);
-    
-    // Build the full path to the root route handler
-    const rootPath = `/${pathname.startsWith('/') ? pathname.slice(1) : pathname}`;
-    const rewritePath = `/(root)${rootPath}`;
-    
-    console.log(`[Middleware] Rewriting root domain request to: ${rewritePath}`);
-    
-    // Explicitly rewrite to the (root) group route with the full URL including origin
-    const rewriteUrl = new URL(rewritePath, url.origin);
-    console.log(`[Middleware] Full rewrite URL: ${rewriteUrl.toString()}`);
-    
-    console.log('----------- MIDDLEWARE END -----------');
-    return NextResponse.rewrite(rewriteUrl);
+    try {
+      // Create an absolute URL using the current URL's origin for the rewrite
+      // This ensures we maintain the correct protocol and domain when rewriting
+      const url = new URL(request.url);
+      
+      // Build the full path to the root route handler
+      let rootPath = pathname;
+      if (!rootPath.startsWith('/')) {
+        rootPath = `/${rootPath}`;
+      }
+      
+      const rewritePath = `/(root)${rootPath}`;
+      
+      console.log(`[Middleware] Rewriting root domain request to: ${rewritePath}`);
+      
+      // Explicitly rewrite to the (root) group route with the full URL including origin
+      const rewriteUrl = new URL(rewritePath, url.origin);
+      console.log(`[Middleware] Full rewrite URL: ${rewriteUrl.toString()}`);
+      
+      console.log('----------- MIDDLEWARE END -----------');
+      return NextResponse.rewrite(rewriteUrl);
+    } catch (error) {
+      console.error(`[Middleware] Error rewriting URL: ${error}`);
+      console.log('----------- MIDDLEWARE ERROR END -----------');
+      return NextResponse.next();
+    }
   }
   
   // For requests with a subdomain (e.g., landing.example.com), rewrite to subdomain route
   const subdomain = getSubdomain(hostname);
   console.log(`[Middleware] Subdomain request: ${subdomain}.${hostname}${pathname}`);
   
-  // Rewrite the URL to include the subdomain in the path
-  const rewriteUrl = new URL(`/${subdomain}${pathname}`, request.url);
-  console.log(`[Middleware] Rewriting to: ${rewriteUrl.toString()}`);
-  console.log('----------- MIDDLEWARE END -----------');
-  return NextResponse.rewrite(rewriteUrl);
+  try {
+    // Rewrite the URL to include the subdomain in the path
+    const rewriteUrl = new URL(`/${subdomain}${pathname}`, request.url);
+    console.log(`[Middleware] Rewriting to: ${rewriteUrl.toString()}`);
+    console.log('----------- MIDDLEWARE END -----------');
+    return NextResponse.rewrite(rewriteUrl);
+  } catch (error) {
+    console.error(`[Middleware] Error rewriting URL: ${error}`);
+    console.log('----------- MIDDLEWARE ERROR END -----------');
+    return NextResponse.next();
+  }
 }
 
 // Function to check if a hostname has a valid subdomain
