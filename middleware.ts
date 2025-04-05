@@ -2,77 +2,78 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // This function can be marked `async` if using `await` inside
 export function middleware(request: NextRequest) {
-  // Clone the request headers
-  const requestHeaders = new Headers(request.headers);
+  // Get hostname from request (e.g. demo.example.com, demo.localhost:3000)
+  const hostname = request.headers.get('host') || '';
   
-  // Add x-url header for debugging
-  requestHeaders.set('x-url', request.url);
+  // Get the pathname from the URL (e.g. /api/landing-pages, /about, etc.)
+  const pathname = request.nextUrl.pathname;
   
-  // Get the host name from the request
-  const host = request.headers.get('host') || '';
-  console.log('Middleware processing host:', host);
-  console.log('Middleware processing URL:', request.url);
-  console.log('Middleware processing path:', request.nextUrl.pathname);
+  // If it's a request to the public assets or API, skip routing middleware
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/static') ||
+    pathname.startsWith('/vercel') ||
+    pathname.startsWith('/favicon')
+  ) {
+    return NextResponse.next();
+  }
+
+  // Check if the hostname has a subdomain
+  const hasSubdomain = hasValidSubdomain(hostname);
   
-  // Check if we should bypass the middleware (for API calls, etc.)
-  if (request.nextUrl.pathname.startsWith('/api/') || 
-      request.nextUrl.pathname.startsWith('/_next/') ||
-      request.nextUrl.pathname.includes('favicon.ico')) {
-    console.log('Bypassing middleware for API/next call');
+  // If no subdomain or www, let the root domain handler take care of it
+  if (!hasSubdomain || hostname.startsWith('www.')) {
+    // Root domain request - pass to root page handler
+    console.log(`[Middleware] Root domain request: ${hostname}${pathname}`);
     return NextResponse.next();
   }
   
-  // Extract subdomain and domain from host
-  const hostParts = host.split('.');
+  // For requests with a subdomain (e.g., landing.example.com), rewrite to subdomain route
+  const subdomain = getSubdomain(hostname);
+  console.log(`[Middleware] Subdomain request: ${subdomain}.${hostname}${pathname}`);
   
-  // Check if this is a custom domain (not vercel.app, localhost, etc.)
-  const isVercelDomain = host.includes('vercel.app');
-  const isLocalhost = host.includes('localhost');
-  const isCustomDomain = !isVercelDomain && !isLocalhost;
+  // Rewrite the URL to include the subdomain in the path
+  return NextResponse.rewrite(new URL(`/${subdomain}${pathname}`, request.url));
+}
+
+// Function to check if a hostname has a valid subdomain
+function hasValidSubdomain(hostname: string): boolean {
+  // Skip for localhost (direct development without subdomains)
+  if (hostname.includes('localhost')) return false;
   
-  // Handle subdomains on custom domains
-  if (isCustomDomain && hostParts.length > 2) {
-    const subdomain = hostParts[0];
-    console.log(`Detected subdomain: ${subdomain} on custom domain`);
-    
-    // Only rewrite for root path requests
-    if (request.nextUrl.pathname === '/') {
-      console.log(`Rewriting to subdomain route handler: /[subdomain]`);
-      
-      // Pass through to the [subdomain] route handler with all headers
-      return NextResponse.rewrite(new URL(`/${subdomain}`, request.url), {
-        request: {
-          headers: requestHeaders,
-        },
-      });
-    }
-  }
-  // Handle subdomain params in Vercel preview URLs
-  else if ((isVercelDomain || isLocalhost) && request.nextUrl.pathname.startsWith('/') && 
-           request.nextUrl.pathname.length > 1 && !request.nextUrl.pathname.includes('/api/')) {
-    
-    // Extract potential subdomain from the first path segment
-    const pathParts = request.nextUrl.pathname.split('/');
-    if (pathParts.length > 1) {
-      const potentialSubdomain = pathParts[1];
-      console.log(`Detected potential subdomain in path: ${potentialSubdomain}`);
-      
-      // Check if this looks like a subdomain (no further path segments, no file extension)
-      if (pathParts.length === 2 && !potentialSubdomain.includes('.')) {
-        console.log(`Handling as subdomain route: ${potentialSubdomain}`);
-        
-        // This is already the right URL format for the [subdomain] dynamic route
-        return NextResponse.next({
-          request: {
-            headers: requestHeaders,
-          },
-        });
-      }
-    }
-  }
+  // Skip for IP addresses
+  if (/^(\d{1,3}\.){3}\d{1,3}/.test(hostname)) return false;
   
-  // For all other requests, just continue normally
-  return NextResponse.next();
+  // For Vercel preview URLs, we don't have a real subdomain structure
+  if (hostname.endsWith('vercel.app')) return false;
+  
+  // Extract parts
+  const parts = hostname.split('.');
+  
+  // Check for direct localhost access with port, e.g., localhost:3000
+  if (parts[0] === 'localhost') return false;
+  
+  // If hostname is just 'example.com' or 'www.example.com', there's no subdomain
+  // Check length to ensure we have at least example.com (2 parts)
+  if (parts.length < 3) return false;
+  
+  // Check if it's www (not a real subdomain for our routing purposes)
+  if (parts[0] === 'www') return false;
+  
+  // Validate if it's a known subdomain type
+  const validPrefixes = ['landing', 'app', 'dashboard', 'admin'];
+  return validPrefixes.includes(parts[0]);
+}
+
+// Function to extract the subdomain from a hostname
+function getSubdomain(hostname: string): string {
+  // Skip for non-production environments
+  if (hostname.includes('localhost')) return '';
+  if (hostname.endsWith('vercel.app')) return '';
+  
+  // Extract the first part
+  return hostname.split('.')[0];
 }
 
 // Specify paths this middleware should run on
