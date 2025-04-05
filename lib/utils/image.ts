@@ -13,7 +13,7 @@ export async function getImageAsBinary(url: string, timeoutMs = 15000): Promise<
     const response = await fetch(url, { 
       signal: controller.signal,
       headers: {
-        'Accept': 'image/*'
+        'Accept': 'image/*,image/webp' // Explicitly accept WebP format
       }
     });
     
@@ -26,7 +26,7 @@ export async function getImageAsBinary(url: string, timeoutMs = 15000): Promise<
     
     // Check content type to confirm we received an image
     const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('image/')) {
+    if (!contentType || (!contentType.includes('image/') && !contentType.includes('image/webp'))) {
       // If not an image, it might be an error message from the API
       const text = await response.text();
       throw new Error(`Received non-image response (${contentType}): ${text.substring(0, 200)}`);

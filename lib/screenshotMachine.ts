@@ -44,7 +44,7 @@ export function generateScreenshotUrl(options: {
   url: string;
   dimension?: string;
   device?: 'desktop' | 'phone' | 'tablet';
-  format?: 'png' | 'jpg' | 'gif';
+  format?: 'webp' | 'png' | 'jpg' | 'gif';
   cacheLimit?: string;
   delay?: string;
   zoom?: string;
@@ -53,7 +53,7 @@ export function generateScreenshotUrl(options: {
     url: rawUrl,
     dimension = '1366x768',
     device = 'desktop',
-    format = 'png',
+    format = 'webp',
     cacheLimit = '0', // No cache, always fresh screenshots
     delay = '3000', // Increased delay to 3 seconds for better reliability
     zoom = '100',
@@ -124,25 +124,25 @@ export async function takeScreenshots(url: string, id: string) {
     
     console.log(`Taking screenshots of URL: ${url}`);
     
-    // Define filenames
-    const desktopFilename = generateUniqueFilename(`${id}_desktop`);
-    const mobileFilename = generateUniqueFilename(`${id}_mobile`);
+    // Define filenames with webp extension
+    const desktopFilename = generateUniqueFilename(`${id}_desktop`, 'webp');
+    const mobileFilename = generateUniqueFilename(`${id}_mobile`, 'webp');
 
-    // Generate desktop screenshot URL from ScreenshotMachine
+    // Generate desktop screenshot URL from ScreenshotMachine - using webp
     const desktopScreenshotUrl = generateScreenshotUrl({
       url,
       dimension: '1366x768',
       device: 'desktop',
-      format: 'png',
+      format: 'webp',
       delay: '3000', // 3 seconds
     });
 
-    // Generate mobile screenshot URL from ScreenshotMachine
+    // Generate mobile screenshot URL from ScreenshotMachine - using webp
     const mobileScreenshotUrl = generateScreenshotUrl({
       url,
       dimension: '375x667',
       device: 'phone',
-      format: 'png',
+      format: 'webp',
       delay: '3000', // 3 seconds
     });
 
@@ -162,7 +162,8 @@ export async function takeScreenshots(url: string, id: string) {
     const desktopBlobUrl = await uploadImageToVercelBlob(
       desktopScreenshotUrl, 
       desktopFilename,
-      25000 // 25 second timeout for desktop
+      25000, // 25 second timeout for desktop
+      'image/webp' // Set content type to WebP
     );
     
     // Upload mobile screenshot to Vercel Blob
@@ -170,7 +171,8 @@ export async function takeScreenshots(url: string, id: string) {
     const mobileBlobUrl = await uploadImageToVercelBlob(
       mobileScreenshotUrl,
       mobileFilename,
-      20000 // 20 second timeout for mobile
+      20000, // 20 second timeout for mobile
+      'image/webp' // Set content type to WebP
     );
     
     console.log('Successfully uploaded screenshots to Vercel Blob Storage');
