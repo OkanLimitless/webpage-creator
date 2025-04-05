@@ -351,16 +351,21 @@ export default function Home() {
   
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 font-sans">
-      <header className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-800">Webpage Creator</h1>
+      <header className="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
+        <h1 className="text-2xl font-bold text-white flex items-center">
+          <svg className="w-7 h-7 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+          </svg>
+          Webpage Creator
+        </h1>
       </header>
       
-      <div className="flex mb-6 border-b border-gray-200">
+      <div className="flex mb-6 border-b border-gray-700">
         <div 
           className={`px-4 py-3 cursor-pointer mr-2 ${
             activeTab === 'domains'
-              ? 'border-b-2 border-blue-500 font-semibold'
-              : 'text-gray-600 hover:text-gray-800'
+              ? 'border-b-2 border-primary text-white font-semibold'
+              : 'text-gray-400 hover:text-gray-200'
           }`}
           onClick={() => setActiveTab('domains')}
         >
@@ -369,8 +374,8 @@ export default function Home() {
         <div 
           className={`px-4 py-3 cursor-pointer mr-2 ${
             activeTab === 'landingPages'
-              ? 'border-b-2 border-blue-500 font-semibold'
-              : 'text-gray-600 hover:text-gray-800'
+              ? 'border-b-2 border-primary text-white font-semibold'
+              : 'text-gray-400 hover:text-gray-200'
           }`}
           onClick={() => setActiveTab('landingPages')}
         >
@@ -380,11 +385,16 @@ export default function Home() {
       
       {activeTab === 'domains' && (
         <>
-          <div className="bg-white p-6 mb-6 rounded-lg shadow-sm border border-gray-200">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Add Domain</h2>
+          <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
+              <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd"></path>
+              </svg>
+              Add Domain
+            </h2>
             <form onSubmit={addDomain} className="space-y-4">
               <input
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="text"
                 placeholder="Domain name (e.g., example.com)"
                 value={domainName}
@@ -393,8 +403,8 @@ export default function Home() {
               <button 
                 className={`px-4 py-2 rounded-md text-white font-medium ${
                   loading 
-                    ? 'bg-blue-400 cursor-not-allowed' 
-                    : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+                    ? 'bg-primary-light/50 cursor-not-allowed' 
+                    : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
                 }`}
                 type="submit"
                 disabled={loading}
@@ -404,27 +414,32 @@ export default function Home() {
             </form>
           </div>
           
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Your Domains</h2>
+          <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
+              <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path fillRule="evenodd" d="M10.496 2.132a1 1 0 00-.992 0l-7 4A1 1 0 003 8v7a1 1 0 100 2h14a1 1 0 100-2V8a1 1 0 00.496-1.868l-7-4zM6 9a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1zm3 1a1 1 0 012 0v3a1 1 0 11-2 0v-3zm5-1a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1z" clipRule="evenodd"></path>
+              </svg>
+              Your Domains
+            </h2>
             {domains.length === 0 ? (
-              <p className="text-gray-500">No domains yet. Add your first domain above.</p>
+              <p className="text-gray-400">No domains yet. Add your first domain above.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+              <div className="overflow-x-auto rounded-lg border border-dark-accent">
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead className="bg-dark-accent">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nameservers</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Verification</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Nameservers</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Verification</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-dark-lighter divide-y divide-gray-700">
                     {domains.map((domain) => (
-                      <tr key={domain._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{domain.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <tr key={domain._id} className="hover:bg-dark-light transition-colors duration-150">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{domain.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <ul className="list-disc pl-5">
                             {Array.isArray(domain.cloudflareNameservers) ? (
                               domain.cloudflareNameservers.map((ns, i) => (
@@ -438,8 +453,8 @@ export default function Home() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             domain.isActive 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-green-900 text-green-300' 
+                              : 'bg-gray-800 text-gray-300'
                           }`}>
                             {domain.isActive ? 'Active' : 'Inactive'}
                           </span>
@@ -447,46 +462,46 @@ export default function Home() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <div className="flex flex-wrap gap-2 items-center">
                             {domain.verificationStatus === 'pending' && (
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-900 text-yellow-300">Pending</span>
                             )}
                             {domain.verificationStatus === 'active' && (
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Verified</span>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-900 text-green-300">Verified</span>
                             )}
                             {domain.verificationStatus === 'inactive' && (
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Not Verified</span>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-900 text-red-300">Not Verified</span>
                             )}
                             {domain.verificationStatus === 'error' && (
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Error</span>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-900 text-red-300">Error</span>
                             )}
                             <button 
-                              className="ml-2 inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              className="ml-2 inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-primary-light bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => checkVerification(domain._id)}
                             >
                               Check
                             </button>
                             <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => updateZoneId(domain._id)}
                             >
                               Update Zone ID
                             </button>
                             <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-cyan-700 bg-cyan-100 hover:bg-cyan-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-cyan-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => checkDomainFullConfig(domain._id)}
                             >
                               Full Config Check
                             </button>
                             <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-orange-700 bg-orange-100 hover:bg-orange-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-orange-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => checkDomainFullConfig(domain._id, true)}
                             >
                               Repair Config
                             </button>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <button 
-                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                             onClick={() => deleteDomain(domain._id)}
                           >
                             Delete
@@ -504,11 +519,16 @@ export default function Home() {
       
       {activeTab === 'landingPages' && (
         <>
-          <div className="bg-white p-6 mb-6 rounded-lg shadow-sm border border-gray-200">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Create Landing Page</h2>
+          <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
+              <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd"></path>
+              </svg>
+              Create Landing Page
+            </h2>
             <form onSubmit={addLandingPage} className="space-y-4">
               <input
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="text"
                 placeholder="Name"
                 value={landingPageName}
@@ -516,20 +536,20 @@ export default function Home() {
               />
               
               <select
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
                 value={selectedDomainId}
                 onChange={(e) => setSelectedDomainId(e.target.value)}
               >
-                <option value="">Select a domain</option>
+                <option value="" className="bg-dark-lighter text-gray-400">Select a domain</option>
                 {domains.map((domain) => (
-                  <option key={domain._id} value={domain._id}>
+                  <option key={domain._id} value={domain._id} className="bg-dark-lighter text-white">
                     {domain.name}
                   </option>
                 ))}
               </select>
               
               <input
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="text"
                 placeholder="Subdomain"
                 value={subdomain}
@@ -537,7 +557,7 @@ export default function Home() {
               />
               
               <input
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="text"
                 placeholder="Affiliate URL"
                 value={affiliateUrl}
@@ -545,7 +565,7 @@ export default function Home() {
               />
               
               <input
-                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="text"
                 placeholder="Original URL"
                 value={originalUrl}
@@ -555,8 +575,8 @@ export default function Home() {
               <button 
                 className={`px-4 py-2 rounded-md text-white font-medium ${
                   loading 
-                    ? 'bg-blue-400 cursor-not-allowed' 
-                    : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+                    ? 'bg-primary-light/50 cursor-not-allowed' 
+                    : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
                 }`}
                 type="submit"
                 disabled={loading}
@@ -566,32 +586,37 @@ export default function Home() {
             </form>
           </div>
           
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Your Landing Pages</h2>
+          <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
+              <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path fillRule="evenodd" d="M10.496 2.132a1 1 0 00-.992 0l-7 4A1 1 0 003 8v7a1 1 0 100 2h14a1 1 0 100-2V8a1 1 0 00.496-1.868l-7-4zM6 9a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1zm3 1a1 1 0 012 0v3a1 1 0 11-2 0v-3zm5-1a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1z" clipRule="evenodd"></path>
+              </svg>
+              Your Landing Pages
+            </h2>
             {landingPages.length === 0 ? (
-              <p className="text-gray-500">No landing pages yet. Create your first landing page above.</p>
+              <p className="text-gray-400">No landing pages yet. Create your first landing page above.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+              <div className="overflow-x-auto rounded-lg border border-dark-accent">
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead className="bg-dark-accent">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Affiliate URL</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">URL</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Affiliate URL</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-dark-lighter divide-y divide-gray-700">
                     {landingPages.map((page) => (
-                      <tr key={page._id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{page.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-500 hover:text-blue-700">
+                      <tr key={page._id} className="hover:bg-dark-light transition-colors duration-150">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{page.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-primary-light hover:text-primary transition-colors duration-150">
                           <a href={getLandingPageUrl(page)} target="_blank" rel="noopener noreferrer">
                             {getLandingPageUrl(page)}
                           </a>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-500 hover:text-blue-700">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-primary-light hover:text-primary transition-colors duration-150">
                           <a href={page.affiliateUrl} target="_blank" rel="noopener noreferrer">
                             Affiliate Link
                           </a>
@@ -599,28 +624,28 @@ export default function Home() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             page.isActive 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-green-900 text-green-300' 
+                              : 'bg-gray-800 text-gray-300'
                           }`}>
                             {page.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => deleteLandingPage(page._id)}
                             >
                               Delete
                             </button>
                             <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-gray-700 bg-gray-100 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-gray-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => checkLandingPageConfig(page._id)}
                             >
                               Check Config
                             </button>
                             <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => checkLandingPageConfig(page._id, true)}
                             >
                               Repair
