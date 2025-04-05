@@ -39,17 +39,23 @@ export function middleware(request: NextRequest) {
   
   // If no subdomain or www, explicitly route to the root domain handler
   if (!hasSubdomain || hostname.startsWith('www.')) {
-    // Extract base URL for rewriting
-    const protocol = request.nextUrl.protocol;
-    const baseUrl = `${protocol}//${hostname}`;
-    
     // Root domain request - explicitly rewrite to (root) route handler
     console.log(`[Middleware] Root domain request: ${hostname}${pathname}`);
-    console.log(`[Middleware] Rewriting to: /(root)${pathname}`);
     
-    // Explicitly rewrite to the (root) group route
-    const rewriteUrl = new URL(`/(root)${pathname}`, baseUrl);
-    console.log(`[Middleware] Rewrite URL: ${rewriteUrl.toString()}`);
+    // Create an absolute URL using the current URL's origin for the rewrite
+    // This ensures we maintain the correct protocol and domain when rewriting
+    const url = new URL(request.url);
+    
+    // Build the full path to the root route handler
+    const rootPath = `/${pathname.startsWith('/') ? pathname.slice(1) : pathname}`;
+    const rewritePath = `/(root)${rootPath}`;
+    
+    console.log(`[Middleware] Rewriting root domain request to: ${rewritePath}`);
+    
+    // Explicitly rewrite to the (root) group route with the full URL including origin
+    const rewriteUrl = new URL(rewritePath, url.origin);
+    console.log(`[Middleware] Full rewrite URL: ${rewriteUrl.toString()}`);
+    
     console.log('----------- MIDDLEWARE END -----------');
     return NextResponse.rewrite(rewriteUrl);
   }
