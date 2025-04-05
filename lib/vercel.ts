@@ -62,7 +62,26 @@ export async function addDomainToVercel(domainName: string) {
     const data = await response.json();
     console.log(`Vercel domain addition response:`, JSON.stringify(data));
     
+    // Handle domain_already_in_use error as a success case
     if (!response.ok) {
+      if (data.error && data.error.code === 'domain_already_in_use' && data.error.projectId === VERCEL_PROJECT_ID) {
+        console.log(`Domain ${domainName} is already in use by this project, treating as a success case`);
+        return {
+          success: true,
+          domainName,
+          alreadyConfigured: true,
+          vercelDomain: data.error.domain || {},
+          configurationDnsRecords: [
+            {
+              name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ],
+          message: `Domain ${domainName} is already registered with this project`
+        };
+      }
+      
       throw new Error(`Failed to add domain to Vercel: ${JSON.stringify(data)}`);
     }
     
@@ -319,24 +338,65 @@ export async function addDomainAndSubdomainToVercel(domain: string, subdomain: s
       };
     }
     
-    // Add main domain first
+    // First check if the domain already exists in Vercel
+    let domainAlreadyInUse = false;
+    try {
+      const domainCheck = await checkDomainInVercel(domain);
+      domainAlreadyInUse = domainCheck.exists;
+      console.log(`Domain ${domain} exists check: ${domainAlreadyInUse}`);
+    } catch (error: any) {
+      console.warn(`Error checking if domain ${domain} exists, will try to add it:`, error);
+    }
+    
+    // Add main domain first (or use existing if already configured)
     let domainResult;
     try {
       domainResult = await addDomainToVercel(domain);
-      console.log(`Main domain ${domain} added to Vercel`);
-    } catch (error) {
-      console.warn(`Could not add main domain ${domain} to Vercel, it might already exist:`, error);
-      domainResult = { 
-        success: false, 
-        error,
-        configurationDnsRecords: [
-          {
-            name: '@',
-            type: 'CNAME',
-            value: 'cname.vercel-dns.com'
-          }
-        ]
-      };
+      console.log(`Main domain ${domain} added to Vercel or already exists`);
+    } catch (error: any) {
+      console.warn(`Could not add main domain ${domain} to Vercel:`, error);
+      
+      // For domain_already_in_use errors with our project, treat as success
+      let errorData = null;
+      try {
+        if (error.message && error.message.includes('{"error":')) {
+          errorData = JSON.parse(error.message.substring(error.message.indexOf('{')));
+        }
+      } catch (parseError) {
+        // Ignore parsing errors
+      }
+      
+      // If domain already in use by our project, treat as success
+      if (errorData && errorData.error && 
+          errorData.error.code === 'domain_already_in_use' && 
+          errorData.error.projectId === VERCEL_PROJECT_ID) {
+        console.log(`Domain ${domain} is already in use by this project, continuing with subdomain setup`);
+        domainResult = { 
+          success: true, 
+          alreadyConfigured: true,
+          domainName: domain,
+          vercelDomain: errorData.error.domain || {},
+          configurationDnsRecords: [
+            {
+              name: '@',
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ]
+        };
+      } else {
+        domainResult = { 
+          success: false, 
+          error,
+          configurationDnsRecords: [
+            {
+              name: '@',
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ]
+        };
+      }
     }
     
     // Then add subdomain
@@ -345,19 +405,50 @@ export async function addDomainAndSubdomainToVercel(domain: string, subdomain: s
     try {
       subdomainResult = await addDomainToVercel(fullSubdomain);
       console.log(`Subdomain ${fullSubdomain} added to Vercel`);
-    } catch (error) {
-      console.warn(`Could not add subdomain ${fullSubdomain} to Vercel, it might already exist:`, error);
-      subdomainResult = { 
-        success: false, 
-        error,
-        configurationDnsRecords: [
-          {
-            name: subdomain,
-            type: 'CNAME',
-            value: 'cname.vercel-dns.com'
-          }
-        ]
-      };
+    } catch (error: any) {
+      console.warn(`Could not add subdomain ${fullSubdomain} to Vercel:`, error);
+      
+      // For domain_already_in_use errors with our project, treat as success
+      let errorData = null;
+      try {
+        if (error.message && error.message.includes('{"error":')) {
+          errorData = JSON.parse(error.message.substring(error.message.indexOf('{')));
+        }
+      } catch (parseError) {
+        // Ignore parsing errors
+      }
+      
+      // If subdomain already in use by our project, treat as success
+      if (errorData && errorData.error && 
+          errorData.error.code === 'domain_already_in_use' && 
+          errorData.error.projectId === VERCEL_PROJECT_ID) {
+        console.log(`Subdomain ${fullSubdomain} is already in use by this project, continuing with setup`);
+        subdomainResult = { 
+          success: true, 
+          alreadyConfigured: true,
+          domainName: fullSubdomain,
+          vercelDomain: errorData.error.domain || {},
+          configurationDnsRecords: [
+            {
+              name: subdomain,
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ]
+        };
+      } else {
+        subdomainResult = { 
+          success: false, 
+          error,
+          configurationDnsRecords: [
+            {
+              name: subdomain,
+              type: 'CNAME',
+              value: 'cname.vercel-dns.com'
+            }
+          ]
+        };
+      }
     }
     
     return {

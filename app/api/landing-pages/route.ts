@@ -123,9 +123,29 @@ export async function POST(request: NextRequest) {
       vercelResult = await addDomainAndSubdomainToVercel(domain.name, subdomain);
       console.log(`Domain and subdomain added to Vercel: ${domain.name} and ${subdomain}.${domain.name}`);
     } catch (error: any) {
+      // Try to extract a more helpful error message
+      let errorMessage = 'Unknown error';
+      if (error.message) {
+        try {
+          // Check if this is a JSON string error from the Vercel API
+          if (error.message.includes('{"error":')) {
+            const errorData = JSON.parse(error.message.substring(error.message.indexOf('{')));
+            if (errorData.error && errorData.error.code === 'domain_already_in_use') {
+              errorMessage = `Domain ${domain.name} is already in use by project ${errorData.error.projectId}. Please choose a different domain or use the existing domain configuration.`;
+            } else {
+              errorMessage = errorData.error?.message || errorData.error?.code || 'API error';
+            }
+          } else {
+            errorMessage = error.message;
+          }
+        } catch (parseError) {
+          errorMessage = error.message;
+        }
+      }
+      
       console.error(`Error adding domain/subdomain to Vercel: ${domain.name}/${subdomain}`, error);
       return NextResponse.json(
-        { error: `Failed to add domain to Vercel: ${error.message || 'Unknown error'}` },
+        { error: `Failed to add domain to Vercel: ${errorMessage}` },
         { status: 500 }
       );
     }
