@@ -15,15 +15,17 @@ export function generateUniqueFilename(prefix: string, extension: string = 'png'
  * Upload an image to Vercel Blob Storage
  * @param imageUrl URL of the image to upload
  * @param filename Filename to use for the blob
- * @returns URL of the uploaded blob
+ * @param timeoutMs Timeout in milliseconds for fetching the image
+ * @returns URL of the uploaded blob or null if failed
  */
-export async function uploadImageToVercelBlob(imageUrl: string, filename: string): Promise<string> {
+export async function uploadImageToVercelBlob(imageUrl: string, filename: string, timeoutMs = 15000): Promise<string | null> {
   try {
     // Fetch the image as binary data
-    const imageData = await getImageAsBinary(imageUrl);
+    const imageData = await getImageAsBinary(imageUrl, timeoutMs);
     
     if (!imageData) {
-      throw new Error('Failed to fetch image data');
+      console.error(`Failed to fetch image data from ${imageUrl}`);
+      return null;
     }
     
     // Upload to Vercel Blob Storage
@@ -35,6 +37,6 @@ export async function uploadImageToVercelBlob(imageUrl: string, filename: string
     return blob.url;
   } catch (error) {
     console.error(`Error uploading image to Vercel Blob:`, error);
-    throw error;
+    return null;
   }
 } 
