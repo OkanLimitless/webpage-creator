@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
 // Domain type
@@ -47,6 +47,24 @@ export default function Home() {
   
   // Loading state
   const [loading, setLoading] = useState(false);
+  
+  // Custom dropdown state
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [dropdownRef]);
   
   // Fetch domains and landing pages
   useEffect(() => {
@@ -349,6 +367,12 @@ export default function Home() {
     }
   };
   
+  // Function to get domain name by ID
+  const getDomainNameById = (id: string): string => {
+    const domain = domains.find(d => d._id === id);
+    return domain ? domain.name : 'Select a domain';
+  };
+  
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 font-sans">
       <header className="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
@@ -535,18 +559,50 @@ export default function Home() {
                 onChange={(e) => setLandingPageName(e.target.value)}
               />
               
-              <select
-                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
-                value={selectedDomainId}
-                onChange={(e) => setSelectedDomainId(e.target.value)}
-              >
-                <option value="" className="bg-dark-lighter text-gray-400">Select a domain</option>
-                {domains.map((domain) => (
-                  <option key={domain._id} value={domain._id} className="bg-dark-lighter text-white">
-                    {domain.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={dropdownRef}>
+                <div 
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white cursor-pointer flex justify-between items-center"
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                >
+                  <span className={selectedDomainId ? 'text-white' : 'text-gray-500'}>
+                    {selectedDomainId ? getDomainNameById(selectedDomainId) : 'Select a domain'}
+                  </span>
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+                
+                {dropdownOpen && (
+                  <div className="absolute z-10 w-full mt-1 bg-dark-accent border border-dark-light rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div 
+                      className="p-3 text-gray-400 hover:bg-dark-light cursor-pointer"
+                      onClick={() => {
+                        setSelectedDomainId('');
+                        setDropdownOpen(false);
+                      }}
+                    >
+                      Select a domain
+                    </div>
+                    
+                    {domains.map((domain) => (
+                      <div 
+                        key={domain._id} 
+                        className={`p-3 hover:bg-dark-light cursor-pointer ${
+                          selectedDomainId === domain._id 
+                            ? 'bg-primary/20 text-primary-light font-medium' 
+                            : 'text-white'
+                        }`}
+                        onClick={() => {
+                          setSelectedDomainId(domain._id);
+                          setDropdownOpen(false);
+                        }}
+                      >
+                        {domain.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
