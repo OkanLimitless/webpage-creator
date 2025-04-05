@@ -3,78 +3,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-// Basic styling for the app
-const styles = {
-  container: {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '20px',
-    fontFamily: 'Arial, sans-serif',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-    padding: '10px 0',
-    borderBottom: '1px solid #eaeaea',
-  },
-  title: {
-    fontSize: '24px',
-    fontWeight: 'bold',
-  },
-  card: {
-    padding: '20px',
-    marginBottom: '20px',
-    borderRadius: '8px',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    backgroundColor: 'white',
-  },
-  button: {
-    padding: '10px 15px',
-    backgroundColor: '#0070f3',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  input: {
-    width: '100%',
-    padding: '8px 12px',
-    marginBottom: '10px',
-    borderRadius: '4px',
-    border: '1px solid #ddd',
-    fontSize: '14px',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse' as 'collapse',
-  },
-  tableHead: {
-    backgroundColor: '#f9f9f9',
-  },
-  tableCell: {
-    padding: '10px',
-    border: '1px solid #eaeaea',
-    textAlign: 'left' as const,
-  },
-  tabs: {
-    display: 'flex',
-    marginBottom: '20px',
-    borderBottom: '1px solid #eaeaea',
-  },
-  tab: {
-    padding: '10px 15px',
-    cursor: 'pointer',
-    marginRight: '5px',
-  },
-  activeTab: {
-    borderBottom: '2px solid #0070f3',
-    fontWeight: 'bold' as const,
-  },
-};
-
 // Domain type
 interface Domain {
   _id: string;
@@ -290,20 +218,22 @@ export default function Home() {
     }
   };
   
-  // Get domain name for a landing page
-  const getDomainName = (landingPage: LandingPage) => {
-    if (typeof landingPage.domainId === 'object' && landingPage.domainId !== null) {
-      return landingPage.domainId.name;
+  // Helper function to get landing page URL
+  const getLandingPageUrl = (page: LandingPage) => {
+    // Extract domain name
+    let domainName = '';
+    if (typeof page.domainId === 'string') {
+      // Find domain by ID
+      const domain = domains.find(d => d._id === page.domainId);
+      if (domain) {
+        domainName = domain.name;
+      }
+    } else {
+      // Domain object is already embedded
+      domainName = page.domainId.name;
     }
     
-    const domain = domains.find(d => d._id === landingPage.domainId);
-    return domain ? domain.name : 'Unknown';
-  };
-  
-  // Get full URL for a landing page
-  const getLandingPageUrl = (landingPage: LandingPage) => {
-    const domainName = getDomainName(landingPage);
-    return `http://${landingPage.subdomain}.${domainName}`;
+    return `https://${page.subdomain}.${domainName}`;
   };
   
   // Add this function to check verification status
@@ -420,26 +350,28 @@ export default function Home() {
   };
   
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>Webpage Creator</h1>
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 font-sans">
+      <header className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+        <h1 className="text-2xl font-bold text-gray-800">Webpage Creator</h1>
       </header>
       
-      <div style={styles.tabs}>
+      <div className="flex mb-6 border-b border-gray-200">
         <div 
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'domains' ? styles.activeTab : {}),
-          }}
+          className={`px-4 py-3 cursor-pointer mr-2 ${
+            activeTab === 'domains'
+              ? 'border-b-2 border-blue-500 font-semibold'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
           onClick={() => setActiveTab('domains')}
         >
           Domains
         </div>
         <div 
-          style={{
-            ...styles.tab,
-            ...(activeTab === 'landingPages' ? styles.activeTab : {}),
-          }}
+          className={`px-4 py-3 cursor-pointer mr-2 ${
+            activeTab === 'landingPages'
+              ? 'border-b-2 border-blue-500 font-semibold'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
           onClick={() => setActiveTab('landingPages')}
         >
           Landing Pages
@@ -448,18 +380,22 @@ export default function Home() {
       
       {activeTab === 'domains' && (
         <>
-          <div style={styles.card}>
-            <h2>Add Domain</h2>
-            <form onSubmit={addDomain}>
+          <div className="bg-white p-6 mb-6 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-xl font-semibold mb-4 text-gray-800">Add Domain</h2>
+            <form onSubmit={addDomain} className="space-y-4">
               <input
-                style={styles.input}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 type="text"
                 placeholder="Domain name (e.g., example.com)"
                 value={domainName}
                 onChange={(e) => setDomainName(e.target.value)}
               />
               <button 
-                style={styles.button} 
+                className={`px-4 py-2 rounded-md text-white font-medium ${
+                  loading 
+                    ? 'bg-blue-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+                }`}
                 type="submit"
                 disabled={loading}
               >
@@ -468,111 +404,99 @@ export default function Home() {
             </form>
           </div>
           
-          <div style={styles.card}>
-            <h2>Your Domains</h2>
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-xl font-semibold mb-4 text-gray-800">Your Domains</h2>
             {domains.length === 0 ? (
-              <p>No domains yet. Add your first domain above.</p>
+              <p className="text-gray-500">No domains yet. Add your first domain above.</p>
             ) : (
-              <table style={styles.table}>
-                <thead style={styles.tableHead}>
-                  <tr>
-                    <th style={styles.tableCell}>Domain</th>
-                    <th style={styles.tableCell}>Nameservers</th>
-                    <th style={styles.tableCell}>Status</th>
-                    <th style={styles.tableCell}>Verification</th>
-                    <th style={styles.tableCell}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {domains.map((domain) => (
-                    <tr key={domain._id}>
-                      <td style={styles.tableCell}>{domain.name}</td>
-                      <td style={styles.tableCell}>
-                        <ul>
-                          {Array.isArray(domain.cloudflareNameservers) ? (
-                            domain.cloudflareNameservers.map((ns, i) => (
-                              <li key={i}>{ns}</li>
-                            ))
-                          ) : (
-                            <li>Nameservers not available</li>
-                          )}
-                        </ul>
-                      </td>
-                      <td style={styles.tableCell}>
-                        {domain.isActive ? 'Active' : 'Inactive'}
-                      </td>
-                      <td style={styles.tableCell}>
-                        <div>
-                          {domain.verificationStatus === 'pending' && (
-                            <span style={{ color: 'orange' }}>Pending</span>
-                          )}
-                          {domain.verificationStatus === 'active' && (
-                            <span style={{ color: 'green' }}>Verified</span>
-                          )}
-                          {domain.verificationStatus === 'inactive' && (
-                            <span style={{ color: 'red' }}>Not Verified</span>
-                          )}
-                          {domain.verificationStatus === 'error' && (
-                            <span style={{ color: 'red' }}>Error</span>
-                          )}
-                          <button 
-                            style={{
-                              ...styles.button,
-                              backgroundColor: '#0070f3',
-                              marginLeft: '10px',
-                            }}
-                            onClick={() => checkVerification(domain._id)}
-                          >
-                            Check
-                          </button>
-                          <button 
-                            style={{
-                              ...styles.button,
-                              backgroundColor: '#28a745',
-                              marginLeft: '5px',
-                            }}
-                            onClick={() => updateZoneId(domain._id)}
-                          >
-                            Update Zone ID
-                          </button>
-                          <button 
-                            style={{
-                              ...styles.button,
-                              backgroundColor: '#17a2b8',
-                              marginLeft: '5px',
-                            }}
-                            onClick={() => checkDomainFullConfig(domain._id)}
-                          >
-                            Full Config Check
-                          </button>
-                          <button 
-                            style={{
-                              ...styles.button,
-                              backgroundColor: '#fd7e14',
-                              marginLeft: '5px',
-                            }}
-                            onClick={() => checkDomainFullConfig(domain._id, true)}
-                          >
-                            Repair Config
-                          </button>
-                        </div>
-                      </td>
-                      <td style={styles.tableCell}>
-                        <button 
-                          style={{
-                            ...styles.button,
-                            backgroundColor: '#dc3545',
-                            marginRight: '5px',
-                          }}
-                          onClick={() => deleteDomain(domain._id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Domain</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nameservers</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Verification</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {domains.map((domain) => (
+                      <tr key={domain._id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{domain.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <ul className="list-disc pl-5">
+                            {Array.isArray(domain.cloudflareNameservers) ? (
+                              domain.cloudflareNameservers.map((ns, i) => (
+                                <li key={i}>{ns}</li>
+                              ))
+                            ) : (
+                              <li>Nameservers not available</li>
+                            )}
+                          </ul>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            domain.isActive 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {domain.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex flex-wrap gap-2 items-center">
+                            {domain.verificationStatus === 'pending' && (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Pending</span>
+                            )}
+                            {domain.verificationStatus === 'active' && (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Verified</span>
+                            )}
+                            {domain.verificationStatus === 'inactive' && (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Not Verified</span>
+                            )}
+                            {domain.verificationStatus === 'error' && (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Error</span>
+                            )}
+                            <button 
+                              className="ml-2 inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              onClick={() => checkVerification(domain._id)}
+                            >
+                              Check
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                              onClick={() => updateZoneId(domain._id)}
+                            >
+                              Update Zone ID
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-cyan-700 bg-cyan-100 hover:bg-cyan-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+                              onClick={() => checkDomainFullConfig(domain._id)}
+                            >
+                              Full Config Check
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-orange-700 bg-orange-100 hover:bg-orange-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                              onClick={() => checkDomainFullConfig(domain._id, true)}
+                            >
+                              Repair Config
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <button 
+                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                            onClick={() => deleteDomain(domain._id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </>
@@ -580,11 +504,11 @@ export default function Home() {
       
       {activeTab === 'landingPages' && (
         <>
-          <div style={styles.card}>
-            <h2>Create Landing Page</h2>
-            <form onSubmit={addLandingPage}>
+          <div className="bg-white p-6 mb-6 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-xl font-semibold mb-4 text-gray-800">Create Landing Page</h2>
+            <form onSubmit={addLandingPage} className="space-y-4">
               <input
-                style={styles.input}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 type="text"
                 placeholder="Name"
                 value={landingPageName}
@@ -592,7 +516,7 @@ export default function Home() {
               />
               
               <select
-                style={styles.input}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 value={selectedDomainId}
                 onChange={(e) => setSelectedDomainId(e.target.value)}
               >
@@ -605,7 +529,7 @@ export default function Home() {
               </select>
               
               <input
-                style={styles.input}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 type="text"
                 placeholder="Subdomain"
                 value={subdomain}
@@ -613,7 +537,7 @@ export default function Home() {
               />
               
               <input
-                style={styles.input}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 type="text"
                 placeholder="Affiliate URL"
                 value={affiliateUrl}
@@ -621,7 +545,7 @@ export default function Home() {
               />
               
               <input
-                style={styles.input}
+                className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 type="text"
                 placeholder="Original URL"
                 value={originalUrl}
@@ -629,7 +553,11 @@ export default function Home() {
               />
               
               <button 
-                style={styles.button} 
+                className={`px-4 py-2 rounded-md text-white font-medium ${
+                  loading 
+                    ? 'bg-blue-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+                }`}
                 type="submit"
                 disabled={loading}
               >
@@ -638,73 +566,72 @@ export default function Home() {
             </form>
           </div>
           
-          <div style={styles.card}>
-            <h2>Your Landing Pages</h2>
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <h2 className="text-xl font-semibold mb-4 text-gray-800">Your Landing Pages</h2>
             {landingPages.length === 0 ? (
-              <p>No landing pages yet. Create your first landing page above.</p>
+              <p className="text-gray-500">No landing pages yet. Create your first landing page above.</p>
             ) : (
-              <table style={styles.table}>
-                <thead style={styles.tableHead}>
-                  <tr>
-                    <th style={styles.tableCell}>Name</th>
-                    <th style={styles.tableCell}>URL</th>
-                    <th style={styles.tableCell}>Affiliate URL</th>
-                    <th style={styles.tableCell}>Status</th>
-                    <th style={styles.tableCell}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {landingPages.map((page) => (
-                    <tr key={page._id}>
-                      <td style={styles.tableCell}>{page.name}</td>
-                      <td style={styles.tableCell}>
-                        <a href={getLandingPageUrl(page)} target="_blank" rel="noopener noreferrer">
-                          {getLandingPageUrl(page)}
-                        </a>
-                      </td>
-                      <td style={styles.tableCell}>
-                        <a href={page.affiliateUrl} target="_blank" rel="noopener noreferrer">
-                          Affiliate Link
-                        </a>
-                      </td>
-                      <td style={styles.tableCell}>
-                        {page.isActive ? 'Active' : 'Inactive'}
-                      </td>
-                      <td style={styles.tableCell}>
-                        <button 
-                          style={{
-                            ...styles.button,
-                            backgroundColor: '#dc3545',
-                            marginRight: '5px',
-                          }}
-                          onClick={() => deleteLandingPage(page._id)}
-                        >
-                          Delete
-                        </button>
-                        <button 
-                          style={{
-                            ...styles.button,
-                            backgroundColor: '#6c757d',
-                            marginRight: '5px',
-                          }}
-                          onClick={() => checkLandingPageConfig(page._id)}
-                        >
-                          Check Config
-                        </button>
-                        <button 
-                          style={{
-                            ...styles.button,
-                            backgroundColor: '#28a745',
-                          }}
-                          onClick={() => checkLandingPageConfig(page._id, true)}
-                        >
-                          Repair
-                        </button>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Affiliate URL</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {landingPages.map((page) => (
+                      <tr key={page._id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{page.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-500 hover:text-blue-700">
+                          <a href={getLandingPageUrl(page)} target="_blank" rel="noopener noreferrer">
+                            {getLandingPageUrl(page)}
+                          </a>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-500 hover:text-blue-700">
+                          <a href={page.affiliateUrl} target="_blank" rel="noopener noreferrer">
+                            Affiliate Link
+                          </a>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            page.isActive 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {page.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <div className="flex space-x-2">
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                              onClick={() => deleteLandingPage(page._id)}
+                            >
+                              Delete
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-gray-700 bg-gray-100 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                              onClick={() => checkLandingPageConfig(page._id)}
+                            >
+                              Check Config
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                              onClick={() => checkLandingPageConfig(page._id, true)}
+                            >
+                              Repair
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </>

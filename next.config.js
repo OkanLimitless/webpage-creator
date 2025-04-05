@@ -22,6 +22,14 @@ const nextConfig = {
   // Disable strict mode for route change to avoid double-rendering in development
   // This can help troubleshoot redirect issues
   reactStrictMode: false,
+  // Enable SWC minification for better performance
+  swcMinify: true,
+  // Optimize for Vercel deployment
+  experimental: {
+    optimizeCss: true,
+  },
+  // Specify the output type for better compatibility with Vercel
+  output: 'standalone',
 }
 
 module.exports = nextConfig 
