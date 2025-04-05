@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false,
   images: {
     domains: ['storage.googleapis.com', 'bestdiscountsstore.com', 'api.screenshotmachine.com', 'public.blob.vercel-storage.com'],
   },
@@ -19,15 +19,8 @@ const nextConfig = {
       }
     ]
   },
-  // Disable strict mode for route change to avoid double-rendering in development
-  // This can help troubleshoot redirect issues
-  reactStrictMode: false,
   // Enable SWC minification for better performance
   swcMinify: true,
-  // Optimize for Vercel deployment
-  experimental: {
-    optimizeCss: true,
-  },
   // Specify the output type for better compatibility with Vercel
   output: 'standalone',
 }

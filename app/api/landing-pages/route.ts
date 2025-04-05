@@ -30,6 +30,9 @@ const mockLandingPages = [
   },
 ];
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/landing-pages - Get all landing pages
 export async function GET() {
   try {

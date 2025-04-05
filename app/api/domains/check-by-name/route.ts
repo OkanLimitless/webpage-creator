@@ -3,6 +3,9 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { Domain } from '@/lib/models/Domain';
 import { getZoneIdByName, checkDomainActivationByName } from '@/lib/cloudflare';
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/domains/check-by-name?name=example.com - Check and update a domain by name
 export async function GET(request: NextRequest) {
   try {

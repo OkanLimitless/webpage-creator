@@ -4,6 +4,9 @@ import { Domain } from '@/lib/models/Domain';
 import { checkDomainActivationByName } from '@/lib/cloudflare';
 import { checkDomainInVercel, addDomainToVercel } from '@/lib/vercel';
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 interface Params {
   params: {
     id: string;

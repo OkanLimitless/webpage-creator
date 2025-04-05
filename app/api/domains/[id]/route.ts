@@ -9,8 +9,14 @@ interface Params {
   };
 }
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/domains/[id] - Get a domain by ID
-export async function GET(request: NextRequest, { params }: Params) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     await connectToDatabase();
     const domain = await Domain.findById(params.id);

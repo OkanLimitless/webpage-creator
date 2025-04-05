@@ -10,6 +10,9 @@ interface Params {
   };
 }
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/landing-pages/[id] - Get a landing page by ID
 export async function GET(request: NextRequest, { params }: Params) {
   try {

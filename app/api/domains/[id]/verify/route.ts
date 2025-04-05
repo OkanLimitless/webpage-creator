@@ -9,6 +9,9 @@ interface Params {
   };
 }
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/domains/[id]/verify - Check verification status of a domain
 export async function GET(request: NextRequest, { params }: Params) {
   try {

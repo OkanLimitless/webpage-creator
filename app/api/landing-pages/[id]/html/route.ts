@@ -3,6 +3,9 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { LandingPage } from '@/lib/models/LandingPage';
 import { generateLandingPageHtml } from '@/lib/landingPageGenerator';
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 interface Params {
   params: {
     id: string;

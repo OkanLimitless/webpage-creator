@@ -22,6 +22,9 @@ const mockDomains = [
   },
 ];
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/domains - Get all domains
 export async function GET() {
   try {

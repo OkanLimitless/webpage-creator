@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { takeScreenshots } from '@/lib/screenshot';
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // POST /api/screenshots - Take screenshots of a URL
 export async function POST(request: NextRequest) {
   try {

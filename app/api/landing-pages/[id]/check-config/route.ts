@@ -11,6 +11,9 @@ interface Params {
   };
 }
 
+// Mark this route as dynamic to prevent static optimization issues
+export const dynamic = 'force-dynamic';
+
 // GET /api/landing-pages/[id]/check-config - Check configuration status
 export async function GET(request: NextRequest, { params }: Params) {
   try {
