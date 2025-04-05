@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { LandingPage } from '@/lib/models/LandingPage';
 import { Domain } from '@/lib/models/Domain';
 import { getDnsRecords, deleteDnsRecord } from '@/lib/cloudflare';
+import { deleteFromVercelBlob } from '@/lib/vercelBlobStorage';
 
 interface Params {
   params: {
@@ -49,6 +50,13 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       );
     }
     
+    // Track deletion operations and their results
+    const deletionResults = {
+      dnsRecordsDeleted: false,
+      screenshotsDeleted: false,
+      landingPageDeleted: false,
+    };
+    
     // Get the domain
     const domain = await Domain.findById(landingPage.domainId);
     if (!domain) {
@@ -69,23 +77,61 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       const fqdn = `${landingPage.subdomain}.${domain.name}`;
       console.log(`Looking up DNS records for ${fqdn}`);
       
-      // Get records matching the full domain name
-      const dnsRecords = await getDnsRecords(fqdn, domain.cloudflareZoneId);
-      if (dnsRecords && dnsRecords.length > 0) {
-        // Delete all matching DNS records
-        for (const record of dnsRecords) {
-          console.log(`Deleting DNS record ${record.id} with name ${record.name}`);
-          await deleteDnsRecord(record.id, domain.cloudflareZoneId);
+      try {
+        // Get records matching the full domain name
+        const dnsRecords = await getDnsRecords(fqdn, domain.cloudflareZoneId);
+        if (dnsRecords && dnsRecords.length > 0) {
+          // Delete all matching DNS records
+          for (const record of dnsRecords) {
+            console.log(`Deleting DNS record ${record.id} with name ${record.name}`);
+            await deleteDnsRecord(record.id, domain.cloudflareZoneId);
+          }
+          deletionResults.dnsRecordsDeleted = true;
+        } else {
+          console.warn(`No DNS records found for ${fqdn}`);
         }
-      } else {
-        console.warn(`No DNS records found for ${fqdn}`);
+      } catch (dnsError) {
+        console.error('Error deleting DNS records:', dnsError);
+        // Continue with deletion even if DNS deletion fails
       }
     }
     
-    // Delete the landing page
-    await LandingPage.findByIdAndDelete(params.id);
+    // Delete screenshot files from Vercel Blob Storage
+    try {
+      console.log('Deleting screenshot files from Vercel Blob Storage');
+      
+      // Check if the landing page has screenshot URLs
+      if (landingPage.desktopScreenshotUrl) {
+        const desktopDeleted = await deleteFromVercelBlob(landingPage.desktopScreenshotUrl);
+        console.log(`Desktop screenshot deletion result: ${desktopDeleted ? 'Success' : 'Failed'}`);
+      }
+      
+      if (landingPage.mobileScreenshotUrl) {
+        const mobileDeleted = await deleteFromVercelBlob(landingPage.mobileScreenshotUrl);
+        console.log(`Mobile screenshot deletion result: ${mobileDeleted ? 'Success' : 'Failed'}`);
+      }
+      
+      deletionResults.screenshotsDeleted = true;
+    } catch (blobError) {
+      console.error('Error deleting screenshot files:', blobError);
+      // Continue with landing page deletion even if blob deletion fails
+    }
     
-    return NextResponse.json({ success: true });
+    // Delete the landing page
+    try {
+      await LandingPage.findByIdAndDelete(params.id);
+      deletionResults.landingPageDeleted = true;
+      console.log(`Landing page ${params.id} deleted successfully`);
+    } catch (dbError) {
+      console.error('Error deleting landing page from database:', dbError);
+      throw dbError; // Re-throw database errors as they are critical
+    }
+    
+    return NextResponse.json({ 
+      success: true,
+      message: 'Landing page deleted successfully',
+      deletionResults
+    });
   } catch (error) {
     console.error('Error deleting landing page:', error);
     return NextResponse.json(
