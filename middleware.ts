@@ -2,11 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // This function can be marked `async` if using `await` inside
 export function middleware(request: NextRequest) {
+  // Set up detailed logging for debugging
+  console.log('----------- MIDDLEWARE START -----------');
+  
   // Get hostname from request (e.g. demo.example.com, demo.localhost:3000)
   const hostname = request.headers.get('host') || '';
   
   // Get the pathname from the URL (e.g. /api/landing-pages, /about, etc.)
   const pathname = request.nextUrl.pathname;
+  
+  console.log(`[Middleware] Processing request: ${hostname}${pathname}`);
+  console.log('[Middleware] Full URL:', request.url);
   
   // If it's a request to the public assets or API, skip routing middleware
   if (
@@ -16,17 +22,36 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/vercel') ||
     pathname.startsWith('/favicon')
   ) {
+    console.log('[Middleware] Skipping middleware for asset/API path');
+    console.log('----------- MIDDLEWARE END -----------');
+    return NextResponse.next();
+  }
+
+  // For Vercel preview URLs, just pass through (handled in route handlers)
+  if (hostname.includes('vercel.app')) {
+    console.log('[Middleware] Vercel preview URL detected, passing through');
+    console.log('----------- MIDDLEWARE END -----------');
     return NextResponse.next();
   }
 
   // Check if the hostname has a subdomain
   const hasSubdomain = hasValidSubdomain(hostname);
   
-  // If no subdomain or www, let the root domain handler take care of it
+  // If no subdomain or www, explicitly route to the root domain handler
   if (!hasSubdomain || hostname.startsWith('www.')) {
-    // Root domain request - pass to root page handler
+    // Extract base URL for rewriting
+    const protocol = request.nextUrl.protocol;
+    const baseUrl = `${protocol}//${hostname}`;
+    
+    // Root domain request - explicitly rewrite to (root) route handler
     console.log(`[Middleware] Root domain request: ${hostname}${pathname}`);
-    return NextResponse.next();
+    console.log(`[Middleware] Rewriting to: /(root)${pathname}`);
+    
+    // Explicitly rewrite to the (root) group route
+    const rewriteUrl = new URL(`/(root)${pathname}`, baseUrl);
+    console.log(`[Middleware] Rewrite URL: ${rewriteUrl.toString()}`);
+    console.log('----------- MIDDLEWARE END -----------');
+    return NextResponse.rewrite(rewriteUrl);
   }
   
   // For requests with a subdomain (e.g., landing.example.com), rewrite to subdomain route
@@ -34,7 +59,10 @@ export function middleware(request: NextRequest) {
   console.log(`[Middleware] Subdomain request: ${subdomain}.${hostname}${pathname}`);
   
   // Rewrite the URL to include the subdomain in the path
-  return NextResponse.rewrite(new URL(`/${subdomain}${pathname}`, request.url));
+  const rewriteUrl = new URL(`/${subdomain}${pathname}`, request.url);
+  console.log(`[Middleware] Rewriting to: ${rewriteUrl.toString()}`);
+  console.log('----------- MIDDLEWARE END -----------');
+  return NextResponse.rewrite(rewriteUrl);
 }
 
 // Function to check if a hostname has a valid subdomain

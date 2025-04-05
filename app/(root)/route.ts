@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
   // Set up detailed logging for debugging
   console.log('----------- ROOT DOMAIN ROUTE HANDLER START -----------');
   console.log('Request URL:', request.url);
+  console.log('Request headers:', Object.fromEntries(request.headers.entries()));
   console.log('Request host:', request.headers.get('host'));
+  console.log('Request method:', request.method);
+  console.log('Request pathname:', request.nextUrl.pathname);
   
   try {
     await connectToDatabase();
@@ -38,10 +41,69 @@ export async function GET(request: NextRequest) {
     
     if (!domainDoc) {
       console.error(`Domain not found in database: ${domain}`);
-      return new NextResponse(`Domain not found: ${domain}`, { status: 404 });
+      console.log(`Checking all domains in database...`);
+      const allDomains = await Domain.find({}).select('name isActive');
+      console.log('Available domains:', allDomains.map(d => `${d.name} (${d.isActive ? 'active' : 'inactive'})`));
+      
+      return new NextResponse(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Domain Not Found</title>
+          <style>
+            body { 
+              font-family: system-ui, sans-serif; 
+              display: flex; 
+              justify-content: center; 
+              align-items: center; 
+              height: 100vh; 
+              margin: 0;
+              padding: 20px;
+              text-align: center;
+              background-color: #f9fafb;
+            }
+            .error-container {
+              max-width: 600px;
+              padding: 40px;
+              background-color: white;
+              border-radius: 8px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+            h1 { color: #ef4444; margin-bottom: 10px; }
+            h2 { color: #1f2937; margin-bottom: 20px; }
+            p { color: #6b7280; margin-bottom: 15px; }
+            code { 
+              background-color: #f3f4f6; 
+              padding: 2px 4px; 
+              border-radius: 4px;
+              font-family: monospace;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="error-container">
+            <h1>Domain Not Found</h1>
+            <h2>${domain}</h2>
+            <p>This domain is not registered in our system. If you believe this is an error, please check the domain name and try again.</p>
+            <p>Debug info: Request received at ${new Date().toISOString()}</p>
+          </div>
+        </body>
+        </html>
+      `, { 
+        status: 404,
+        headers: {
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-store, must-revalidate',
+          'X-Content-Type-Options': 'nosniff',
+        }
+      });
     }
     
     console.log(`Found domain in database: ${domainDoc.name} (ID: ${domainDoc._id})`);
+    console.log(`Domain active status: ${domainDoc.isActive ? 'Active' : 'Inactive'}`);
+    console.log(`Domain verification status: ${domainDoc.verificationStatus || 'Unknown'}`);
     
     // Find the root page for this domain
     console.log(`Looking up root page for domain ID ${domainDoc._id}`);
@@ -70,14 +132,22 @@ export async function GET(request: NextRequest) {
               text-align: center;
               background-color: #f9fafb;
             }
+            .container {
+              max-width: 600px;
+              padding: 40px;
+              background-color: white;
+              border-radius: 8px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
             h1 { color: #3b82f6; margin-bottom: 10px; }
-            p { color: #6b7280; max-width: 500px; }
+            p { color: #6b7280; margin-bottom: 15px; }
           </style>
         </head>
         <body>
-          <div>
+          <div class="container">
             <h1>${domain}</h1>
             <p>Welcome to our website. We're working on adding content to make your experience better.</p>
+            <p>This domain is registered and active, but no custom root page has been created yet.</p>
           </div>
         </body>
         </html>
@@ -91,11 +161,13 @@ export async function GET(request: NextRequest) {
     }
     
     console.log(`Found root page: ${rootPage.title} (ID: ${rootPage._id})`);
+    console.log(`Root page active status: ${rootPage.isActive ? 'Active' : 'Inactive'}`);
     
     // Generate the HTML for the root page
     console.log('Generating root page HTML');
     const html = generateRootPageHtml(rootPage);
     
+    console.log('HTML generated successfully, content length:', html.length);
     console.log('----------- ROOT DOMAIN ROUTE HANDLER END -----------');
     
     // Return the HTML with correct content type and headers
@@ -108,11 +180,66 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error serving root page:', error);
+    console.error('Error stack:', error.stack);
     console.log('----------- ROOT DOMAIN ROUTE HANDLER ERROR END -----------');
-    return new NextResponse('Internal Server Error: ' + (error.message || 'Unknown error'), { 
+    
+    // Return a user-friendly error page
+    return new NextResponse(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Error</title>
+        <style>
+          body { 
+            font-family: system-ui, sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            background-color: #f9fafb;
+          }
+          .error-container {
+            max-width: 600px;
+            padding: 40px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          }
+          h1 { color: #ef4444; margin-bottom: 10px; }
+          p { color: #6b7280; margin-bottom: 15px; }
+          .error-details {
+            background-color: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="error-container">
+          <h1>Oops! Something went wrong</h1>
+          <p>We encountered an error while processing your request. Our team has been notified.</p>
+          <div class="error-details">
+            Error: ${error.message || 'Unknown error'}<br>
+            Request Time: ${new Date().toISOString()}
+          </div>
+        </div>
+      </body>
+      </html>
+    `, { 
       status: 500,
       headers: {
         'Content-Type': 'text/html',
+        'Cache-Control': 'no-store, must-revalidate',
+        'X-Content-Type-Options': 'nosniff',
       }
     });
   }
