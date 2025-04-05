@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import GenerateRootPageButton from './components/GenerateRootPageButton';
+import ViewRootPageButton from './components/ViewRootPageButton';
 
 // Domain type
 interface Domain {
@@ -14,6 +16,8 @@ interface Domain {
   cloudflareZoneId?: string;
   verificationStatus: string;
   verificationKey?: string;
+  hasRootPage?: boolean;
+  rootPageId?: string;
 }
 
 // Landing page type
@@ -77,8 +81,34 @@ export default function Home() {
     try {
       const response = await fetch('/api/domains');
       const data = await response.json();
+      
       // Ensure we always have an array, even if the API returns something unexpected
-      setDomains(Array.isArray(data) ? data : []);
+      const domainsList = Array.isArray(data) ? data : [];
+      
+      // Check if each domain has a root page
+      const domainsWithRootPageStatus = await Promise.all(
+        domainsList.map(async (domain) => {
+          try {
+            const rootPageResponse = await fetch(`/api/domains/${domain._id}/has-root-page`);
+            const rootPageData = await rootPageResponse.json();
+            
+            return {
+              ...domain,
+              hasRootPage: rootPageData.hasRootPage,
+              rootPageId: rootPageData.rootPageId
+            };
+          } catch (error) {
+            console.error(`Error checking root page for domain ${domain.name}:`, error);
+            return {
+              ...domain,
+              hasRootPage: false,
+              rootPageId: null
+            };
+          }
+        })
+      );
+      
+      setDomains(domainsWithRootPageStatus);
     } catch (error) {
       console.error('Error fetching domains:', error);
       // Set an empty array on error
@@ -382,6 +412,12 @@ export default function Home() {
           </svg>
           Webpage Creator
         </h1>
+        <a 
+          href="/admin/domains" 
+          className="px-3 py-2 rounded-md text-white text-sm font-medium bg-primary hover:bg-primary-dark transition-colors duration-200"
+        >
+          Advanced Admin
+        </a>
       </header>
       
       <div className="flex mb-6 border-b border-gray-700">
@@ -456,6 +492,7 @@ export default function Home() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Nameservers</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Verification</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Root Page</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -523,13 +560,38 @@ export default function Home() {
                             </button>
                           </div>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {domain.hasRootPage ? (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-900 text-green-300">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-300">
+                              Not Created
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                          <button 
-                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                            onClick={() => deleteDomain(domain._id)}
-                          >
-                            Delete
-                          </button>
+                          <div className="flex space-x-2">
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                              onClick={() => deleteDomain(domain._id)}
+                            >
+                              Delete
+                            </button>
+                            
+                            {domain.hasRootPage ? (
+                              <ViewRootPageButton domainName={domain.name} />
+                            ) : (
+                              domain.verificationStatus === 'active' && (
+                                <GenerateRootPageButton 
+                                  domainId={domain._id} 
+                                  domainName={domain.name}
+                                  onSuccess={fetchDomains}
+                                />
+                              )
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
