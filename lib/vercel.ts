@@ -173,14 +173,16 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
 /**
  * Verify domain in Vercel project
  * @param domainName The domain name to verify
+ * @param projectId Optional project ID (uses VERCEL_PROJECT_ID from env if not provided)
  * @returns Response from Vercel API
  */
-export async function verifyDomainInVercel(domainName: string) {
+export async function verifyDomainInVercel(domainName: string, projectId?: string) {
   try {
-    console.log(`Verifying domain ${domainName} in Vercel...`);
+    const targetProjectId = projectId || VERCEL_PROJECT_ID;
+    console.log(`Verifying domain ${domainName} in Vercel project ${targetProjectId}...`);
     
     // In development with missing credentials, return mock success
-    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
+    if (isDevelopment && (!process.env.VERCEL_TOKEN || (!targetProjectId && !process.env.VERCEL_PROJECT_ID))) {
       console.log('Using mock Vercel domain verification in development mode');
       return {
         success: true,
@@ -192,7 +194,7 @@ export async function verifyDomainInVercel(domainName: string) {
     }
     
     // Prepare API endpoint
-    let url = `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains/${domainName}/verify`;
+    let url = `https://api.vercel.com/v9/projects/${targetProjectId}/domains/${domainName}/verify`;
     
     // Add team ID if available
     if (VERCEL_TEAM_ID) {
@@ -873,6 +875,128 @@ async function setDeploymentAlias(deploymentId: string, alias: string): Promise<
 }
 
 /**
+ * Get all projects from Vercel
+ */
+async function getAllProjects(): Promise<any[]> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = 'https://api.vercel.com/v9/projects';
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get projects: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data.projects || [];
+  } catch (error: any) {
+    console.error('Error getting projects:', error);
+    throw error;
+  }
+}
+
+/**
+ * Remove a domain from all projects (except the specified target project)
+ */
+async function removeDomainFromAllProjects(domainName: string, exceptProjectId?: string): Promise<boolean> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    console.log(`Removing domain ${domainName} from all projects (except ${exceptProjectId || 'none'})...`);
+    
+    // In development mode, just return success
+    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
+      console.log('Running in development mode, skipping domain removal');
+      return true;
+    }
+    
+    // First, get a list of all projects
+    const projects = await getAllProjects();
+    console.log(`Found ${projects.length} projects to check for domain ${domainName}`);
+    
+    // Track if we found and removed the domain from any project
+    let foundAndRemoved = false;
+    
+    // For each project, check if it has the domain
+    for (const project of projects) {
+      // Skip the excepted project if provided
+      if (exceptProjectId && project.id === exceptProjectId) {
+        console.log(`Skipping specified project ${project.id} (${project.name})`);
+        continue;
+      }
+      
+      try {
+        // First check if this project has the domain
+        const domains = await getProjectDomains(project.id);
+        
+        const hasDomain = domains.some((d: any) => 
+          d.name.toLowerCase() === domainName.toLowerCase());
+        
+        if (hasDomain) {
+          console.log(`Found domain ${domainName} in project ${project.id} (${project.name})`);
+          
+          // Prepare API endpoint for deletion
+          let url = `https://api.vercel.com/v9/projects/${project.id}/domains/${domainName}`;
+          if (VERCEL_TEAM_ID) {
+            url += `?teamId=${VERCEL_TEAM_ID}`;
+          }
+          
+          // Delete the domain from this project
+          const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${VERCEL_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.status === 204 || response.ok) {
+            console.log(`Successfully removed domain ${domainName} from project ${project.id} (${project.name})`);
+            foundAndRemoved = true;
+          } else {
+            const errorData = await response.json();
+            console.warn(`Failed to remove domain from project ${project.id}: ${JSON.stringify(errorData)}`);
+          }
+        } else {
+          console.log(`Domain ${domainName} not found in project ${project.id} (${project.name})`);
+        }
+      } catch (projectError) {
+        console.warn(`Error checking project ${project.id} for domain: ${projectError}`);
+        // Continue to next project
+      }
+    }
+    
+    return foundAndRemoved;
+  } catch (error) {
+    console.error(`Error removing domain ${domainName} from projects:`, error);
+    return false;
+  }
+}
+
+/**
  * Main function to handle domain deployment
  */
 export async function deployDomain(domainName: string): Promise<{
@@ -886,35 +1010,51 @@ export async function deployDomain(domainName: string): Promise<{
   try {
     console.log(`Starting deployment process for domain: ${domainName}`);
     
+    // 0. First, clean up any existing domain associations
+    console.log(`Cleaning up domain ${domainName} from any existing projects...`);
+    try {
+      const cleanupResult = await removeDomainFromAllProjects(domainName);
+      if (cleanupResult) {
+        console.log(`Domain ${domainName} was found and removed from other projects`);
+      } else {
+        console.log(`Domain ${domainName} was not found in any other projects or couldn't be removed`);
+      }
+    } catch (cleanupError: any) {
+      console.warn(`Error during domain cleanup (continuing anyway): ${cleanupError.message}`);
+    }
+    
     // 1. Create a project for the domain if it doesn't exist
     const project = await createVercelProject(domainName);
     console.log(`Project created/found with ID: ${project.id}`);
     
     // 2. Try to add the domain to the project explicitly
-    // Note: We already add the domain to the project in createVercelProject,
-    // but we'll try again here to ensure it's properly configured and to handle any errors
     try {
       console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
       const domainAddResult = await addDomainToVercel(domainName, project.id);
       
-      // If domain is already in use by a different project, we need to handle that
+      // If domain is still in use by a different project
       if (!domainAddResult.success && 
           domainAddResult.error && 
           domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
-        console.warn(`Cannot deploy domain ${domainName} because it's already in use by project ${domainAddResult.error.projectId}`);
-        throw new Error(`Cannot add domain to project: ${domainName} is already in use by project ${domainAddResult.error.projectId}`);
+        
+        console.warn(`Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}. 
+          This likely means the cleanup step failed or the domain can't be removed. Aborting deployment.`);
+        throw new Error(`Cannot proceed with deployment: ${domainName} is still in use by project ${domainAddResult.error.projectId}`);
       }
+      
+      console.log(`Domain ${domainName} successfully added/confirmed to project ${project.id}`);
     } catch (domainError: any) {
-      // If we can't add the domain to the project, log and continue - we might still be able to deploy
-      console.warn(`Error adding domain to project, continuing with deployment: ${domainError.message}`);
+      console.error(`Failed to add domain to project: ${domainError.message}`);
+      throw new Error(`Domain configuration failed: ${domainError.message}`);
     }
     
     // 3. Create a deployment for the project
     const deployment = await createDeployment(project.id!, domainName);
     console.log(`Deployment created with ID: ${deployment.id}`);
     
-    // Wait a moment for deployment to initialize
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait a bit longer for deployment to initialize
+    console.log('Waiting for deployment to initialize (10 seconds)...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
     
     // 4. Check deployment status to ensure it's ready
     let deploymentStatus;
@@ -933,6 +1073,15 @@ export async function deployDomain(domainName: string): Promise<{
     } catch (aliasError) {
       console.error('Error setting deployment alias:', aliasError);
       // Continue anyway as the domain might be set up through the earlier process
+    }
+    
+    // 6. Verify the domain to ensure it's properly configured
+    try {
+      console.log(`Verifying domain ${domainName} for project ${project.id}`);
+      const verificationResult = await verifyDomainInVercel(domainName, project.id);
+      console.log(`Domain verification initiated: ${JSON.stringify(verificationResult)}`);
+    } catch (verifyError: any) {
+      console.warn(`Error during domain verification (continuing anyway): ${verifyError.message}`);
     }
     
     // Generate URLs for both the Vercel deployment and the custom domain
