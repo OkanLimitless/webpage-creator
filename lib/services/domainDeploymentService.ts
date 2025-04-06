@@ -79,8 +79,12 @@ async function processDomainDeployment(
   domainId: mongoose.Types.ObjectId,
   deploymentRecordId: mongoose.Types.ObjectId
 ): Promise<void> {
+  const startTime = Date.now();
+  console.log(`[${new Date().toISOString()}] Starting deployment process for ${domainName} (Deployment ID: ${deploymentRecordId})`);
+  
   try {
     await connectToDatabase();
+    console.log(`[${new Date().toISOString()}] Connected to database (${Date.now() - startTime}ms)`);
     
     // Get the deployment record
     const deploymentRecord = await DomainDeployment.findById(deploymentRecordId);
@@ -88,15 +92,20 @@ async function processDomainDeployment(
       console.error(`Deployment record ${deploymentRecordId} not found`);
       return;
     }
+    console.log(`[${new Date().toISOString()}] Found deployment record (${Date.now() - startTime}ms)`);
     
     // Update the status and add a log
     deploymentRecord.status = 'deploying';
-    deploymentRecord.addLog('Starting Vercel deployment process', 'info');
+    deploymentRecord.addLog(`Starting Vercel deployment process (timestamp: ${new Date().toISOString()})`, 'info');
     await deploymentRecord.save();
+    console.log(`[${new Date().toISOString()}] Updated deployment record status to 'deploying' (${Date.now() - startTime}ms)`);
     
     try {
       // Start the actual deployment
+      console.log(`[${new Date().toISOString()}] Calling Vercel deployDomain function for ${domainName}...`);
+      const deployStartTime = Date.now();
       const vercelDeployment = await deployDomain(domainName);
+      console.log(`[${new Date().toISOString()}] Vercel deployment completed in ${Date.now() - deployStartTime}ms (total: ${Date.now() - startTime}ms)`);
       
       // Update the deployment record with Vercel IDs
       deploymentRecord.deploymentId = vercelDeployment.deploymentId;
@@ -106,7 +115,7 @@ async function processDomainDeployment(
       deploymentRecord.deploymentUrl = vercelDeployment.customDomain || vercelDeployment.deploymentUrl;
       
       // Add logs with more URL information
-      deploymentRecord.addLog(`Vercel deployment created (ID: ${vercelDeployment.deploymentId})`, 'info');
+      deploymentRecord.addLog(`Vercel deployment created (ID: ${vercelDeployment.deploymentId}) in ${Date.now() - deployStartTime}ms`, 'info');
       if (vercelDeployment.vercelUrl) {
         deploymentRecord.addLog(`Vercel URL: ${vercelDeployment.vercelUrl}`, 'info');
       }
@@ -115,6 +124,7 @@ async function processDomainDeployment(
       }
       
       await deploymentRecord.save();
+      console.log(`[${new Date().toISOString()}] Updated deployment record with Vercel IDs (${Date.now() - startTime}ms)`);
       
       // Update the domain with the deployment info
       const domain = await Domain.findById(domainId);
@@ -122,26 +132,34 @@ async function processDomainDeployment(
         domain.deploymentId = vercelDeployment.deploymentId;
         domain.deploymentUrl = vercelDeployment.customDomain || vercelDeployment.deploymentUrl;
         await domain.save();
+        console.log(`[${new Date().toISOString()}] Updated domain with deployment info (${Date.now() - startTime}ms)`);
       }
       
       // Monitor the deployment until it's complete
+      console.log(`[${new Date().toISOString()}] Starting deployment monitoring for ID: ${vercelDeployment.deploymentId}`);
+      const monitorStartTime = Date.now();
       await monitorDeployment(vercelDeployment.deploymentId, deploymentRecordId);
+      console.log(`[${new Date().toISOString()}] Monitoring completed in ${Date.now() - monitorStartTime}ms (total: ${Date.now() - startTime}ms)`);
     } catch (error: any) {
       // Handle deployment failure
+      const errorTime = Date.now();
+      console.error(`[${new Date().toISOString()}] Deployment failed after ${errorTime - startTime}ms:`, error);
       deploymentRecord.status = 'failed';
-      deploymentRecord.addLog(`Deployment failed: ${error.message}`, 'error', error);
+      deploymentRecord.addLog(`Deployment failed after ${errorTime - startTime}ms: ${error.message}`, 'error', error);
       deploymentRecord.completedAt = new Date();
       await deploymentRecord.save();
+      console.log(`[${new Date().toISOString()}] Updated deployment record to failed status (${Date.now() - startTime}ms)`);
       
       // Update the domain status
       const domain = await Domain.findById(domainId);
       if (domain) {
         domain.deploymentStatus = 'failed';
         await domain.save();
+        console.log(`[${new Date().toISOString()}] Updated domain status to failed (${Date.now() - startTime}ms)`);
       }
     }
   } catch (error: any) {
-    console.error(`Error processing deployment for ${domainName}:`, error);
+    console.error(`[${new Date().toISOString()}] Error processing deployment for ${domainName} after ${Date.now() - startTime}ms:`, error);
     
     // Try to update records to reflect the error
     try {
@@ -153,7 +171,7 @@ async function processDomainDeployment(
         $push: {
           logs: {
             timestamp: new Date(),
-            message: `Unhandled error in deployment process: ${error.message}`,
+            message: `Unhandled error in deployment process after ${Date.now() - startTime}ms: ${error.message}`,
             level: 'error',
             data: error.toString()
           }
@@ -163,8 +181,9 @@ async function processDomainDeployment(
       await Domain.findByIdAndUpdate(domainId, {
         $set: { deploymentStatus: 'failed' }
       });
+      console.log(`[${new Date().toISOString()}] Updated records after error (${Date.now() - startTime}ms)`);
     } catch (updateError) {
-      console.error('Error updating deployment records after failure:', updateError);
+      console.error(`[${new Date().toISOString()}] Error updating deployment records after failure (${Date.now() - startTime}ms):`, updateError);
     }
   }
 }
@@ -181,29 +200,38 @@ async function monitorDeployment(
   const startTime = Date.now();
   
   const CHECK_INTERVAL = 10 * 1000; // 10 seconds between checks
+  console.log(`[${new Date().toISOString()}] Starting deployment monitoring with ${CHECK_INTERVAL/1000}s interval (max time: ${MAX_MONITORING_TIME/60000} minutes)`);
   
   try {
     let isComplete = false;
+    let checkCount = 0;
     
     while (!isComplete && (Date.now() - startTime < MAX_MONITORING_TIME)) {
+      checkCount++;
+      
       // Wait for the check interval
+      console.log(`[${new Date().toISOString()}] Waiting ${CHECK_INTERVAL/1000}s before check #${checkCount}...`);
       await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL));
       
       // Get deployment record
       const deploymentRecord = await DomainDeployment.findById(deploymentRecordId);
       if (!deploymentRecord) {
-        console.error(`Deployment record ${deploymentRecordId} not found during monitoring`);
+        console.error(`[${new Date().toISOString()}] Deployment record ${deploymentRecordId} not found during monitoring (check #${checkCount})`);
         return;
       }
       
       // Get deployment status from Vercel
+      console.log(`[${new Date().toISOString()}] Checking deployment status (check #${checkCount}, elapsed: ${(Date.now() - startTime)/1000}s)`);
+      const statusCheckStart = Date.now();
       const deploymentStatus = await getDeploymentStatus(vercelDeploymentId);
+      console.log(`[${new Date().toISOString()}] Retrieved deployment status in ${Date.now() - statusCheckStart}ms: ${deploymentStatus.readyState || deploymentStatus.state}`);
       
       // Add log entry with current status
-      deploymentRecord.addLog(`Deployment status: ${deploymentStatus.readyState || deploymentStatus.state}`, 'info');
+      deploymentRecord.addLog(`Deployment status: ${deploymentStatus.readyState || deploymentStatus.state} (check #${checkCount}, elapsed: ${(Date.now() - startTime)/1000}s)`, 'info');
       
       // Check if the deployment is complete
       if (deploymentStatus.readyState === 'READY') {
+        console.log(`[${new Date().toISOString()}] Deployment is READY (total time: ${(Date.now() - startTime)/1000}s)`);
         deploymentRecord.status = 'deployed';
         deploymentRecord.completedAt = new Date();
         await deploymentRecord.save();
@@ -218,9 +246,10 @@ async function monitorDeployment(
         
         isComplete = true;
       } else if (deploymentStatus.readyState === 'ERROR' || deploymentStatus.readyState === 'CANCELED') {
+        console.log(`[${new Date().toISOString()}] Deployment failed with status: ${deploymentStatus.readyState} (total time: ${(Date.now() - startTime)/1000}s)`);
         deploymentRecord.status = 'failed';
         deploymentRecord.completedAt = new Date();
-        deploymentRecord.addLog(`Deployment failed with status: ${deploymentStatus.readyState}`, 'error');
+        deploymentRecord.addLog(`Deployment failed with status: ${deploymentStatus.readyState} after ${(Date.now() - startTime)/1000}s`, 'error');
         await deploymentRecord.save();
         
         // Update the associated domain
@@ -239,10 +268,11 @@ async function monitorDeployment(
     
     // If we exited the loop due to timeout
     if (!isComplete) {
+      console.log(`[${new Date().toISOString()}] Deployment monitoring timed out after ${(Date.now() - startTime)/1000}s`);
       const deploymentRecord = await DomainDeployment.findById(deploymentRecordId);
       if (deploymentRecord) {
         deploymentRecord.status = 'failed';
-        deploymentRecord.addLog('Deployment monitoring timed out', 'error');
+        deploymentRecord.addLog(`Deployment monitoring timed out after ${(Date.now() - startTime)/1000}s`, 'error');
         deploymentRecord.completedAt = new Date();
         await deploymentRecord.save();
         
@@ -255,7 +285,7 @@ async function monitorDeployment(
       }
     }
   } catch (error: any) {
-    console.error(`Error monitoring deployment ${vercelDeploymentId}:`, error);
+    console.error(`[${new Date().toISOString()}] Error monitoring deployment ${vercelDeploymentId} after ${(Date.now() - startTime)/1000}s:`, error);
     
     // Try to update records
     try {
@@ -267,7 +297,7 @@ async function monitorDeployment(
         $push: {
           logs: {
             timestamp: new Date(),
-            message: `Error monitoring deployment: ${error.message}`,
+            message: `Error monitoring deployment after ${(Date.now() - startTime)/1000}s: ${error.message}`,
             level: 'error',
             data: error.toString()
           }
@@ -282,7 +312,7 @@ async function monitorDeployment(
         });
       }
     } catch (updateError) {
-      console.error('Error updating deployment records after monitoring failure:', updateError);
+      console.error(`[${new Date().toISOString()}] Error updating deployment records after monitoring failure:`, updateError);
     }
   }
 }

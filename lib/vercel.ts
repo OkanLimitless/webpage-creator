@@ -60,13 +60,14 @@ if (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID) {
  * @returns Response from Vercel API including required DNS records
  */
 export async function addDomainToVercel(domainName: string, projectId?: string): Promise<any> {
+  const startTime = Date.now();
   try {
     const targetProjectId = projectId || VERCEL_PROJECT_ID;
-    console.log(`Adding domain ${domainName} to Vercel project ${targetProjectId}...`);
+    console.log(`[${new Date().toISOString()}] addDomainToVercel: Adding domain ${domainName} to Vercel project ${targetProjectId}...`);
     
     // In development with missing credentials, return mock success
     if (isDevelopment && (!process.env.VERCEL_TOKEN || (!targetProjectId && !process.env.VERCEL_PROJECT_ID))) {
-      console.log('Using mock Vercel domain addition in development mode');
+      console.log('[${new Date().toISOString()}] Using mock Vercel domain addition in development mode');
       return {
         success: true,
         domainName,
@@ -90,6 +91,8 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
     }
     
     // Make API request
+    console.log(`[${new Date().toISOString()}] addDomainToVercel: Making API request to add domain...`);
+    const apiStartTime = Date.now();
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -98,16 +101,17 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
       },
       body: JSON.stringify({ name: domainName })
     });
+    console.log(`[${new Date().toISOString()}] addDomainToVercel: API request completed in ${Date.now() - apiStartTime}ms`);
     
     const data: AddDomainResponse = await response.json();
-    console.log(`Vercel domain addition response:`, JSON.stringify(data));
+    console.log(`[${new Date().toISOString()}] addDomainToVercel: Vercel domain addition response (completed in ${Date.now() - startTime}ms):`, JSON.stringify(data));
     
     // Handle domain_already_in_use error as a success case if it's the same project
     if (!response.ok) {
       if (data.error && data.error.code === 'domain_already_in_use') {
         // Check if domain is already in use by the target project
         if (data.error.projectId === targetProjectId) {
-          console.log(`Domain ${domainName} is already in use by this project (${targetProjectId}), treating as a success case`);
+          console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already in use by this project (${targetProjectId}), treating as a success case (took ${Date.now() - startTime}ms)`);
           return {
             success: true,
             domainName,
@@ -124,7 +128,7 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
           };
         } else {
           // Domain is in use by a different project
-          console.log(`Domain ${domainName} is already in use by project ${data.error.projectId}, cannot add to project ${targetProjectId}`);
+          console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already in use by project ${data.error.projectId}, cannot add to project ${targetProjectId} (took ${Date.now() - startTime}ms)`);
           return {
             success: false,
             domainName,
@@ -151,6 +155,8 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
       }));
     }
     
+    console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain added successfully (took ${Date.now() - startTime}ms)`);
+    
     return {
       success: true,
       domainName,
@@ -165,7 +171,7 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
       message: 'Domain added to Vercel successfully. Check the configurationDnsRecords for required DNS settings.'
     };
   } catch (error) {
-    console.error(`Error adding domain ${domainName} to Vercel:`, error);
+    console.error(`[${new Date().toISOString()}] addDomainToVercel: Error adding domain ${domainName} to Vercel (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -685,30 +691,38 @@ async function getProject(projectId: string): Promise<any> {
  * Find a project that has a specific domain attached
  */
 async function findProjectByDomain(domainName: string): Promise<any | null> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] findProjectByDomain: Looking for project with domain ${domainName}...`);
+    const getAllProjectsStartTime = Date.now();
     const projects = await getAllProjects();
+    console.log(`[${new Date().toISOString()}] findProjectByDomain: Found ${projects.length} projects to check (took ${Date.now() - getAllProjectsStartTime}ms)`);
     
     // For each project, check if it has the domain attached
     for (const project of projects) {
       try {
+        console.log(`[${new Date().toISOString()}] findProjectByDomain: Checking project ${project.id} (${project.name}) for domain...`);
+        const getDomainsStartTime = Date.now();
         const domains = await getProjectDomains(project.id);
+        console.log(`[${new Date().toISOString()}] findProjectByDomain: Retrieved ${domains.length} domains for project ${project.id} (took ${Date.now() - getDomainsStartTime}ms)`);
         
         const hasDomain = domains.some((d: any) => 
           d.name.toLowerCase() === domainName.toLowerCase());
         
         if (hasDomain) {
-          console.log(`Found domain ${domainName} attached to project ${project.id} (${project.name})`);
+          console.log(`[${new Date().toISOString()}] findProjectByDomain: Found domain ${domainName} attached to project ${project.id} (${project.name}) (took ${Date.now() - startTime}ms)`);
           return project;
         }
       } catch (error) {
-        console.warn(`Error checking domains for project ${project.id}:`, error);
+        console.warn(`[${new Date().toISOString()}] findProjectByDomain: Error checking domains for project ${project.id} (continuing to next project):`, error);
         // Continue to next project
       }
     }
     
+    console.log(`[${new Date().toISOString()}] findProjectByDomain: No project found with domain ${domainName} (took ${Date.now() - startTime}ms)`);
     return null;
   } catch (error) {
-    console.error(`Error finding project by domain ${domainName}:`, error);
+    console.error(`[${new Date().toISOString()}] findProjectByDomain: Error finding project by domain ${domainName} (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -717,14 +731,24 @@ async function findProjectByDomain(domainName: string): Promise<any | null> {
  * Find a project by its name
  */
 async function findProjectByName(projectName: string): Promise<any | null> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] findProjectByName: Looking for project named ${projectName}...`);
+    const getAllProjectsStartTime = Date.now();
     const projects = await getAllProjects();
+    console.log(`[${new Date().toISOString()}] findProjectByName: Found ${projects.length} projects to check (took ${Date.now() - getAllProjectsStartTime}ms)`);
     
     const project = projects.find(p => p.name === projectName);
     
+    if (project) {
+      console.log(`[${new Date().toISOString()}] findProjectByName: Found project with name ${projectName} (ID: ${project.id}) (took ${Date.now() - startTime}ms)`);
+    } else {
+      console.log(`[${new Date().toISOString()}] findProjectByName: No project found with name ${projectName} (took ${Date.now() - startTime}ms)`);
+    }
+    
     return project || null;
   } catch (error) {
-    console.error(`Error finding project by name ${projectName}:`, error);
+    console.error(`[${new Date().toISOString()}] findProjectByName: Error finding project by name ${projectName} (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -774,7 +798,9 @@ async function addDomainToProject(projectId: string, domainName: string): Promis
  * Create a new deployment for a project
  */
 export async function createDeployment(projectId: string, domainName: string): Promise<DeploymentResponse> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] createDeployment: Creating deployment for project ${projectId} with domain ${domainName}...`);
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
@@ -791,6 +817,7 @@ export async function createDeployment(projectId: string, domainName: string): P
     }
     
     // Create a template deployment configuration
+    console.log(`[${new Date().toISOString()}] createDeployment: Preparing deployment configuration...`);
     const deploymentConfig = {
       name: domainName,
       target: 'production',
@@ -867,6 +894,8 @@ export async function getServerSideProps() {
     };
     
     // Make the API request
+    console.log(`[${new Date().toISOString()}] createDeployment: Making API request to create deployment...`);
+    const apiStartTime = Date.now();
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -875,16 +904,19 @@ export async function getServerSideProps() {
       },
       body: JSON.stringify(deploymentConfig)
     });
+    console.log(`[${new Date().toISOString()}] createDeployment: API request completed in ${Date.now() - apiStartTime}ms`);
     
     const data: DeploymentResponse = await response.json();
     
     if (!response.ok) {
+      console.error(`[${new Date().toISOString()}] createDeployment: Failed to create deployment (took ${Date.now() - startTime}ms):`, JSON.stringify(data));
       throw new Error(`Failed to create deployment: ${data.error?.message || 'Unknown error'}`);
     }
     
+    console.log(`[${new Date().toISOString()}] createDeployment: Deployment created successfully with ID ${data.id} (took ${Date.now() - startTime}ms)`);
     return data;
   } catch (error: any) {
-    console.error('Error creating deployment:', error);
+    console.error(`[${new Date().toISOString()}] createDeployment: Error creating deployment (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -893,7 +925,9 @@ export async function getServerSideProps() {
  * Check the status of a deployment
  */
 export async function getDeploymentStatus(deploymentId: string): Promise<DeploymentResponse> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] getDeploymentStatus: Checking status for deployment ${deploymentId}...`);
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
@@ -908,22 +942,27 @@ export async function getDeploymentStatus(deploymentId: string): Promise<Deploym
     }
     
     // Make the API request
+    console.log(`[${new Date().toISOString()}] getDeploymentStatus: Making API request to check deployment status...`);
+    const apiStartTime = Date.now();
     const response = await fetch(apiUrl, {
       headers: {
         'Authorization': `Bearer ${VERCEL_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
+    console.log(`[${new Date().toISOString()}] getDeploymentStatus: API request completed in ${Date.now() - apiStartTime}ms`);
     
     const data: DeploymentResponse = await response.json();
     
     if (!response.ok) {
+      console.error(`[${new Date().toISOString()}] getDeploymentStatus: Failed to get deployment status (took ${Date.now() - startTime}ms):`, JSON.stringify(data));
       throw new Error(`Failed to get deployment status: ${data.error?.message || 'Unknown error'}`);
     }
     
+    console.log(`[${new Date().toISOString()}] getDeploymentStatus: Status check successful, state: ${data.readyState || data.state} (took ${Date.now() - startTime}ms)`);
     return data;
   } catch (error: any) {
-    console.error('Error getting deployment status:', error);
+    console.error(`[${new Date().toISOString()}] getDeploymentStatus: Error getting deployment status for ${deploymentId} (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -932,13 +971,15 @@ export async function getDeploymentStatus(deploymentId: string): Promise<Deploym
  * Get all projects from Vercel
  */
 export async function getAllProjects(): Promise<any[]> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] getAllProjects: Fetching all Vercel projects...`);
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
     // Provide a clear error message if token is missing
     if (!VERCEL_TOKEN) {
-      console.error('Vercel API token is not set in environment variables');
+      console.error('[${new Date().toISOString()}] getAllProjects: Vercel API token is not set in environment variables');
       throw new Error('VERCEL_TOKEN environment variable is missing or empty. Please set it in your environment.');
     }
     
@@ -949,24 +990,28 @@ export async function getAllProjects(): Promise<any[]> {
     }
     
     // Make the API request
+    console.log(`[${new Date().toISOString()}] getAllProjects: Making API request to fetch projects...`);
+    const apiStartTime = Date.now();
     const response = await fetch(apiUrl, {
       headers: {
         'Authorization': `Bearer ${VERCEL_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
+    console.log(`[${new Date().toISOString()}] getAllProjects: API request completed in ${Date.now() - apiStartTime}ms`);
     
     const data = await response.json();
     
     if (!response.ok) {
       const errorMsg = data.error?.message || 'Unknown error';
-      console.error(`Vercel API error fetching projects: ${errorMsg}`);
+      console.error(`[${new Date().toISOString()}] getAllProjects: Vercel API error fetching projects (took ${Date.now() - startTime}ms): ${errorMsg}`);
       throw new Error(`Failed to get projects: ${errorMsg}`);
     }
     
+    console.log(`[${new Date().toISOString()}] getAllProjects: Successfully fetched ${data.projects?.length || 0} projects (took ${Date.now() - startTime}ms)`);
     return data.projects || [];
   } catch (error: any) {
-    console.error('Error getting projects from Vercel:', error);
+    console.error(`[${new Date().toISOString()}] getAllProjects: Error getting projects from Vercel (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -975,13 +1020,15 @@ export async function getAllProjects(): Promise<any[]> {
  * Get all domains for a specific project
  */
 export async function getProjectDomains(projectId: string): Promise<any[]> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] getProjectDomains: Fetching domains for project ${projectId}...`);
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
     // Provide a clear error message if token is missing
     if (!VERCEL_TOKEN) {
-      console.error('Vercel API token is not set in environment variables');
+      console.error('[${new Date().toISOString()}] getProjectDomains: Vercel API token is not set in environment variables');
       throw new Error('VERCEL_TOKEN environment variable is missing or empty. Please set it in your environment.');
     }
     
@@ -992,24 +1039,28 @@ export async function getProjectDomains(projectId: string): Promise<any[]> {
     }
     
     // Make the API request
+    console.log(`[${new Date().toISOString()}] getProjectDomains: Making API request to fetch domains...`);
+    const apiStartTime = Date.now();
     const response = await fetch(apiUrl, {
       headers: {
         'Authorization': `Bearer ${VERCEL_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
+    console.log(`[${new Date().toISOString()}] getProjectDomains: API request completed in ${Date.now() - apiStartTime}ms`);
     
     const data = await response.json();
     
     if (!response.ok) {
       const errorMsg = data.error?.message || 'Unknown error';
-      console.error(`Vercel API error fetching domains for project ${projectId}: ${errorMsg}`);
+      console.error(`[${new Date().toISOString()}] getProjectDomains: Vercel API error fetching domains for project ${projectId} (took ${Date.now() - startTime}ms): ${errorMsg}`);
       throw new Error(`Failed to get domains for project ${projectId}: ${errorMsg}`);
     }
     
+    console.log(`[${new Date().toISOString()}] getProjectDomains: Successfully fetched ${data.domains?.length || 0} domains for project ${projectId} (took ${Date.now() - startTime}ms)`);
     return data.domains || [];
   } catch (error: any) {
-    console.error(`Error getting domains for project ${projectId}:`, error);
+    console.error(`[${new Date().toISOString()}] getProjectDomains: Error getting domains for project ${projectId} (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -1146,61 +1197,73 @@ export async function deployDomain(domainName: string): Promise<{
   vercelUrl?: string;
   status: string;
 }> {
+  const startTime = Date.now();
+  console.log(`[${new Date().toISOString()}] Starting deployment process for domain: ${domainName}`);
+  
   try {
-    console.log(`Starting deployment process for domain: ${domainName}`);
-    
     // First, check if the domain is already attached to any project
     let project = null;
+    console.log(`[${new Date().toISOString()}] Checking if domain ${domainName} is already attached to a project...`);
+    const findProjectStartTime = Date.now();
     try {
       const existingProject = await findProjectByDomain(domainName);
       if (existingProject) {
-        console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+        console.log(`[${new Date().toISOString()}] Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name}) - found in ${Date.now() - findProjectStartTime}ms`);
         project = existingProject;
+      } else {
+        console.log(`[${new Date().toISOString()}] Domain ${domainName} is not attached to any project (took ${Date.now() - findProjectStartTime}ms)`);
       }
     } catch (error) {
-      console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
+      console.warn(`[${new Date().toISOString()}] Error checking for existing projects with domain ${domainName} (took ${Date.now() - findProjectStartTime}ms):`, error);
     }
     
     // If we don't have a project yet, check for a project with the expected name pattern
     if (!project) {
       const projectName = `domain-${domainName.replace(/\./g, '-')}`;
+      console.log(`[${new Date().toISOString()}] Looking for project with name ${projectName}...`);
+      const findByNameStartTime = Date.now();
       try {
-        console.log(`Looking for project with name ${projectName}...`);
         const namedProject = await findProjectByName(projectName);
         if (namedProject) {
-          console.log(`Found project with matching name: ${namedProject.id} (${namedProject.name})`);
+          console.log(`[${new Date().toISOString()}] Found project with matching name: ${namedProject.id} (${namedProject.name}) - found in ${Date.now() - findByNameStartTime}ms`);
           project = namedProject;
+        } else {
+          console.log(`[${new Date().toISOString()}] No project found with name ${projectName} (took ${Date.now() - findByNameStartTime}ms)`);
         }
       } catch (error) {
-        console.warn(`Error searching for project by name: ${error}`);
+        console.warn(`[${new Date().toISOString()}] Error searching for project by name (took ${Date.now() - findByNameStartTime}ms):`, error);
       }
     }
     
     // If we still don't have a project, we'll need to create one
     if (!project) {
       // Clean up any existing domain associations to avoid conflicts
-      console.log(`Cleaning up domain ${domainName} from any existing projects...`);
+      console.log(`[${new Date().toISOString()}] Cleaning up domain ${domainName} from any existing projects...`);
+      const cleanupStartTime = Date.now();
       try {
         const cleanupResult = await removeDomainFromAllProjects(domainName);
         if (cleanupResult) {
-          console.log(`Domain ${domainName} was found and removed from other projects`);
+          console.log(`[${new Date().toISOString()}] Domain ${domainName} was found and removed from other projects (took ${Date.now() - cleanupStartTime}ms)`);
         } else {
-          console.log(`Domain ${domainName} was not found in any other projects or couldn't be removed`);
+          console.log(`[${new Date().toISOString()}] Domain ${domainName} was not found in any other projects or couldn't be removed (took ${Date.now() - cleanupStartTime}ms)`);
         }
       } catch (cleanupError: any) {
-        console.warn(`Error during domain cleanup (continuing anyway): ${cleanupError.message}`);
+        console.warn(`[${new Date().toISOString()}] Error during domain cleanup (continuing anyway - took ${Date.now() - cleanupStartTime}ms): ${cleanupError.message}`);
       }
       
       // Create a new project for the domain
-      console.log(`Creating dedicated project for domain ${domainName}...`);
+      console.log(`[${new Date().toISOString()}] Creating dedicated project for domain ${domainName}...`);
+      const createProjectStartTime = Date.now();
       project = await createVercelProject(domainName);
+      console.log(`[${new Date().toISOString()}] Project creation completed for ${domainName} (took ${Date.now() - createProjectStartTime}ms)`);
     }
     
-    console.log(`Using project with ID: ${project.id} (${project.name})`);
+    console.log(`[${new Date().toISOString()}] Using project with ID: ${project.id} (${project.name}) - total time so far: ${Date.now() - startTime}ms`);
     
     // Ensure the domain is properly added to the project
+    console.log(`[${new Date().toISOString()}] Ensuring domain ${domainName} is added to project ${project.id}...`);
+    const addDomainStartTime = Date.now();
     try {
-      console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
       const domainAddResult = await addDomainToVercel(domainName, project.id);
       
       // If domain is still in use by a different project
@@ -1208,56 +1271,67 @@ export async function deployDomain(domainName: string): Promise<{
           domainAddResult.error && 
           domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
         
-        console.error(`Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}.
-          Cannot proceed with deployment to a different project.`);
+        console.error(`[${new Date().toISOString()}] Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}.
+          Cannot proceed with deployment to a different project. (took ${Date.now() - addDomainStartTime}ms)`);
         throw new Error(`Cannot proceed with deployment: ${domainName} is in use by project ${domainAddResult.error.projectId}`);
       }
       
-      console.log(`Domain ${domainName} successfully added/confirmed to project ${project.id}`);
+      console.log(`[${new Date().toISOString()}] Domain ${domainName} successfully added/confirmed to project ${project.id} (took ${Date.now() - addDomainStartTime}ms)`);
     } catch (domainError: any) {
-      console.error(`Failed to add domain to project: ${domainError.message}`);
+      console.error(`[${new Date().toISOString()}] Failed to add domain to project (took ${Date.now() - addDomainStartTime}ms): ${domainError.message}`);
       throw new Error(`Domain configuration failed: ${domainError.message}`);
     }
     
     // Create a deployment for the project
+    console.log(`[${new Date().toISOString()}] Creating deployment for project ${project.id}...`);
+    const createDeploymentStartTime = Date.now();
     const deployment = await createDeployment(project.id!, domainName);
-    console.log(`Deployment created with ID: ${deployment.id}`);
+    console.log(`[${new Date().toISOString()}] Deployment created with ID: ${deployment.id} (took ${Date.now() - createDeploymentStartTime}ms)`);
     
     // Wait a bit longer for deployment to initialize
-    console.log('Waiting for deployment to initialize (10 seconds)...');
+    console.log(`[${new Date().toISOString()}] Waiting for deployment to initialize (10 seconds)...`);
+    const waitStartTime = Date.now();
     await new Promise(resolve => setTimeout(resolve, 10000));
+    console.log(`[${new Date().toISOString()}] Finished waiting (took ${Date.now() - waitStartTime}ms)`);
     
     // Check deployment status to ensure it's ready
     let deploymentStatus;
+    const checkStatusStartTime = Date.now();
     try {
+      console.log(`[${new Date().toISOString()}] Checking initial deployment status...`);
       deploymentStatus = await getDeploymentStatus(deployment.id!);
-      console.log(`Deployment status: ${deploymentStatus.readyState}`);
+      console.log(`[${new Date().toISOString()}] Deployment status check complete: ${deploymentStatus.readyState} (took ${Date.now() - checkStatusStartTime}ms)`);
     } catch (statusError) {
-      console.error('Error checking deployment status:', statusError);
+      console.error(`[${new Date().toISOString()}] Error checking deployment status (took ${Date.now() - checkStatusStartTime}ms):`, statusError);
     }
     
     // Set the custom domain as an alias for the deployment
+    console.log(`[${new Date().toISOString()}] Setting alias ${domainName} for deployment ${deployment.id}...`);
+    const setAliasStartTime = Date.now();
     try {
-      console.log(`Setting alias ${domainName} for deployment ${deployment.id}`);
       await setDeploymentAlias(deployment.id!, domainName);
-      console.log(`Alias set successfully for ${domainName}`);
+      console.log(`[${new Date().toISOString()}] Alias set successfully for ${domainName} (took ${Date.now() - setAliasStartTime}ms)`);
     } catch (aliasError) {
-      console.error('Error setting deployment alias:', aliasError);
+      console.error(`[${new Date().toISOString()}] Error setting deployment alias (took ${Date.now() - setAliasStartTime}ms):`, aliasError);
       // Continue anyway as the domain might be set up through the earlier process
     }
     
     // Verify the domain to ensure it's properly configured
+    const verifyStartTime = Date.now();
     try {
-      console.log(`Verifying domain ${domainName} for project ${project.id}`);
+      console.log(`[${new Date().toISOString()}] Verifying domain ${domainName} for project ${project.id}...`);
       const verificationResult = await verifyDomainInVercel(domainName, project.id);
-      console.log(`Domain verification initiated: ${JSON.stringify(verificationResult)}`);
+      console.log(`[${new Date().toISOString()}] Domain verification initiated (took ${Date.now() - verifyStartTime}ms): ${JSON.stringify(verificationResult)}`);
     } catch (verifyError: any) {
-      console.warn(`Error during domain verification (continuing anyway): ${verifyError.message}`);
+      console.warn(`[${new Date().toISOString()}] Error during domain verification (continuing anyway - took ${Date.now() - verifyStartTime}ms): ${verifyError.message}`);
     }
     
     // Generate URLs for both the Vercel deployment and the custom domain
     const vercelUrl = deployment.url ? `https://${deployment.url}` : undefined;
     const customDomain = `https://${domainName}`;
+    
+    const totalTime = Date.now() - startTime;
+    console.log(`[${new Date().toISOString()}] deployDomain function complete in ${totalTime}ms`);
     
     return {
       projectId: project.id!,
@@ -1268,7 +1342,8 @@ export async function deployDomain(domainName: string): Promise<{
       status: deploymentStatus?.readyState || deployment.readyState || 'INITIALIZING'
     };
   } catch (error: any) {
-    console.error('Error deploying domain:', error);
+    const totalTime = Date.now() - startTime;
+    console.error(`[${new Date().toISOString()}] Error deploying domain (took ${totalTime}ms):`, error);
     throw error;
   }
 }
