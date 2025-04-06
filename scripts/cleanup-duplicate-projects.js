@@ -4,8 +4,12 @@ const fetch = require('node-fetch');
 
 async function cleanupDuplicateProjects() {
   try {
+    // Parse command line arguments
+    const checkOnly = process.argv.includes('--check-only');
+    
     console.log('Cleanup Duplicate Projects Tool');
     console.log('===========================');
+    console.log(`Mode: ${checkOnly ? 'Analysis only (no changes will be made)' : 'Full cleanup'}`);
     
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
@@ -79,9 +83,14 @@ async function cleanupDuplicateProjects() {
       p.name.startsWith('domain-')
     );
     
-    console.log(`\nFound ${domainProjects.length} domain-specific projects:`);
+    console.log(`\nFound ${domainProjects.length} domain-specific projects to analyze`);
+    
+    // Array to collect projects that will be affected by cleanup
+    const projectsToClean = [];
+    
+    // Process the projects
     for (const project of domainProjects) {
-      console.log(`\nProcessing project: ${project.name} (${project.id})`);
+      console.log(`\nAnalyzing project: ${project.name} (${project.id})`);
       
       // Get domains for this project
       let projDomainsUrl = `https://api.vercel.com/v9/projects/${project.id}/domains`;
@@ -106,6 +115,30 @@ async function cleanupDuplicateProjects() {
       const projectDomains = projDomainsData.domains || [];
       console.log(`Project has ${projectDomains.length} domains:`);
       
+      // Add this project to the list of projects that would be affected
+      projectsToClean.push({
+        id: project.id,
+        name: project.name,
+        domains: projectDomains.map(d => ({
+          name: d.name,
+          verified: d.verified
+        }))
+      });
+      
+      // If we're in check-only mode, just list the domains but don't make changes
+      if (checkOnly) {
+        if (projectDomains.length === 0) {
+          console.log('No domains found. This project would be deleted during actual cleanup.');
+        } else {
+          projectDomains.forEach(d => {
+            console.log(`- ${d.name} (${d.verified ? 'verified' : 'unverified'})`);
+          });
+          console.log('These domains would be transferred to the main project during actual cleanup.');
+        }
+        continue;
+      }
+      
+      // If we're here, we're in full cleanup mode
       if (projectDomains.length === 0) {
         console.log('No domains found. This project can be safely deleted.');
         await deleteProject(project.id);
@@ -135,7 +168,10 @@ async function cleanupDuplicateProjects() {
       await deleteProject(project.id);
     }
     
-    console.log('\nProject cleanup completed!');
+    // Output the projects to clean in a special format that can be parsed by the UI
+    console.log('PROJECTS_TO_CLEAN_JSON:' + JSON.stringify(projectsToClean));
+    
+    console.log('\nProject ' + (checkOnly ? 'analysis' : 'cleanup') + ' completed!');
   } catch (error) {
     console.error('Error during project cleanup:', error);
   }

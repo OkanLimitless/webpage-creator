@@ -6,8 +6,15 @@ import path from 'path';
  * API route that runs the cleanup script with streaming output
  * This uses Server-Sent Events (SSE) to stream the script output back to the client
  * GET /api/maintenance/run-cleanup-script
+ * 
+ * Query parameters:
+ * - checkOnly: If set to 'true', the script will only analyze projects without making changes
  */
 export async function GET(request: NextRequest) {
+  // Parse query parameters
+  const { searchParams } = new URL(request.url);
+  const checkOnly = searchParams.get('checkOnly') === 'true';
+  
   // Set up for server-sent events response
   const encoder = new TextEncoder();
   
@@ -17,11 +24,11 @@ export async function GET(request: NextRequest) {
       // Get the script path
       const scriptPath = path.join(process.cwd(), 'scripts', 'cleanup-duplicate-projects.js');
       
-      // Log details about the script path
-      console.log(`Running cleanup script at: ${scriptPath}`);
+      // Log details about the script path and mode
+      console.log(`Running cleanup script at: ${scriptPath} (checkOnly: ${checkOnly})`);
       
       // Spawn the Node.js process to run the script
-      const proc = spawn('node', [scriptPath], {
+      const proc = spawn('node', [scriptPath, ...(checkOnly ? ['--check-only'] : [])], {
         cwd: process.cwd(),
         env: { ...process.env }
       });
@@ -32,14 +39,40 @@ export async function GET(request: NextRequest) {
       };
       
       // Send initial message
-      sendEvent({ output: `Starting cleanup script (${new Date().toISOString()})` });
+      sendEvent({ 
+        output: `Starting ${checkOnly ? 'analysis' : 'cleanup'} (${new Date().toISOString()})` 
+      });
       
       // Handle stdout data
       proc.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n');
-        lines.filter((line: string) => line.trim().length > 0).forEach((line: string) => {
-          sendEvent({ output: line });
-        });
+        const text = data.toString();
+        const lines = text.split('\n');
+        
+        // Check if this is a special JSON output for projects to clean
+        if (text.includes('PROJECTS_TO_CLEAN_JSON:')) {
+          try {
+            const jsonStart = text.indexOf('PROJECTS_TO_CLEAN_JSON:') + 'PROJECTS_TO_CLEAN_JSON:'.length;
+            const jsonText = text.substring(jsonStart).trim();
+            const projectsData = JSON.parse(jsonText);
+            
+            // Send the projects data separately
+            sendEvent({ projectsToClean: projectsData });
+            
+            // Also send as regular output
+            sendEvent({ output: `Found ${projectsData.length} projects that would be affected` });
+          } catch (error) {
+            console.error('Error parsing projects JSON:', error);
+            sendEvent({ output: `ERROR: Failed to parse projects data` });
+          }
+        } else {
+          // Regular output lines
+          lines.filter((line: string) => line.trim().length > 0).forEach((line: string) => {
+            // Skip the JSON line if somehow it appears again
+            if (!line.includes('PROJECTS_TO_CLEAN_JSON:')) {
+              sendEvent({ output: line });
+            }
+          });
+        }
       });
       
       // Handle stderr data
@@ -53,7 +86,7 @@ export async function GET(request: NextRequest) {
       // Handle process exit
       proc.on('close', (code) => {
         sendEvent({ 
-          output: `Script completed with code ${code} (${new Date().toISOString()})`,
+          output: `${checkOnly ? 'Analysis' : 'Script'} completed with code ${code} (${new Date().toISOString()})`,
           complete: true
         });
         controller.close();
@@ -62,7 +95,7 @@ export async function GET(request: NextRequest) {
       // Handle process error
       proc.on('error', (error) => {
         sendEvent({ 
-          output: `Script failed: ${error.message}`,
+          output: `${checkOnly ? 'Analysis' : 'Script'} failed: ${error.message}`,
           complete: true
         });
         controller.close();
