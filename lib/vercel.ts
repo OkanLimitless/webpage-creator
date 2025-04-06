@@ -56,14 +56,16 @@ if (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID) {
 /**
  * Add a domain to Vercel project and get DNS configuration requirements
  * @param domainName The domain name to add
+ * @param projectId Optional project ID to add the domain to (uses VERCEL_PROJECT_ID from env if not provided)
  * @returns Response from Vercel API including required DNS records
  */
-export async function addDomainToVercel(domainName: string): Promise<any> {
+export async function addDomainToVercel(domainName: string, projectId?: string): Promise<any> {
   try {
-    console.log(`Adding domain ${domainName} to Vercel project...`);
+    const targetProjectId = projectId || VERCEL_PROJECT_ID;
+    console.log(`Adding domain ${domainName} to Vercel project ${targetProjectId}...`);
     
     // In development with missing credentials, return mock success
-    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
+    if (isDevelopment && (!process.env.VERCEL_TOKEN || (!targetProjectId && !process.env.VERCEL_PROJECT_ID))) {
       console.log('Using mock Vercel domain addition in development mode');
       return {
         success: true,
@@ -80,7 +82,7 @@ export async function addDomainToVercel(domainName: string): Promise<any> {
     }
     
     // Prepare API endpoint
-    let url = `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains`;
+    let url = `https://api.vercel.com/v9/projects/${targetProjectId}/domains`;
     
     // Add team ID if available
     if (VERCEL_TEAM_ID) {
@@ -100,24 +102,40 @@ export async function addDomainToVercel(domainName: string): Promise<any> {
     const data: AddDomainResponse = await response.json();
     console.log(`Vercel domain addition response:`, JSON.stringify(data));
     
-    // Handle domain_already_in_use error as a success case
+    // Handle domain_already_in_use error as a success case if it's the same project
     if (!response.ok) {
-      if (data.error && data.error.code === 'domain_already_in_use' && data.error.projectId === VERCEL_PROJECT_ID) {
-        console.log(`Domain ${domainName} is already in use by this project, treating as a success case`);
-        return {
-          success: true,
-          domainName,
-          alreadyConfigured: true,
-          vercelDomain: data.error.domain || {},
-          configurationDnsRecords: [
-            {
-              name: domainName.includes('.') ? domainName.split('.')[0] : '@',
-              type: 'CNAME',
-              value: 'cname.vercel-dns.com'
-            }
-          ],
-          message: `Domain ${domainName} is already registered with this project`
-        };
+      if (data.error && data.error.code === 'domain_already_in_use') {
+        // Check if domain is already in use by the target project
+        if (data.error.projectId === targetProjectId) {
+          console.log(`Domain ${domainName} is already in use by this project (${targetProjectId}), treating as a success case`);
+          return {
+            success: true,
+            domainName,
+            alreadyConfigured: true,
+            vercelDomain: data.error.domain || {},
+            configurationDnsRecords: [
+              {
+                name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+                type: 'CNAME',
+                value: 'cname.vercel-dns.com'
+              }
+            ],
+            message: `Domain ${domainName} is already registered with this project`
+          };
+        } else {
+          // Domain is in use by a different project
+          console.log(`Domain ${domainName} is already in use by project ${data.error.projectId}, cannot add to project ${targetProjectId}`);
+          return {
+            success: false,
+            domainName,
+            error: {
+              code: 'domain_already_in_use_by_different_project',
+              message: `Domain ${domainName} is already in use by another project (${data.error.projectId})`,
+              projectId: data.error.projectId
+            },
+            configurationDnsRecords: []
+          };
+        }
       }
       
       throw new Error(`Failed to add domain to Vercel: ${JSON.stringify(data)}`);
@@ -550,11 +568,26 @@ export async function createVercelProject(domainName: string, framework: string 
     const data: CreateProjectResponse = await response.json();
     
     if (!response.ok) {
+      // If project already exists with the same name, try to return that project
+      if (data.error?.code === 'project_name_already_exists') {
+        console.log(`Project with name ${projectName} already exists, trying to find it...`);
+        // We would need to fetch existing projects and find the matching one
+        // For now, throwing the error but this could be enhanced
+        throw new Error(`Project already exists: ${data.error.message || 'Unknown error'}`);
+      }
+      
       throw new Error(`Failed to create Vercel project: ${data.error?.message || 'Unknown error'}`);
     }
     
-    // Now add the domain to the project
-    await addDomainToProject(data.id!, domainName);
+    // Project was successfully created, now add the domain to it
+    console.log(`Project created with ID ${data.id}, now adding domain ${domainName} to it`);
+    try {
+      await addDomainToProject(data.id!, domainName);
+      console.log(`Domain ${domainName} successfully added to project ${data.id}`);
+    } catch (domainError: any) {
+      console.warn(`Warning: Failed to add domain to project: ${domainError.message}`);
+      // Continue anyway as we have the project
+    }
     
     return data;
   } catch (error: any) {
@@ -857,14 +890,33 @@ export async function deployDomain(domainName: string): Promise<{
     const project = await createVercelProject(domainName);
     console.log(`Project created/found with ID: ${project.id}`);
     
-    // 2. Create a deployment for the project
+    // 2. Try to add the domain to the project explicitly
+    // Note: We already add the domain to the project in createVercelProject,
+    // but we'll try again here to ensure it's properly configured and to handle any errors
+    try {
+      console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
+      const domainAddResult = await addDomainToVercel(domainName, project.id);
+      
+      // If domain is already in use by a different project, we need to handle that
+      if (!domainAddResult.success && 
+          domainAddResult.error && 
+          domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
+        console.warn(`Cannot deploy domain ${domainName} because it's already in use by project ${domainAddResult.error.projectId}`);
+        throw new Error(`Cannot add domain to project: ${domainName} is already in use by project ${domainAddResult.error.projectId}`);
+      }
+    } catch (domainError: any) {
+      // If we can't add the domain to the project, log and continue - we might still be able to deploy
+      console.warn(`Error adding domain to project, continuing with deployment: ${domainError.message}`);
+    }
+    
+    // 3. Create a deployment for the project
     const deployment = await createDeployment(project.id!, domainName);
     console.log(`Deployment created with ID: ${deployment.id}`);
     
     // Wait a moment for deployment to initialize
     await new Promise(resolve => setTimeout(resolve, 5000));
     
-    // 3. Check deployment status to ensure it's ready
+    // 4. Check deployment status to ensure it's ready
     let deploymentStatus;
     try {
       deploymentStatus = await getDeploymentStatus(deployment.id!);
@@ -873,7 +925,7 @@ export async function deployDomain(domainName: string): Promise<{
       console.error('Error checking deployment status:', statusError);
     }
     
-    // 4. Set the custom domain as an alias for the deployment
+    // 5. Set the custom domain as an alias for the deployment
     try {
       console.log(`Setting alias ${domainName} for deployment ${deployment.id}`);
       await setDeploymentAlias(deployment.id!, domainName);
