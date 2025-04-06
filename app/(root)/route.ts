@@ -29,6 +29,30 @@ export async function GET(request: NextRequest) {
     // Remove port number if present (for development)
     domain = domain.split(':')[0];
     
+    // Handle potential issues with domain header parsing
+    // Some clients might incorrectly split the domain or send partial domains
+    if (domain === 'com' || domain === 'net' || domain === 'org' || domain === 'io' || 
+        domain === 'app' || domain === 'dev' || domain === 'co' || domain === 'ai') {
+      // These are likely TLDs being mistakenly treated as whole domains
+      console.warn(`Received domain appears to be just a TLD: "${domain}". Using PRIMARY_DOMAIN instead.`);
+      const primaryDomain = process.env.PRIMARY_DOMAIN;
+      if (primaryDomain) {
+        domain = primaryDomain;
+        console.log(`Using PRIMARY_DOMAIN: ${domain}`);
+      } else {
+        // If no primary domain set, we can try to derive the full domain from the request URL
+        try {
+          const urlObj = new URL(request.url);
+          if (urlObj.hostname && urlObj.hostname !== domain && urlObj.hostname.includes('.')) {
+            domain = urlObj.hostname;
+            console.log(`Derived domain from URL: ${domain}`);
+          }
+        } catch (e) {
+          console.error('Error parsing URL:', e);
+        }
+      }
+    }
+    
     // Extra check for Vercel preview URLs (e.g., project-name.vercel.app) or localhost
     if (host.includes('vercel.app') || host.includes('localhost')) {
       console.log('Detected Vercel preview URL or localhost');

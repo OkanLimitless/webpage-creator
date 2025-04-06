@@ -40,6 +40,16 @@ export function middleware(request: NextRequest) {
     cleanHostname = hostname.split(':')[0];
   }
   
+  // Check for common issues - some setups might incorrectly split the domain
+  // For example, we might end up with just "com" instead of "example.com"
+  if (cleanHostname === 'com' || cleanHostname === 'net' || cleanHostname === 'org' ||
+      cleanHostname === 'io' || cleanHostname === 'app' || cleanHostname === 'dev') {
+    console.warn(`[Middleware] WARNING: Hostname appears to be just a TLD: "${cleanHostname}"`);
+    // In this case, we'll pass through to the route handler which has more robust fallback logic
+    console.log('----------- MIDDLEWARE END (passing to route handler for TLD) -----------');
+    return NextResponse.next();
+  }
+  
   // Check if the hostname has a subdomain
   const hasSubdomain = hasValidSubdomain(cleanHostname);
   
