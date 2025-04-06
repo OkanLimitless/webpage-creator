@@ -1,7 +1,7 @@
-import { ReactNode } from 'react';
+import React from 'react';
 
 interface AdminLayoutProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 export const metadata = {
@@ -25,6 +25,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                   className="border-blue-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                 >
                   Domains
+                </a>
+                <a
+                  href="/admin/diagnostics"
+                  className="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                >
+                  Diagnostics
                 </a>
               </div>
             </div>
