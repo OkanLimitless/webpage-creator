@@ -18,6 +18,7 @@ export default function ProjectsCleanup() {
     name: string;
     domains: { name: string; verified: boolean }[];
   }[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const handleCleanup = async () => {
     if (!confirm("Are you sure you want to clean up empty Vercel projects? This will delete projects with no domains attached.")) {
@@ -56,6 +57,7 @@ export default function ProjectsCleanup() {
       setIsRunningScript(true);
       setScriptOutput(["Starting project analysis..."]);
       setProjectsToClean([]);
+      setError(null);
       
       // Call the API with check-only mode
       const url = '/api/maintenance/run-cleanup-script?checkOnly=true';
@@ -65,7 +67,16 @@ export default function ProjectsCleanup() {
         try {
           const data = JSON.parse(event.data);
           if (data.output) {
-            setScriptOutput(prev => [...prev, data.output]);
+            const output = data.output;
+            if (typeof output === 'string' && (
+                output.toLowerCase().includes('error:') || 
+                output.toLowerCase().includes('failed') ||
+                output.toLowerCase().includes('not found')
+            )) {
+              setScriptOutput(prev => [...prev, `⚠️ ${output}`]);
+            } else {
+              setScriptOutput(prev => [...prev, output]);
+            }
           }
           if (data.projectsToClean) {
             setProjectsToClean(data.projectsToClean);
@@ -78,12 +89,14 @@ export default function ProjectsCleanup() {
         } catch (error) {
           console.error('Error parsing event data:', error);
           setScriptOutput(prev => [...prev, `Error: ${error}`]);
+          setError('Failed to parse server response');
         }
       };
       
-      eventSource.onerror = (error) => {
-        console.error('EventSource error:', error);
+      eventSource.onerror = (err) => {
+        console.error('EventSource error:', err);
         setScriptOutput(prev => [...prev, "Error in analysis process. Check server logs."]);
+        setError('Connection error with the server');
         eventSource.close();
         setIsRunningScript(false);
       };
@@ -91,6 +104,7 @@ export default function ProjectsCleanup() {
     } catch (error: any) {
       console.error('Error checking projects:', error);
       setScriptOutput(prev => [...prev, `Error: ${error.message || 'An unexpected error occurred'}`]);
+      setError(error.message || 'Failed to analyze projects');
       setIsRunningScript(false);
     }
   };
@@ -287,6 +301,14 @@ export default function ProjectsCleanup() {
               <div className="animate-pulse">▌</div>
             )}
           </div>
+        </div>
+      )}
+      
+      {error && (
+        <div className="mb-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
+          <h3 className="font-medium">Error</h3>
+          <p>{error}</p>
+          <p className="text-sm mt-2">Try refreshing the page or check the server logs for more information.</p>
         </div>
       )}
     </div>

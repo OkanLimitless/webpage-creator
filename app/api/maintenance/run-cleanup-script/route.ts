@@ -1,10 +1,9 @@
 import { NextRequest } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
+import { getAllProjects, getProjectDomains } from '@/lib/vercel';
 
 /**
- * API route that runs the cleanup script with streaming output
- * This uses Server-Sent Events (SSE) to stream the script output back to the client
+ * API route that analyzes projects with streaming output
+ * This uses Server-Sent Events (SSE) to stream the analysis results back to the client
  * GET /api/maintenance/run-cleanup-script
  * 
  * Query parameters:
@@ -20,86 +19,175 @@ export async function GET(request: NextRequest) {
   
   // Create a custom stream
   const stream = new ReadableStream({
-    start(controller) {
-      // Get the script path
-      const scriptPath = path.join(process.cwd(), 'scripts', 'cleanup-duplicate-projects.js');
-      
-      // Log details about the script path and mode
-      console.log(`Running cleanup script at: ${scriptPath} (checkOnly: ${checkOnly})`);
-      
-      // Spawn the Node.js process to run the script
-      const proc = spawn('node', [scriptPath, ...(checkOnly ? ['--check-only'] : [])], {
-        cwd: process.cwd(),
-        env: { ...process.env }
-      });
-      
+    async start(controller) {
       // Helper function to send event data
       const sendEvent = (data: any) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
       
-      // Send initial message
-      sendEvent({ 
-        output: `Starting ${checkOnly ? 'analysis' : 'cleanup'} (${new Date().toISOString()})` 
-      });
-      
-      // Handle stdout data
-      proc.stdout.on('data', (data) => {
-        const text = data.toString();
-        const lines = text.split('\n');
+      try {
+        // Send initial message
+        sendEvent({ 
+          output: `Starting ${checkOnly ? 'analysis' : 'cleanup'} (${new Date().toISOString()})` 
+        });
         
-        // Check if this is a special JSON output for projects to clean
-        if (text.includes('PROJECTS_TO_CLEAN_JSON:')) {
-          try {
-            const jsonStart = text.indexOf('PROJECTS_TO_CLEAN_JSON:') + 'PROJECTS_TO_CLEAN_JSON:'.length;
-            const jsonText = text.substring(jsonStart).trim();
-            const projectsData = JSON.parse(jsonText);
-            
-            // Send the projects data separately
-            sendEvent({ projectsToClean: projectsData });
-            
-            // Also send as regular output
-            sendEvent({ output: `Found ${projectsData.length} projects that would be affected` });
-          } catch (error) {
-            console.error('Error parsing projects JSON:', error);
-            sendEvent({ output: `ERROR: Failed to parse projects data` });
-          }
-        } else {
-          // Regular output lines
-          lines.filter((line: string) => line.trim().length > 0).forEach((line: string) => {
-            // Skip the JSON line if somehow it appears again
-            if (!line.includes('PROJECTS_TO_CLEAN_JSON:')) {
-              sendEvent({ output: line });
-            }
+        // Get all necessary Vercel tokens from environment
+        const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+        const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+        const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
+        
+        if (!VERCEL_TOKEN) {
+          sendEvent({ output: 'Error: Vercel token not set in environment variables' });
+          sendEvent({ complete: true });
+          controller.close();
+          return;
+        }
+        
+        if (VERCEL_PROJECT_ID) {
+          sendEvent({ 
+            output: `Main project ID: ${VERCEL_PROJECT_ID} (Note: Domains should NOT be moved to this project)` 
           });
         }
-      });
-      
-      // Handle stderr data
-      proc.stderr.on('data', (data) => {
-        const lines = data.toString().split('\n');
-        lines.filter((line: string) => line.trim().length > 0).forEach((line: string) => {
-          sendEvent({ output: `ERROR: ${line}` });
-        });
-      });
-      
-      // Handle process exit
-      proc.on('close', (code) => {
+        
+        // Get all projects
+        sendEvent({ output: 'Fetching all Vercel projects...' });
+        const projects = await getAllProjects();
+        sendEvent({ output: `Found ${projects.length} projects` });
+        
+        // Find all domain-* projects
+        const domainProjects = projects.filter(p => 
+          p.name.startsWith('domain-')
+        );
+        
+        sendEvent({ output: `\nFound ${domainProjects.length} domain-specific projects to analyze` });
+        
+        // Array to collect projects that will be affected by cleanup
+        const projectsToClean = [];
+        
+        // Find empty domain projects (no domains attached)
+        const emptyProjects = [];
+        
+        // Process the projects
+        for (const project of domainProjects) {
+          sendEvent({ output: `\nAnalyzing project: ${project.name} (${project.id})` });
+          
+          // Skip main project
+          if (project.id === VERCEL_PROJECT_ID) {
+            sendEvent({ output: `Skipping main project ${VERCEL_PROJECT_ID}` });
+            continue;
+          }
+          
+          try {
+            // Get domains for this project
+            const projectDomains = await getProjectDomains(project.id);
+            sendEvent({ output: `Project has ${projectDomains.length} domains:` });
+            
+            // Add this project to the list of projects that would be affected
+            projectsToClean.push({
+              id: project.id,
+              name: project.name,
+              domains: projectDomains.map(d => ({
+                name: d.name,
+                verified: d.verified
+              }))
+            });
+            
+            // If project has no domains, mark it for cleanup
+            if (projectDomains.length === 0) {
+              emptyProjects.push(project);
+              sendEvent({ output: 'No domains found. This project can be safely deleted.' });
+            } else {
+              projectDomains.forEach(d => {
+                sendEvent({ output: `- ${d.name} (${d.verified ? 'verified' : 'unverified'})` });
+              });
+              
+              // Extract the domain name from the project name (domain-example-com => example.com)
+              const domainFromName = project.name.replace('domain-', '').replace(/-/g, '.');
+              
+              // Check if this project has its expected domain
+              const hasExpectedDomain = projectDomains.some(d => d.name === domainFromName);
+              if (!hasExpectedDomain) {
+                sendEvent({ output: `WARNING: This project doesn't have its expected domain (${domainFromName})` });
+              } else {
+                sendEvent({ output: `✓ Project correctly has its domain (${domainFromName})` });
+              }
+            }
+          } catch (error: any) {
+            sendEvent({ output: `Error checking domains for project ${project.id}: ${error.message}` });
+          }
+        }
+        
+        // Send the list of projects to clean
+        sendEvent({ projectsToClean });
+        
+        // Summary of empty projects
+        if (emptyProjects.length > 0) {
+          sendEvent({ output: `\nFound ${emptyProjects.length} empty domain projects that can be safely deleted:` });
+          emptyProjects.forEach(p => sendEvent({ output: `- ${p.name} (${p.id})` }));
+        } else {
+          sendEvent({ output: `\nNo empty domain projects found to clean up` });
+        }
+        
+        // If not in check-only mode and there are empty projects, delete them
+        if (!checkOnly && emptyProjects.length > 0) {
+          sendEvent({ output: '\nStarting cleanup of empty projects...' });
+          
+          // Track cleanup success
+          let cleanedCount = 0;
+          
+          // Delete the empty projects
+          for (const project of emptyProjects) {
+            try {
+              sendEvent({ output: `Deleting empty project ${project.name} (${project.id})...` });
+              
+              // Construct the API URL for deletion
+              let url = `https://api.vercel.com/v9/projects/${project.id}`;
+              if (VERCEL_TEAM_ID) {
+                url += `?teamId=${VERCEL_TEAM_ID}`;
+              }
+              
+              // Make the API request to delete the project
+              const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${VERCEL_TOKEN}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (response.status === 204 || response.ok) {
+                sendEvent({ output: `Successfully deleted empty project ${project.id} (${project.name})` });
+                cleanedCount++;
+              } else {
+                const errorData = await response.json();
+                sendEvent({ output: `Failed to delete project ${project.id}: ${JSON.stringify(errorData)}` });
+              }
+            } catch (deleteError: any) {
+              sendEvent({ output: `Error deleting project ${project.id}: ${deleteError.message}` });
+            }
+          }
+          
+          sendEvent({ 
+            output: cleanedCount > 0 
+              ? `Cleaned up ${cleanedCount} empty projects` 
+              : "No projects were deleted"
+          });
+        }
+        
+        // Complete the stream
         sendEvent({ 
-          output: `${checkOnly ? 'Analysis' : 'Script'} completed with code ${code} (${new Date().toISOString()})`,
+          output: `${checkOnly ? 'Analysis' : 'Cleanup'} completed! (${new Date().toISOString()})`,
           complete: true
         });
-        controller.close();
-      });
-      
-      // Handle process error
-      proc.on('error', (error) => {
+      } catch (error: any) {
+        console.error('Error in cleanup process:', error);
         sendEvent({ 
-          output: `${checkOnly ? 'Analysis' : 'Script'} failed: ${error.message}`,
+          output: `Error: ${error.message || 'An unexpected error occurred'}`,
           complete: true
         });
+      } finally {
         controller.close();
-      });
+      }
     }
   });
   

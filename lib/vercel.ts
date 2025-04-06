@@ -936,8 +936,10 @@ export async function getAllProjects(): Promise<any[]> {
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
+    // Provide a clear error message if token is missing
     if (!VERCEL_TOKEN) {
-      throw new Error('Vercel API token not set');
+      console.error('Vercel API token is not set in environment variables');
+      throw new Error('VERCEL_TOKEN environment variable is missing or empty. Please set it in your environment.');
     }
     
     // Construct the API URL
@@ -957,12 +959,14 @@ export async function getAllProjects(): Promise<any[]> {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(`Failed to get projects: ${data.error?.message || 'Unknown error'}`);
+      const errorMsg = data.error?.message || 'Unknown error';
+      console.error(`Vercel API error fetching projects: ${errorMsg}`);
+      throw new Error(`Failed to get projects: ${errorMsg}`);
     }
     
     return data.projects || [];
   } catch (error: any) {
-    console.error('Error getting projects:', error);
+    console.error('Error getting projects from Vercel:', error);
     throw error;
   }
 }
@@ -975,8 +979,10 @@ export async function getProjectDomains(projectId: string): Promise<any[]> {
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
+    // Provide a clear error message if token is missing
     if (!VERCEL_TOKEN) {
-      throw new Error('Vercel API token not set');
+      console.error('Vercel API token is not set in environment variables');
+      throw new Error('VERCEL_TOKEN environment variable is missing or empty. Please set it in your environment.');
     }
     
     // Construct the API URL
@@ -996,7 +1002,9 @@ export async function getProjectDomains(projectId: string): Promise<any[]> {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(`Failed to get domains for project ${projectId}: ${data.error?.message || 'Unknown error'}`);
+      const errorMsg = data.error?.message || 'Unknown error';
+      console.error(`Vercel API error fetching domains for project ${projectId}: ${errorMsg}`);
+      throw new Error(`Failed to get domains for project ${projectId}: ${errorMsg}`);
     }
     
     return data.domains || [];
