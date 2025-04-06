@@ -802,26 +802,98 @@ export async function getProjectDomains(projectId: string): Promise<any[]> {
 }
 
 /**
+ * Set a custom alias (domain) for a deployment
+ */
+async function setDeploymentAlias(deploymentId: string, alias: string): Promise<any> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v2/deployments/${deploymentId}/aliases`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ alias })
+    });
+    
+    const data = await response.json();
+    console.log(`Vercel alias assignment response:`, JSON.stringify(data));
+    
+    return data;
+  } catch (error: any) {
+    console.error(`Error setting deployment alias to ${alias}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Main function to handle domain deployment
  */
 export async function deployDomain(domainName: string): Promise<{
   projectId: string;
   deploymentId: string;
   deploymentUrl?: string;
+  customDomain?: string;
+  vercelUrl?: string;
   status: string;
 }> {
   try {
+    console.log(`Starting deployment process for domain: ${domainName}`);
+    
     // 1. Create a project for the domain if it doesn't exist
     const project = await createVercelProject(domainName);
+    console.log(`Project created/found with ID: ${project.id}`);
     
     // 2. Create a deployment for the project
     const deployment = await createDeployment(project.id!, domainName);
+    console.log(`Deployment created with ID: ${deployment.id}`);
+    
+    // Wait a moment for deployment to initialize
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // 3. Check deployment status to ensure it's ready
+    let deploymentStatus;
+    try {
+      deploymentStatus = await getDeploymentStatus(deployment.id!);
+      console.log(`Deployment status: ${deploymentStatus.readyState}`);
+    } catch (statusError) {
+      console.error('Error checking deployment status:', statusError);
+    }
+    
+    // 4. Set the custom domain as an alias for the deployment
+    try {
+      console.log(`Setting alias ${domainName} for deployment ${deployment.id}`);
+      await setDeploymentAlias(deployment.id!, domainName);
+      console.log(`Alias set successfully for ${domainName}`);
+    } catch (aliasError) {
+      console.error('Error setting deployment alias:', aliasError);
+      // Continue anyway as the domain might be set up through the earlier process
+    }
+    
+    // Generate URLs for both the Vercel deployment and the custom domain
+    const vercelUrl = deployment.url ? `https://${deployment.url}` : undefined;
+    const customDomain = `https://${domainName}`;
     
     return {
       projectId: project.id!,
       deploymentId: deployment.id!,
-      deploymentUrl: deployment.url ? `https://${deployment.url}` : undefined,
-      status: deployment.readyState || 'INITIALIZING'
+      deploymentUrl: customDomain, // Primary URL to use
+      customDomain: customDomain,  // Explicit custom domain URL
+      vercelUrl: vercelUrl,        // Fallback Vercel URL
+      status: deploymentStatus?.readyState || deployment.readyState || 'INITIALIZING'
     };
   } catch (error: any) {
     console.error('Error deploying domain:', error);

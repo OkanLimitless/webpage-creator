@@ -101,15 +101,26 @@ async function processDomainDeployment(
       // Update the deployment record with Vercel IDs
       deploymentRecord.deploymentId = vercelDeployment.deploymentId;
       deploymentRecord.vercelProjectId = vercelDeployment.projectId;
-      deploymentRecord.deploymentUrl = vercelDeployment.deploymentUrl;
+      
+      // Store both URLs - prefer the custom domain if available
+      deploymentRecord.deploymentUrl = vercelDeployment.customDomain || vercelDeployment.deploymentUrl;
+      
+      // Add logs with more URL information
       deploymentRecord.addLog(`Vercel deployment created (ID: ${vercelDeployment.deploymentId})`, 'info');
+      if (vercelDeployment.vercelUrl) {
+        deploymentRecord.addLog(`Vercel URL: ${vercelDeployment.vercelUrl}`, 'info');
+      }
+      if (vercelDeployment.customDomain) {
+        deploymentRecord.addLog(`Custom domain URL: ${vercelDeployment.customDomain}`, 'info');
+      }
+      
       await deploymentRecord.save();
       
       // Update the domain with the deployment info
       const domain = await Domain.findById(domainId);
       if (domain) {
         domain.deploymentId = vercelDeployment.deploymentId;
-        domain.deploymentUrl = vercelDeployment.deploymentUrl;
+        domain.deploymentUrl = vercelDeployment.customDomain || vercelDeployment.deploymentUrl;
         await domain.save();
       }
       
