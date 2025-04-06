@@ -34,13 +34,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Fix for localhost with port
+  let cleanHostname = hostname;
+  if (hostname.includes(':')) {
+    cleanHostname = hostname.split(':')[0];
+  }
+  
   // Check if the hostname has a subdomain
-  const hasSubdomain = hasValidSubdomain(hostname);
+  const hasSubdomain = hasValidSubdomain(cleanHostname);
   
   // If no subdomain or www, explicitly route to the root domain handler
-  if (!hasSubdomain || hostname.startsWith('www.')) {
+  if (!hasSubdomain || cleanHostname.startsWith('www.')) {
     // Root domain request - explicitly rewrite to (root) route handler
-    console.log(`[Middleware] Root domain request: ${hostname}${pathname}`);
+    console.log(`[Middleware] Root domain request: ${cleanHostname}${pathname}`);
     
     try {
       // Create an absolute URL using the current URL's origin for the rewrite
@@ -71,8 +77,8 @@ export function middleware(request: NextRequest) {
   }
   
   // For requests with a subdomain (e.g., landing.example.com), rewrite to subdomain route
-  const subdomain = getSubdomain(hostname);
-  console.log(`[Middleware] Subdomain request: ${subdomain}.${hostname}${pathname}`);
+  const subdomain = getSubdomain(cleanHostname);
+  console.log(`[Middleware] Subdomain request: ${subdomain}.${cleanHostname}${pathname}`);
   
   try {
     // Rewrite the URL to include the subdomain in the path
@@ -122,8 +128,13 @@ function getSubdomain(hostname: string): string {
   if (hostname.includes('localhost')) return '';
   if (hostname.endsWith('vercel.app')) return '';
   
-  // Extract the first part
-  return hostname.split('.')[0];
+  // Extract the subdomain part (first segment of the hostname)
+  const parts = hostname.split('.');
+  if (parts.length >= 3) {
+    return parts[0];
+  }
+  
+  return '';
 }
 
 // Specify paths this middleware should run on

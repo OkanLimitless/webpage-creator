@@ -46,9 +46,63 @@ export async function GET(request: NextRequest) {
     
     console.log(`Looking up domain '${domain}' in database`);
     
-    // Find the domain in our database with case-insensitive matching
+    // Validate that we have a proper domain name with at least one dot
+    if (!domain.includes('.')) {
+      console.error(`Invalid domain format: ${domain}`);
+      return new NextResponse(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Invalid Domain</title>
+          <style>
+            body { 
+              font-family: system-ui, sans-serif; 
+              display: flex; 
+              justify-content: center; 
+              align-items: center; 
+              height: 100vh; 
+              margin: 0;
+              padding: 20px;
+              text-align: center;
+              background-color: #f9fafb;
+            }
+            .error-container {
+              max-width: 600px;
+              padding: 40px;
+              background-color: white;
+              border-radius: 8px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+            h1 { color: #ef4444; margin-bottom: 10px; }
+            h2 { color: #1f2937; margin-bottom: 20px; }
+            p { color: #6b7280; margin-bottom: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="error-container">
+            <h1>Invalid Domain Format</h1>
+            <h2>${domain}</h2>
+            <p>The domain format is invalid. A proper domain should look like "example.com".</p>
+            <p>Debug info: Request received at ${new Date().toISOString()}</p>
+          </div>
+        </body>
+        </html>
+      `, { 
+        status: 400,
+        headers: {
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-store, must-revalidate',
+          'X-Content-Type-Options': 'nosniff',
+        }
+      });
+    }
+    
+    // Find the domain in our database with case-insensitive matching and escaping special regex characters
+    const escapedDomain = domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const domainDoc = await Domain.findOne({ 
-      name: { $regex: new RegExp(`^${domain}$`, 'i') } 
+      name: { $regex: new RegExp(`^${escapedDomain}$`, 'i') } 
     });
     
     if (!domainDoc) {
