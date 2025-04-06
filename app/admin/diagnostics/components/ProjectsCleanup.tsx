@@ -96,13 +96,13 @@ export default function ProjectsCleanup() {
   };
 
   const handleRunCleanupScript = async () => {
-    if (!confirm("Are you sure you want to run the comprehensive cleanup script? This will transfer domains from duplicate projects to the main project and then delete the duplicates.")) {
+    if (!confirm("Are you sure you want to run the comprehensive project analysis? This will scan and report on domain-specific projects.")) {
       return;
     }
     
     try {
       setIsRunningScript(true);
-      setScriptOutput(["Starting cleanup script..."]);
+      setScriptOutput(["Starting project analysis..."]);
       setProjectsToClean([]);
       
       // Set up event source for server-sent events
@@ -149,16 +149,19 @@ export default function ProjectsCleanup() {
       
       <div className="mb-6">
         <p className="mb-2">
-          These utilities will help you clean up duplicate or empty Vercel projects:
+          These utilities help you analyze and manage domain-specific Vercel projects:
         </p>
         <ul className="list-disc ml-5 mb-4 text-gray-700">
-          <li><strong>Empty Projects Cleanup</strong>: Finds and deletes projects with no domains attached</li>
-          <li><strong>Check Projects</strong>: Analyzes duplicate projects without making any changes</li>
-          <li><strong>Comprehensive Cleanup</strong>: Consolidates all domains to your main project and deletes duplicates</li>
+          <li><strong>Empty Projects Cleanup</strong>: Finds and deletes projects with no domains attached (safe)</li>
+          <li><strong>Project Analysis</strong>: Scans and reports on all domain projects without making changes</li>
+          <li><strong>IMPORTANT</strong>: These tools will <span className="font-bold text-red-600">never</span> move domains between projects</li>
         </ul>
-        <p className="text-sm text-gray-600 mb-4">
-          Use these tools if you notice domains being deployed to multiple projects or if root domains are not working correctly.
-        </p>
+        <div className="bg-blue-50 p-3 rounded border border-blue-200 mb-4">
+          <h3 className="font-medium text-blue-800 mb-1">Important Note:</h3>
+          <p className="text-sm text-blue-700">
+            Each domain should stay on its dedicated project (domain-name-com). Domains should NOT be moved to the main "webpage-creator" project as this causes redirect issues.
+          </p>
+        </div>
         
         <div className="flex items-center mb-4">
           <input
@@ -210,26 +213,7 @@ export default function ProjectsCleanup() {
               Analyzing...
             </>
           ) : (
-            'Check Projects'
-          )}
-        </button>
-        
-        <button
-          onClick={handleRunCleanupScript}
-          disabled={isLoading || isRunningScript}
-          className={`px-4 py-2 rounded ${
-            isLoading || isRunningScript
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-red-600 hover:bg-red-700 text-white'
-          } transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500`}
-        >
-          {isRunningScript ? (
-            <>
-              <span className="animate-spin inline-block h-4 w-4 border-2 border-white rounded-full border-t-transparent mr-2"></span>
-              {isCheckingOnly ? 'Analyzing...' : 'Running Script...'}
-            </>
-          ) : (
-            'Run Comprehensive Cleanup'
+            'Analyze Projects'
           )}
         </button>
       </div>
@@ -259,7 +243,7 @@ export default function ProjectsCleanup() {
       {/* Projects that would be affected */}
       {projectsToClean.length > 0 && (
         <div className="mb-6 p-4 rounded bg-yellow-50 border border-yellow-200">
-          <h3 className="font-medium text-yellow-800 mb-2">Projects That Would Be Affected:</h3>
+          <h3 className="font-medium text-yellow-800 mb-2">Domain Projects Overview:</h3>
           <div className="max-h-80 overflow-y-auto">
             {projectsToClean.map((project, idx) => (
               <div key={idx} className="mb-4 p-3 bg-white rounded shadow-sm border border-yellow-100">
@@ -274,16 +258,18 @@ export default function ProjectsCleanup() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm ml-5 mt-1 text-gray-500">No domains attached</p>
+                  <p className="text-sm ml-5 mt-1 text-red-500 font-medium">
+                    No domains attached (this project can be safely deleted)
+                  </p>
                 )}
               </div>
             ))}
           </div>
           
-          {isCheckingOnly && (
+          {isCheckingOnly && projectsToClean.some(p => p.domains.length === 0) && (
             <div className="mt-4 text-sm text-yellow-700">
-              <p className="font-medium">These projects are candidates for cleanup.</p>
-              <p>Turn off "Check-only mode" and click "Run Comprehensive Cleanup" to actually perform the cleanup.</p>
+              <p className="font-medium">Empty projects (with no domains) can be safely deleted.</p>
+              <p>Turn off "Check-only mode" and click "Clean Up Empty Projects" to delete these projects.</p>
             </div>
           )}
         </div>

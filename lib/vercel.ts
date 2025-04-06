@@ -537,32 +537,6 @@ export async function createVercelProject(domainName: string, framework: string 
       throw new Error('Vercel API token not set');
     }
     
-    // If we have a VERCEL_PROJECT_ID set, always use that for all domains
-    // This ensures we have just one project for all domains
-    if (process.env.VERCEL_PROJECT_ID) {
-      console.log(`Using main project ID ${process.env.VERCEL_PROJECT_ID} for domain ${domainName}`);
-      
-      try {
-        // Get the project details
-        const mainProject = await getProject(process.env.VERCEL_PROJECT_ID);
-        
-        // Ensure the domain is attached to this project
-        try {
-          console.log(`Ensuring domain ${domainName} is attached to main project ${process.env.VERCEL_PROJECT_ID}...`);
-          await addDomainToProject(process.env.VERCEL_PROJECT_ID, domainName);
-          console.log(`Domain ${domainName} successfully attached to main project`);
-        } catch (domainError: any) {
-          console.warn(`Warning: Failed to attach domain to main project: ${domainError.message}`);
-          // Continue anyway, as we'll try again later
-        }
-        
-        return mainProject;
-      } catch (error) {
-        console.warn(`Error getting main project (${process.env.VERCEL_PROJECT_ID}):`, error);
-        // Continue with the rest of the function
-      }
-    }
-    
     // Generate a project name based on the domain
     const projectName = `domain-${domainName.replace(/\./g, '-')}`;
     
@@ -602,19 +576,8 @@ export async function createVercelProject(domainName: string, framework: string 
       // Continue with project creation
     }
     
-    // If we reach here and we still have VERCEL_PROJECT_ID, use it as a last resort
-    if (process.env.VERCEL_PROJECT_ID) {
-      try {
-        console.log(`Using main project ID as fallback for ${domainName}`);
-        const mainProject = await getProject(process.env.VERCEL_PROJECT_ID);
-        return mainProject;
-      } catch (error) {
-        console.warn(`Error getting main project as fallback:`, error);
-      }
-    }
-    
     // If we reach here, we need to create a new project
-    console.log(`Creating new project for domain ${domainName}...`);
+    console.log(`Creating new project ${projectName} for domain ${domainName}...`);
     
     // Construct the API URL
     let apiUrl = 'https://api.vercel.com/v9/projects';
@@ -966,9 +929,48 @@ export async function getDeploymentStatus(deploymentId: string): Promise<Deploym
 }
 
 /**
+ * Get all projects from Vercel
+ */
+export async function getAllProjects(): Promise<any[]> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = 'https://api.vercel.com/v9/projects';
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get projects: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data.projects || [];
+  } catch (error: any) {
+    console.error('Error getting projects:', error);
+    throw error;
+  }
+}
+
+/**
  * Get all domains for a specific project
  */
-async function getProjectDomains(projectId: string): Promise<any[]> {
+export async function getProjectDomains(projectId: string): Promise<any[]> {
   try {
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
@@ -1038,45 +1040,6 @@ async function setDeploymentAlias(deploymentId: string, alias: string): Promise<
     return data;
   } catch (error: any) {
     console.error(`Error setting deployment alias to ${alias}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Get all projects from Vercel
- */
-async function getAllProjects(): Promise<any[]> {
-  try {
-    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
-    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
-    
-    if (!VERCEL_TOKEN) {
-      throw new Error('Vercel API token not set');
-    }
-    
-    // Construct the API URL
-    let apiUrl = 'https://api.vercel.com/v9/projects';
-    if (VERCEL_TEAM_ID) {
-      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
-    }
-    
-    // Make the API request
-    const response = await fetch(apiUrl, {
-      headers: {
-        'Authorization': `Bearer ${VERCEL_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(`Failed to get projects: ${data.error?.message || 'Unknown error'}`);
-    }
-    
-    return data.projects || [];
-  } catch (error: any) {
-    console.error('Error getting projects:', error);
     throw error;
   }
 }
@@ -1178,34 +1141,34 @@ export async function deployDomain(domainName: string): Promise<{
   try {
     console.log(`Starting deployment process for domain: ${domainName}`);
     
-    // First, check if we have a main project ID set - we'll use this for all domains
+    // First, check if the domain is already attached to any project
     let project = null;
-    const mainProjectId = process.env.VERCEL_PROJECT_ID;
-    
-    if (mainProjectId) {
-      console.log(`Using main project ID for all domains: ${mainProjectId}`);
-      try {
-        project = await getProject(mainProjectId);
-        console.log(`Successfully got main project: ${project.name} (${project.id})`);
-      } catch (error) {
-        console.warn(`Error getting main project: ${error}. Will try alternatives.`);
+    try {
+      const existingProject = await findProjectByDomain(domainName);
+      if (existingProject) {
+        console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+        project = existingProject;
       }
+    } catch (error) {
+      console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
     }
     
-    // If we didn't get the main project, check if the domain is already attached to any project
+    // If we don't have a project yet, check for a project with the expected name pattern
     if (!project) {
+      const projectName = `domain-${domainName.replace(/\./g, '-')}`;
       try {
-        const existingProject = await findProjectByDomain(domainName);
-        if (existingProject) {
-          console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
-          project = existingProject;
+        console.log(`Looking for project with name ${projectName}...`);
+        const namedProject = await findProjectByName(projectName);
+        if (namedProject) {
+          console.log(`Found project with matching name: ${namedProject.id} (${namedProject.name})`);
+          project = namedProject;
         }
       } catch (error) {
-        console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
+        console.warn(`Error searching for project by name: ${error}`);
       }
     }
     
-    // If we still don't have a project, create one or find an existing one
+    // If we still don't have a project, we'll need to create one
     if (!project) {
       // Clean up any existing domain associations to avoid conflicts
       console.log(`Cleaning up domain ${domainName} from any existing projects...`);
@@ -1220,7 +1183,8 @@ export async function deployDomain(domainName: string): Promise<{
         console.warn(`Error during domain cleanup (continuing anyway): ${cleanupError.message}`);
       }
       
-      // Create or find a project for the domain
+      // Create a new project for the domain
+      console.log(`Creating dedicated project for domain ${domainName}...`);
       project = await createVercelProject(domainName);
     }
     

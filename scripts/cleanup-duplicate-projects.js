@@ -15,12 +15,14 @@ async function cleanupDuplicateProjects() {
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
     
-    if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
-      console.error('Error: Vercel token or project ID not set in environment variables');
+    if (!VERCEL_TOKEN) {
+      console.error('Error: Vercel token not set in environment variables');
       return;
     }
     
-    console.log(`Main project ID: ${VERCEL_PROJECT_ID}`);
+    if (VERCEL_PROJECT_ID) {
+      console.log(`Main project ID: ${VERCEL_PROJECT_ID} (Note: Domains should NOT be moved to this project)`);
+    }
     
     // Get all projects
     let projectsUrl = 'https://api.vercel.com/v9/projects';
@@ -45,41 +47,8 @@ async function cleanupDuplicateProjects() {
     const projects = projectsData.projects || [];
     console.log(`Found ${projects.length} projects`);
     
-    // Get the main project details
-    const mainProject = projects.find(p => p.id === VERCEL_PROJECT_ID);
-    if (!mainProject) {
-      console.error(`Main project with ID ${VERCEL_PROJECT_ID} not found!`);
-      return;
-    }
-    console.log(`Main project: ${mainProject.name} (${mainProject.id})`);
-    
-    // Get domains for main project
-    let domainsUrl = `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains`;
-    if (VERCEL_TEAM_ID) {
-      domainsUrl += `?teamId=${VERCEL_TEAM_ID}`;
-    }
-    
-    const domainsResponse = await fetch(domainsUrl, {
-      headers: {
-        'Authorization': `Bearer ${VERCEL_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const domainsData = await domainsResponse.json();
-    
-    if (!domainsResponse.ok) {
-      console.error('Error fetching domains for main project:', domainsData);
-      return;
-    }
-    
-    const mainDomains = domainsData.domains || [];
-    console.log(`Main project has ${mainDomains.length} domains attached`);
-    mainDomains.forEach(d => console.log(`- ${d.name}`));
-    
-    // Find all domain-* projects that might be duplicates
+    // Find all domain-* projects
     const domainProjects = projects.filter(p => 
-      p.id !== VERCEL_PROJECT_ID && 
       p.name.startsWith('domain-')
     );
     
@@ -88,9 +57,18 @@ async function cleanupDuplicateProjects() {
     // Array to collect projects that will be affected by cleanup
     const projectsToClean = [];
     
+    // Find empty domain projects (no domains attached)
+    const emptyProjects = [];
+    
     // Process the projects
     for (const project of domainProjects) {
       console.log(`\nAnalyzing project: ${project.name} (${project.id})`);
+      
+      // Skip main project
+      if (project.id === VERCEL_PROJECT_ID) {
+        console.log(`Skipping main project ${VERCEL_PROJECT_ID}`);
+        continue;
+      }
       
       // Get domains for this project
       let projDomainsUrl = `https://api.vercel.com/v9/projects/${project.id}/domains`;
@@ -125,51 +103,53 @@ async function cleanupDuplicateProjects() {
         }))
       });
       
-      // If we're in check-only mode, just list the domains but don't make changes
-      if (checkOnly) {
-        if (projectDomains.length === 0) {
-          console.log('No domains found. This project would be deleted during actual cleanup.');
+      // If project has no domains, mark it for cleanup
+      if (projectDomains.length === 0) {
+        emptyProjects.push(project);
+        console.log('No domains found. This project can be safely deleted.');
+      } else {
+        projectDomains.forEach(d => {
+          console.log(`- ${d.name} (${d.verified ? 'verified' : 'unverified'})`);
+        });
+        
+        // Extract the domain name from the project name (domain-example-com => example.com)
+        const domainFromName = project.name.replace('domain-', '').replace(/-/g, '.');
+        
+        // Check if this project has its expected domain
+        const hasExpectedDomain = projectDomains.some(d => d.name === domainFromName);
+        if (!hasExpectedDomain) {
+          console.log(`WARNING: This project doesn't have its expected domain (${domainFromName})`);
         } else {
-          projectDomains.forEach(d => {
-            console.log(`- ${d.name} (${d.verified ? 'verified' : 'unverified'})`);
-          });
-          console.log('These domains would be transferred to the main project during actual cleanup.');
+          console.log(`✓ Project correctly has its domain (${domainFromName})`);
         }
+      }
+      
+      // If we're in check-only mode, just continue to the next project
+      if (checkOnly) {
         continue;
       }
       
       // If we're here, we're in full cleanup mode
+      
+      // Only delete empty projects (with no domains)
       if (projectDomains.length === 0) {
-        console.log('No domains found. This project can be safely deleted.');
+        console.log(`Deleting empty project ${project.name} (${project.id})...`);
         await deleteProject(project.id);
-        continue;
+      } else {
+        console.log(`Leaving project ${project.name} intact as it has active domains`);
       }
-      
-      // Process each domain in this project
-      for (const domain of projectDomains) {
-        console.log(`- Domain: ${domain.name}`);
-        
-        // Check if this domain is already in the main project
-        const domainInMainProject = mainDomains.some(d => d.name === domain.name);
-        
-        if (domainInMainProject) {
-          console.log(`  Domain ${domain.name} is already in main project. Removing from this project...`);
-          await removeDomainFromProject(project.id, domain.name);
-        } else {
-          console.log(`  Adding domain ${domain.name} to main project...`);
-          await addDomainToProject(VERCEL_PROJECT_ID, domain.name);
-          console.log(`  Removing domain ${domain.name} from this project...`);
-          await removeDomainFromProject(project.id, domain.name);
-        }
-      }
-      
-      // After moving all domains, delete the project
-      console.log(`Deleting now-empty project ${project.name} (${project.id})...`);
-      await deleteProject(project.id);
     }
     
     // Output the projects to clean in a special format that can be parsed by the UI
     console.log('PROJECTS_TO_CLEAN_JSON:' + JSON.stringify(projectsToClean));
+    
+    // Summary of empty projects
+    if (emptyProjects.length > 0) {
+      console.log(`\nFound ${emptyProjects.length} empty domain projects that can be safely deleted:`);
+      emptyProjects.forEach(p => console.log(`- ${p.name} (${p.id})`));
+    } else {
+      console.log(`\nNo empty domain projects found to clean up`);
+    }
     
     console.log('\nProject ' + (checkOnly ? 'analysis' : 'cleanup') + ' completed!');
   } catch (error) {
