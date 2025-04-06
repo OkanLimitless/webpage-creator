@@ -6,6 +6,8 @@ interface VercelResponse {
   error?: {
     code: string;
     message: string;
+    projectId?: string;
+    domain?: any;
   };
   [key: string]: any;
 }
@@ -122,7 +124,7 @@ export async function addDomainToVercel(domainName: string): Promise<any> {
     }
     
     // Get the verification records if available
-    let configurationRecords = [];
+    let configurationRecords: Array<{name: string; type: string; value: string;}> = [];
     if (data.verification && Array.isArray(data.verification)) {
       configurationRecords = data.verification.map((record: any) => ({
         name: record.domain.split('.')[0] === domainName ? '@' : record.domain.split('.')[0],
