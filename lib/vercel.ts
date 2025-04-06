@@ -1,5 +1,41 @@
 // Vercel API integration for domain management
 
+import fetch from 'node-fetch';
+
+interface VercelResponse {
+  error?: {
+    code: string;
+    message: string;
+  };
+  [key: string]: any;
+}
+
+interface AddDomainResponse extends VercelResponse {
+  name?: string;
+  verified?: boolean;
+  verification?: Array<{
+    type: string;
+    domain: string;
+    value: string;
+    reason: string;
+  }>;
+}
+
+interface CreateProjectResponse extends VercelResponse {
+  id?: string;
+  name?: string;
+  accountId?: string;
+  createdAt?: string;
+}
+
+interface DeploymentResponse extends VercelResponse {
+  id?: string;
+  url?: string;
+  createdAt?: string;
+  readyState?: 'READY' | 'ERROR' | 'BUILDING' | 'INITIALIZING' | 'QUEUED' | 'CANCELED';
+  state?: 'READY' | 'ERROR' | 'BUILDING' | 'INITIALIZING' | 'QUEUED' | 'CANCELED';
+}
+
 // Get Vercel credentials
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN || '';
 const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || '';
@@ -20,7 +56,7 @@ if (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID) {
  * @param domainName The domain name to add
  * @returns Response from Vercel API including required DNS records
  */
-export async function addDomainToVercel(domainName: string) {
+export async function addDomainToVercel(domainName: string): Promise<any> {
   try {
     console.log(`Adding domain ${domainName} to Vercel project...`);
     
@@ -59,7 +95,7 @@ export async function addDomainToVercel(domainName: string) {
       body: JSON.stringify({ name: domainName })
     });
     
-    const data = await response.json();
+    const data: AddDomainResponse = await response.json();
     console.log(`Vercel domain addition response:`, JSON.stringify(data));
     
     // Handle domain_already_in_use error as a success case
@@ -463,6 +499,322 @@ export async function addDomainAndSubdomainToVercel(domain: string, subdomain: s
     };
   } catch (error) {
     console.error(`Error adding domain and subdomain to Vercel:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Create a new project in Vercel for a domain
+ */
+export async function createVercelProject(domainName: string, framework: string = 'nextjs'): Promise<CreateProjectResponse> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Generate a project name based on the domain
+    const projectName = `domain-${domainName.replace(/\./g, '-')}`;
+    
+    // Construct the API URL
+    let apiUrl = 'https://api.vercel.com/v9/projects';
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request to create the project
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: projectName,
+        framework,
+        environmentVariables: [
+          { key: 'DOMAIN_NAME', value: domainName, target: ['production', 'preview', 'development'] }
+        ]
+      })
+    });
+    
+    const data: CreateProjectResponse = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to create Vercel project: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    // Now add the domain to the project
+    await addDomainToProject(data.id!, domainName);
+    
+    return data;
+  } catch (error: any) {
+    console.error('Error creating Vercel project:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add a domain to a specific Vercel project
+ */
+async function addDomainToProject(projectId: string, domainName: string): Promise<AddDomainResponse> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v9/projects/${projectId}/domains`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name: domainName })
+    });
+    
+    const data: AddDomainResponse = await response.json();
+    
+    if (!response.ok && data.error?.code !== 'domain_already_exists') {
+      throw new Error(`Failed to add domain to project: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data;
+  } catch (error: any) {
+    console.error('Error adding domain to project:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create a new deployment for a project
+ */
+export async function createDeployment(projectId: string, domainName: string): Promise<DeploymentResponse> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v13/deployments`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Create a template deployment configuration
+    const deploymentConfig = {
+      projectId,
+      name: domainName,
+      target: 'production',
+      source: 'cli',
+      files: {
+        // Minimal Next.js app with root domain and API routes
+        'package.json': {
+          file: {
+            contentType: 'application/json',
+            data: JSON.stringify({
+              name: `domain-${domainName.replace(/\./g, '-')}`,
+              version: '1.0.0',
+              private: true,
+              scripts: {
+                dev: 'next dev',
+                build: 'next build',
+                start: 'next start'
+              },
+              dependencies: {
+                next: '^13.4.0',
+                react: '^18.2.0',
+                'react-dom': '^18.2.0',
+                mongoose: '^7.0.0'
+              }
+            })
+          }
+        },
+        'next.config.js': {
+          file: {
+            contentType: 'application/javascript',
+            data: `module.exports = {
+              reactStrictMode: true,
+              async rewrites() {
+                return [
+                  {
+                    source: '/:path*',
+                    destination: \`\${process.env.MAIN_APP_URL}/:path*\`
+                  }
+                ];
+              }
+            }`
+          }
+        },
+        'pages/index.js': {
+          file: {
+            contentType: 'application/javascript',
+            data: `export default function Home() {
+              return <div>Loading ${domainName} content...</div>;
+            }
+            
+            export async function getServerSideProps() {
+              return {
+                redirect: {
+                  destination: \`\${process.env.MAIN_APP_URL}/\`,
+                  permanent: false,
+                }
+              };
+            }`
+          }
+        }
+      },
+      projectSettings: {
+        framework: 'nextjs',
+        devCommand: 'next dev',
+        buildCommand: 'next build',
+        outputDirectory: '.next'
+      },
+      env: {
+        DOMAIN_NAME: domainName,
+        MAIN_APP_URL: process.env.MAIN_APP_URL || 'https://yourfavystore.com'
+      }
+    };
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(deploymentConfig)
+    });
+    
+    const data: DeploymentResponse = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to create deployment: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data;
+  } catch (error: any) {
+    console.error('Error creating deployment:', error);
+    throw error;
+  }
+}
+
+/**
+ * Check the status of a deployment
+ */
+export async function getDeploymentStatus(deploymentId: string): Promise<DeploymentResponse> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v13/deployments/${deploymentId}`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data: DeploymentResponse = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get deployment status: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data;
+  } catch (error: any) {
+    console.error('Error getting deployment status:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all domains for a project
+ */
+export async function getProjectDomains(projectId: string): Promise<any[]> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v9/projects/${projectId}/domains`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get project domains: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data.domains || [];
+  } catch (error: any) {
+    console.error('Error getting project domains:', error);
+    throw error;
+  }
+}
+
+/**
+ * Main function to handle domain deployment
+ */
+export async function deployDomain(domainName: string): Promise<{
+  projectId: string;
+  deploymentId: string;
+  deploymentUrl?: string;
+  status: string;
+}> {
+  try {
+    // 1. Create a project for the domain if it doesn't exist
+    const project = await createVercelProject(domainName);
+    
+    // 2. Create a deployment for the project
+    const deployment = await createDeployment(project.id!, domainName);
+    
+    return {
+      projectId: project.id!,
+      deploymentId: deployment.id!,
+      deploymentUrl: deployment.url ? `https://${deployment.url}` : undefined,
+      status: deployment.readyState || 'INITIALIZING'
+    };
+  } catch (error: any) {
+    console.error('Error deploying domain:', error);
     throw error;
   }
 } 

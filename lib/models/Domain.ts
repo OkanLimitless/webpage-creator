@@ -7,6 +7,11 @@ export interface IDomain {
   verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
   verificationKey?: string;
   isActive: boolean;
+  // Deployment-related fields
+  deploymentId?: string;
+  deploymentStatus: 'pending' | 'deploying' | 'deployed' | 'failed' | 'not_deployed';
+  deploymentUrl?: string;
+  lastDeployedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +45,23 @@ const DomainSchema = new mongoose.Schema<IDomain>(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Deployment-related fields
+    deploymentId: {
+      type: String,
+      trim: true,
+    },
+    deploymentStatus: {
+      type: String,
+      enum: ['pending', 'deploying', 'deployed', 'failed', 'not_deployed'],
+      default: 'not_deployed',
+    },
+    deploymentUrl: {
+      type: String,
+      trim: true,
+    },
+    lastDeployedAt: {
+      type: Date,
     },
   },
   { timestamps: true }

@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import GenerateRootPageButton from './components/GenerateRootPageButton';
 
 interface Domain {
   _id: string;
   name: string;
   verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
+  deploymentStatus?: string;
   createdAt: string;
   hasRootPage?: boolean; // Flag to indicate if a root page exists
 }
@@ -74,6 +76,20 @@ export default function DomainsList() {
   // Helper function to determine if a domain is verified
   const isVerified = (status: string) => status === 'active';
 
+  // Helper function to get deployment status badge
+  const getDeploymentStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'deployed':
+        return <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">Deployed</span>;
+      case 'deploying':
+        return <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">Deploying</span>;
+      case 'failed':
+        return <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-medium">Failed</span>;
+      default:
+        return <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium">Not Deployed</span>;
+    }
+  };
+
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-6">Manage Domains</h1>
@@ -89,7 +105,7 @@ export default function DomainsList() {
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Created At
+                Deployment
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Root Page
@@ -103,7 +119,9 @@ export default function DomainsList() {
             {domains.map((domain) => (
               <tr key={domain._id}>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{domain.name}</div>
+                  <Link href={`/admin/domains/${domain._id}`}>
+                    <div className="text-sm font-medium text-blue-600 hover:text-blue-800">{domain.name}</div>
+                  </Link>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -114,8 +132,8 @@ export default function DomainsList() {
                     {isVerified(domain.verificationStatus) ? 'Verified' : 'Pending Verification'}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(domain.createdAt).toLocaleDateString()}
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {getDeploymentStatusBadge(domain.deploymentStatus)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {domain.hasRootPage ? (
@@ -136,6 +154,12 @@ export default function DomainsList() {
                       onSuccess={fetchDomains}
                     />
                   )}
+                  <Link 
+                    href={`/admin/domains/${domain._id}`}
+                    className="text-indigo-600 hover:text-indigo-900 ml-2"
+                  >
+                    Manage
+                  </Link>
                   {domain.hasRootPage && (
                     <a 
                       href={`https://${domain.name}`} 
@@ -143,7 +167,7 @@ export default function DomainsList() {
                       rel="noopener noreferrer"
                       className="text-blue-600 hover:text-blue-900 ml-2"
                     >
-                      View Root Page
+                      View Site
                     </a>
                   )}
                 </td>

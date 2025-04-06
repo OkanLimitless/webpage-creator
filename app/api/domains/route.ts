@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { Domain, IDomain } from '@/lib/models/Domain';
 import { getNameservers, addDomain as addDomainToCloudflare } from '@/lib/cloudflare';
 import { addDomainToVercel } from '@/lib/vercel';
+import { startDomainDeployment } from '@/lib/services/domainDeploymentService';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
@@ -112,7 +113,20 @@ export async function POST(request: NextRequest) {
         verificationStatus: cfResult.status,
         verificationKey: cfResult.verificationKey,
         isActive: true,
+        deploymentStatus: 'pending',
       });
+
+      // Start the domain deployment process asynchronously
+      try {
+        console.log(`Starting automatic deployment for new domain: ${name}`);
+        startDomainDeployment(domain._id.toString())
+          .catch(deployError => {
+            console.error(`Error during automatic deployment for ${name}:`, deployError);
+          });
+      } catch (deployError) {
+        console.error(`Failed to trigger automatic deployment for ${name}:`, deployError);
+        // We continue even if deployment fails, as it can be manually triggered later
+      }
       
       return NextResponse.json({
         ...domain.toJSON(),
@@ -141,7 +155,20 @@ export async function POST(request: NextRequest) {
         cloudflareNameservers,
         verificationStatus: 'pending',
         isActive: true,
+        deploymentStatus: 'pending',
       });
+
+      // Start the domain deployment process asynchronously
+      try {
+        console.log(`Starting automatic deployment for new domain with fallback: ${name}`);
+        startDomainDeployment(domain._id.toString())
+          .catch(deployError => {
+            console.error(`Error during automatic deployment for ${name}:`, deployError);
+          });
+      } catch (deployError) {
+        console.error(`Failed to trigger automatic deployment for ${name}:`, deployError);
+        // We continue even if deployment fails, as it can be manually triggered later
+      }
       
       return NextResponse.json({
         ...domain.toJSON(),
