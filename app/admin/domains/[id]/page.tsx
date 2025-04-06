@@ -188,7 +188,7 @@ export default function DomainDetailsPage() {
               <p className="text-gray-400 mb-4">Create a root page to display content on your main domain</p>
               <RootPageForm 
                 domainId={domain._id}
-                initialData={null}
+                initialData={undefined}
               />
             </div>
           )}
