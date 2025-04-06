@@ -276,6 +276,14 @@ async function monitorDeployment(
   }
 }
 
+// Define the log interface to fix the type error
+interface DeploymentLog {
+  timestamp: Date;
+  message: string;
+  level: 'info' | 'warning' | 'error';
+  data?: any;
+}
+
 /**
  * Get deployment status for a domain
  */
@@ -321,7 +329,12 @@ export async function getDomainDeploymentStatus(domainId: string): Promise<{
       deploymentId: domain.deploymentId,
       deploymentUrl: domain.deploymentUrl,
       lastDeployedAt: domain.lastDeployedAt,
-      logs: latestDeployment.logs.map(log => ({
+      logs: latestDeployment.logs.map((log: {
+        timestamp: Date;
+        message: string;
+        level: 'info' | 'warning' | 'error';
+        data?: any;
+      }) => ({
         timestamp: log.timestamp,
         message: log.message,
         level: log.level
@@ -361,7 +374,7 @@ export async function getDomainDeployments(domainId: string): Promise<{
     
     return {
       success: true,
-      deployments: deployments.map(deployment => ({
+      deployments: deployments.map((deployment: any) => ({
         id: deployment._id,
         deploymentId: deployment.deploymentId,
         status: deployment.status,
