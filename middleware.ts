@@ -52,6 +52,12 @@ export function middleware(request: NextRequest) {
   // Check if TLD only
   const isDomainJustTLD = commonTLDs.includes(cleanHostname);
   
+  // Explicit root domain check - we give this highest priority
+  const isRootDomain = !isDomainJustTLD && 
+                       !cleanHostname.includes('localhost') && 
+                       cleanHostname.includes('.') && 
+                       cleanHostname.split('.').length <= 2;
+
   // Check for common issues - some setups might incorrectly split the domain
   // For example, we might end up with just "com" instead of "example.com"
   if (isDomainJustTLD || !cleanHostname.includes('.')) {
@@ -138,6 +144,36 @@ export function middleware(request: NextRequest) {
       return NextResponse.rewrite(rewriteUrl);
     } catch (error) {
       console.error(`[Middleware] Error rewriting URL for www: ${error}`);
+      console.log('----------- MIDDLEWARE ERROR END -----------');
+      return NextResponse.next();
+    }
+  }
+  
+  // Handle explicit root domain with highest priority (non-www, no subdomain)
+  if (isRootDomain) {
+    console.log(`[Middleware] Explicit root domain detected: ${cleanHostname}`);
+    try {
+      // Create an absolute URL using the current URL's origin for the rewrite
+      const url = new URL(request.url);
+      
+      // Build the full path to the root route handler
+      let rootPath = pathname;
+      if (!rootPath.startsWith('/')) {
+        rootPath = `/${rootPath}`;
+      }
+      
+      const rewritePath = `/(root)${rootPath}`;
+      
+      console.log(`[Middleware] Rewriting root domain request to: ${rewritePath}`);
+      
+      // Explicitly rewrite to the (root) group route with the full URL including origin
+      const rewriteUrl = new URL(rewritePath, url.origin);
+      console.log(`[Middleware] Full rewrite URL: ${rewriteUrl.toString()}`);
+      
+      console.log('----------- MIDDLEWARE END -----------');
+      return NextResponse.rewrite(rewriteUrl);
+    } catch (error) {
+      console.error(`[Middleware] Error rewriting URL for root domain: ${error}`);
       console.log('----------- MIDDLEWARE ERROR END -----------');
       return NextResponse.next();
     }

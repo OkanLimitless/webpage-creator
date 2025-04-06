@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import DomainTester from './DomainTester';
 import DNSChecker from './DNSChecker';
 import DomainFixer from './DomainFixer';
+import RootDomainTester from './RootDomainTester';
 
 type Domain = {
   _id: string;
@@ -14,7 +15,7 @@ type Domain = {
 };
 
 export default function DiagnosticsPanel() {
-  const [activeTab, setActiveTab] = useState<'domain-test' | 'dns-check' | 'fix-issues'>('domain-test');
+  const [activeTab, setActiveTab] = useState<'domain-test' | 'dns-check' | 'fix-issues' | 'root-domain-test'>('domain-test');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -65,6 +66,17 @@ export default function DiagnosticsPanel() {
             </button>
 
             <button
+              onClick={() => setActiveTab('root-domain-test')}
+              className={`${
+                activeTab === 'root-domain-test'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Root Domain Test
+            </button>
+
+            <button
               onClick={() => setActiveTab('dns-check')}
               className={`${
                 activeTab === 'dns-check'
@@ -98,6 +110,7 @@ export default function DiagnosticsPanel() {
           ) : (
             <>
               {activeTab === 'domain-test' && <DomainTester domains={domains} />}
+              {activeTab === 'root-domain-test' && <RootDomainTester domains={domains} />}
               {activeTab === 'dns-check' && <DNSChecker domains={domains} />}
               {activeTab === 'fix-issues' && <DomainFixer domains={domains} />}
             </>
