@@ -32,6 +32,12 @@ interface RootPage {
   isActive: boolean;
 }
 
+// Add a type for the RootPageForm props based on your implementation
+interface RootPageFormProps {
+  domainId: string;
+  initialData: RootPage | null;
+}
+
 export default function DomainDetailsPage() {
   const params = useParams();
   const domainId = params.id as string;
@@ -175,7 +181,6 @@ export default function DomainDetailsPage() {
             <RootPageForm 
               domainId={domain._id}
               initialData={rootPage}
-              mode="edit"
             />
           ) : (
             <div className="text-center py-12 bg-gray-50 rounded-md">
@@ -184,7 +189,6 @@ export default function DomainDetailsPage() {
               <RootPageForm 
                 domainId={domain._id}
                 initialData={null}
-                mode="create"
               />
             </div>
           )}
