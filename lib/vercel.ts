@@ -628,63 +628,59 @@ export async function createDeployment(projectId: string, domainName: string): P
       name: domainName,
       target: 'production',
       source: 'cli',
-      files: {
-        // Minimal Next.js app with root domain and API routes
-        'package.json': {
-          file: {
-            contentType: 'application/json',
-            data: JSON.stringify({
-              name: `domain-${domainName.replace(/\./g, '-')}`,
-              version: '1.0.0',
-              private: true,
-              scripts: {
-                dev: 'next dev',
-                build: 'next build',
-                start: 'next start'
-              },
-              dependencies: {
-                next: '^13.4.0',
-                react: '^18.2.0',
-                'react-dom': '^18.2.0',
-                mongoose: '^7.0.0'
-              }
-            })
-          }
-        },
-        'next.config.js': {
-          file: {
-            contentType: 'application/javascript',
-            data: `module.exports = {
-              reactStrictMode: true,
-              async rewrites() {
-                return [
-                  {
-                    source: '/:path*',
-                    destination: \`\${process.env.MAIN_APP_URL}/:path*\`
-                  }
-                ];
-              }
-            }`
-          }
-        },
-        'pages/index.js': {
-          file: {
-            contentType: 'application/javascript',
-            data: `export default function Home() {
-              return <div>Loading ${domainName} content...</div>;
+      files: [
+        {
+          file: 'package.json',
+          data: JSON.stringify({
+            name: `domain-${domainName.replace(/\./g, '-')}`,
+            version: '1.0.0',
+            private: true,
+            scripts: {
+              dev: 'next dev',
+              build: 'next build',
+              start: 'next start'
+            },
+            dependencies: {
+              next: '^13.4.0',
+              react: '^18.2.0',
+              'react-dom': '^18.2.0',
+              mongoose: '^7.0.0'
             }
-            
-            export async function getServerSideProps() {
-              return {
-                redirect: {
-                  destination: \`\${process.env.MAIN_APP_URL}/\`,
-                  permanent: false,
+          }),
+          encoding: 'utf8'
+        },
+        {
+          file: 'next.config.js',
+          data: `module.exports = {
+            reactStrictMode: true,
+            async rewrites() {
+              return [
+                {
+                  source: '/:path*',
+                  destination: \`\${process.env.MAIN_APP_URL}/:path*\`
                 }
-              };
-            }`
+              ];
+            }
+          }`,
+          encoding: 'utf8'
+        },
+        {
+          file: 'pages/index.js',
+          data: `export default function Home() {
+            return <div>Loading ${domainName} content...</div>;
           }
+          
+          export async function getServerSideProps() {
+            return {
+              redirect: {
+                destination: \`\${process.env.MAIN_APP_URL}/\`,
+                permanent: false,
+              }
+            };
+          }`,
+          encoding: 'utf8'
         }
-      },
+      ],
       projectSettings: {
         framework: 'nextjs',
         devCommand: 'next dev',
