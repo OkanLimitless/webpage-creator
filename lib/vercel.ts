@@ -537,7 +537,12 @@ export async function createVercelProject(domainName: string, framework: string 
         name: projectName,
         framework,
         environmentVariables: [
-          { key: 'DOMAIN_NAME', value: domainName, target: ['production', 'preview', 'development'] }
+          { 
+            key: 'DOMAIN_NAME', 
+            value: domainName, 
+            type: 'plain',
+            target: ['production', 'preview', 'development'] 
+          }
         ]
       })
     });
