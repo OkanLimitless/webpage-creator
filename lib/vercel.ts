@@ -647,7 +647,7 @@ export async function createDeployment(projectId: string, domainName: string): P
               mongoose: '^7.0.0'
             }
           }),
-          encoding: 'utf8'
+          encoding: 'utf-8'
         },
         {
           file: 'next.config.js',
@@ -662,7 +662,7 @@ export async function createDeployment(projectId: string, domainName: string): P
               ];
             }
           }`,
-          encoding: 'utf8'
+          encoding: 'utf-8'
         },
         {
           file: 'pages/index.js',
@@ -678,7 +678,7 @@ export async function createDeployment(projectId: string, domainName: string): P
               }
             };
           }`,
-          encoding: 'utf8'
+          encoding: 'utf-8'
         }
       ],
       projectSettings: {
