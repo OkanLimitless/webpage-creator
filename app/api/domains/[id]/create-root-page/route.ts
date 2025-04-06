@@ -255,31 +255,56 @@ export async function POST(request: NextRequest, { params }: Params) {
       domainId: domain._id,
       title: `${domain.name} - Official Website`,
       description: `Welcome to the official website of ${companyName || domain.name}`,
+      content: `
+        <h1>${companyName || domain.name}</h1>
+        <p>Welcome to our website. We provide quality products and services to meet your needs.</p>
+        
+        <div class="my-8">
+          <h2>Our Services</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 30px 0;">
+            <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+              <h3>High Quality</h3>
+              <p>We pride ourselves on delivering products and services of the highest quality.</p>
+            </div>
+            <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+              <h3>Excellent Support</h3>
+              <p>Our support team is available 24/7 to assist you with any questions or concerns.</p>
+            </div>
+            <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+              <h3>Secure & Reliable</h3>
+              <p>Your security is our priority. We use the latest technology to protect your data.</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="my-8">
+          <h2>Testimonials</h2>
+          <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+            <p>"I've been using this service for months and I'm extremely satisfied with the results."</p>
+            <p style="font-weight: bold; margin-top: 10px;">- John Smith, Satisfied Customer</p>
+          </div>
+        </div>
+        
+        <div class="my-8">
+          <h2>Contact Us</h2>
+          <p>Email: <a href="mailto:info@${domain.name}">info@${domain.name}</a></p>
+        </div>
+      `,
       isActive: true,
-      
-      // Hero section
-      heroTitle: `Welcome to ${companyName || domain.name}`,
-      heroSubtitle: 'Providing quality products and services to meet your needs',
-      heroButtonText: 'Learn More',
-      heroButtonUrl: '#features',
-      
-      // Features
-      features: defaultFeatures,
-      
-      // Testimonials
-      testimonials: defaultTestimonials,
-      
-      // Contact info
-      contactTitle: 'Get In Touch',
-      contactEmail: `info@${domain.name}`,
-      
-      // Company info
-      companyName: companyName || domain.name,
-      privacyPolicyUrl: `/privacy`,
-      termsUrl: `/terms`,
-      
-      // Styling
-      primaryColor: primaryColor || '#3b82f6',
+      metaTags: [
+        `keywords:${domain.name},website,services,products`,
+        'robots:index,follow'
+      ],
+      redirectWwwToNonWww: true,
+      customHead: '',
+      customCss: primaryColor ? `
+        a {
+          color: ${primaryColor};
+        }
+        h2 {
+          color: ${primaryColor};
+        }
+      ` : ''
     });
     
     console.log(`Root page created successfully for domain ${domain.name}`);

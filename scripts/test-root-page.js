@@ -35,9 +35,9 @@ async function testRootPage() {
       console.log('Domain already has a root page:');
       console.log({
         title: existingRootPage.title,
-        heroTitle: existingRootPage.heroTitle,
-        features: existingRootPage.features.length,
-        hasTestimonials: existingRootPage.testimonials && existingRootPage.testimonials.length > 0,
+        content: existingRootPage.content?.substring(0, 50) + '...',
+        metaTags: existingRootPage.metaTags || [],
+        redirectWwwToNonWww: existingRootPage.redirectWwwToNonWww
       });
       
       // You can delete it for testing if needed
@@ -46,40 +46,40 @@ async function testRootPage() {
     } else {
       console.log('No root page found for this domain. Creating one...');
       
-      // Create default features
-      const defaultFeatures = [
-        {
-          title: 'Test Feature 1',
-          description: 'This is a test feature description.',
-          iconName: 'star'
-        },
-        {
-          title: 'Test Feature 2',
-          description: 'Another test feature description.',
-          iconName: 'chat'
-        },
-      ];
-      
       // Create a root page
       const rootPage = await RootPage.create({
         domainId: domain._id,
         title: `${domain.name} - Test Root Page`,
         description: `Test description for ${domain.name}`,
+        content: `
+          <h1>${domain.name}</h1>
+          <p>This is a test root page content.</p>
+          <div>
+            <h2>Our Services</h2>
+            <ul>
+              <li>Test service 1</li>
+              <li>Test service 2</li>
+            </ul>
+          </div>
+        `,
         isActive: true,
-        
-        // Hero section
-        heroTitle: `Test Hero Title for ${domain.name}`,
-        heroSubtitle: 'This is a test hero subtitle',
-        
-        // Features
-        features: defaultFeatures,
+        metaTags: [
+          `keywords:${domain.name},test,website`,
+          'robots:index,follow'
+        ],
+        redirectWwwToNonWww: true,
+        customHead: '',
+        customCss: `
+          h1 { color: blue; }
+          h2 { color: #333; }
+        `
       });
       
       console.log('Root page created successfully:');
       console.log({
         id: rootPage._id,
         title: rootPage.title,
-        heroTitle: rootPage.heroTitle,
+        contentPreview: rootPage.content.substring(0, 50) + '...'
       });
       
       console.log(`Visit your domain at: https://${domain.name}`);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain } from '@/lib/models/Domain';
-import { RootPage, IRootPage } from '@/lib/models/RootPage';
+import { RootPage } from '@/lib/models/RootPage';
 
 // Mark this route as dynamic to prevent static optimization issues
 export const dynamic = 'force-dynamic';
@@ -35,26 +35,16 @@ export async function POST(request: NextRequest) {
       domainId, 
       title, 
       description, 
-      heroTitle, 
-      heroSubtitle, 
-      heroImageUrl, 
-      heroButtonText, 
-      heroButtonUrl,
-      features, 
-      testimonials,
-      contactTitle,
-      contactEmail,
-      contactPhone,
-      contactAddress,
-      companyName,
-      privacyPolicyUrl,
-      termsUrl,
-      primaryColor,
-      logoUrl
+      content,
+      isActive,
+      metaTags,
+      redirectWwwToNonWww,
+      customHead,
+      customCss
     } = body;
     
     // Validate required fields
-    if (!domainId || !title || !description || !heroTitle || !heroSubtitle || !features || features.length === 0) {
+    if (!domainId || !title || !description) {
       return NextResponse.json(
         { error: 'Required fields are missing' },
         { status: 400 }
@@ -84,23 +74,12 @@ export async function POST(request: NextRequest) {
       domainId,
       title,
       description,
-      heroTitle,
-      heroSubtitle,
-      heroImageUrl,
-      heroButtonText,
-      heroButtonUrl,
-      features: features || [],
-      testimonials: testimonials || [],
-      contactTitle,
-      contactEmail,
-      contactPhone,
-      contactAddress,
-      companyName,
-      privacyPolicyUrl,
-      termsUrl,
-      primaryColor,
-      logoUrl,
-      isActive: true
+      content: content || '',
+      isActive: isActive !== undefined ? isActive : true,
+      metaTags: metaTags || [],
+      redirectWwwToNonWww: redirectWwwToNonWww !== undefined ? redirectWwwToNonWww : true,
+      customHead: customHead || '',
+      customCss: customCss || ''
     });
     
     return NextResponse.json({
