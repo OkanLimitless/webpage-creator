@@ -540,6 +540,45 @@ export async function createVercelProject(domainName: string, framework: string 
     // Generate a project name based on the domain
     const projectName = `domain-${domainName.replace(/\./g, '-')}`;
     
+    // First, check if the domain is already attached to any project
+    console.log(`Checking if domain ${domainName} is already attached to a project...`);
+    try {
+      const existingProject = await findProjectByDomain(domainName);
+      if (existingProject) {
+        console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+        return existingProject;
+      }
+    } catch (error) {
+      console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
+      // Continue with project creation
+    }
+    
+    // Second, check if a project with this name already exists
+    console.log(`Checking if project with name ${projectName} already exists...`);
+    try {
+      const existingProject = await findProjectByName(projectName);
+      if (existingProject) {
+        console.log(`Project with name ${projectName} already exists (ID: ${existingProject.id})`);
+        
+        // Ensure the domain is attached to this project
+        try {
+          console.log(`Ensuring domain ${domainName} is attached to existing project ${existingProject.id}...`);
+          await addDomainToProject(existingProject.id, domainName);
+        } catch (domainError: any) {
+          console.warn(`Failed to attach domain to existing project: ${domainError.message}`);
+          // Continue anyway, as we'll try again later
+        }
+        
+        return existingProject;
+      }
+    } catch (error) {
+      console.warn(`Error checking for existing project with name ${projectName}:`, error);
+      // Continue with project creation
+    }
+    
+    // If we reach here, we need to create a new project
+    console.log(`Creating new project for domain ${domainName}...`);
+    
     // Construct the API URL
     let apiUrl = 'https://api.vercel.com/v9/projects';
     if (VERCEL_TEAM_ID) {
@@ -572,10 +611,15 @@ export async function createVercelProject(domainName: string, framework: string 
     if (!response.ok) {
       // If project already exists with the same name, try to return that project
       if (data.error?.code === 'project_name_already_exists') {
-        console.log(`Project with name ${projectName} already exists, trying to find it...`);
-        // We would need to fetch existing projects and find the matching one
-        // For now, throwing the error but this could be enhanced
-        throw new Error(`Project already exists: ${data.error.message || 'Unknown error'}`);
+        console.log(`Project with name ${projectName} already exists during creation, trying to find it...`);
+        try {
+          const existingProject = await findProjectByName(projectName);
+          if (existingProject) {
+            return existingProject;
+          }
+        } catch (findError) {
+          console.warn(`Error finding existing project after creation failure:`, findError);
+        }
       }
       
       throw new Error(`Failed to create Vercel project: ${data.error?.message || 'Unknown error'}`);
@@ -594,6 +638,54 @@ export async function createVercelProject(domainName: string, framework: string 
     return data;
   } catch (error: any) {
     console.error('Error creating Vercel project:', error);
+    throw error;
+  }
+}
+
+/**
+ * Find a project that has a specific domain attached
+ */
+async function findProjectByDomain(domainName: string): Promise<any | null> {
+  try {
+    const projects = await getAllProjects();
+    
+    // For each project, check if it has the domain attached
+    for (const project of projects) {
+      try {
+        const domains = await getProjectDomains(project.id);
+        
+        const hasDomain = domains.some((d: any) => 
+          d.name.toLowerCase() === domainName.toLowerCase());
+        
+        if (hasDomain) {
+          console.log(`Found domain ${domainName} attached to project ${project.id} (${project.name})`);
+          return project;
+        }
+      } catch (error) {
+        console.warn(`Error checking domains for project ${project.id}:`, error);
+        // Continue to next project
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Error finding project by domain ${domainName}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Find a project by its name
+ */
+async function findProjectByName(projectName: string): Promise<any | null> {
+  try {
+    const projects = await getAllProjects();
+    
+    const project = projects.find(p => p.name === projectName);
+    
+    return project || null;
+  } catch (error) {
+    console.error(`Error finding project by name ${projectName}:`, error);
     throw error;
   }
 }
@@ -798,9 +890,9 @@ export async function getDeploymentStatus(deploymentId: string): Promise<Deploym
 }
 
 /**
- * Get all domains for a project
+ * Get all domains for a specific project
  */
-export async function getProjectDomains(projectId: string): Promise<any[]> {
+async function getProjectDomains(projectId: string): Promise<any[]> {
   try {
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
@@ -826,12 +918,12 @@ export async function getProjectDomains(projectId: string): Promise<any[]> {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(`Failed to get project domains: ${data.error?.message || 'Unknown error'}`);
+      throw new Error(`Failed to get domains for project ${projectId}: ${data.error?.message || 'Unknown error'}`);
     }
     
     return data.domains || [];
   } catch (error: any) {
-    console.error('Error getting project domains:', error);
+    console.error(`Error getting domains for project ${projectId}:`, error);
     throw error;
   }
 }
@@ -1010,45 +1102,65 @@ export async function deployDomain(domainName: string): Promise<{
   try {
     console.log(`Starting deployment process for domain: ${domainName}`);
     
-    // 0. First, clean up any existing domain associations
-    console.log(`Cleaning up domain ${domainName} from any existing projects...`);
+    // First, check if the domain is already attached to a project
+    let existingProject = null;
     try {
-      const cleanupResult = await removeDomainFromAllProjects(domainName);
-      if (cleanupResult) {
-        console.log(`Domain ${domainName} was found and removed from other projects`);
-      } else {
-        console.log(`Domain ${domainName} was not found in any other projects or couldn't be removed`);
+      existingProject = await findProjectByDomain(domainName);
+      if (existingProject) {
+        console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
       }
-    } catch (cleanupError: any) {
-      console.warn(`Error during domain cleanup (continuing anyway): ${cleanupError.message}`);
+    } catch (error) {
+      console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
     }
     
-    // 1. Create a project for the domain if it doesn't exist
-    const project = await createVercelProject(domainName);
-    console.log(`Project created/found with ID: ${project.id}`);
+    // If domain is not attached to any project, check if we need to clean up first
+    if (!existingProject) {
+      console.log(`Cleaning up domain ${domainName} from any existing projects...`);
+      try {
+        const cleanupResult = await removeDomainFromAllProjects(domainName);
+        if (cleanupResult) {
+          console.log(`Domain ${domainName} was found and removed from other projects`);
+        } else {
+          console.log(`Domain ${domainName} was not found in any other projects or couldn't be removed`);
+        }
+      } catch (cleanupError: any) {
+        console.warn(`Error during domain cleanup (continuing anyway): ${cleanupError.message}`);
+      }
+    }
     
-    // 2. Try to add the domain to the project explicitly
-    try {
-      console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
-      const domainAddResult = await addDomainToVercel(domainName, project.id);
-      
-      // If domain is still in use by a different project
-      if (!domainAddResult.success && 
-          domainAddResult.error && 
-          domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
+    // Create or find a project for the domain
+    let project;
+    if (existingProject) {
+      project = existingProject;
+    } else {
+      project = await createVercelProject(domainName);
+    }
+    console.log(`Using project with ID: ${project.id} (${project.name})`);
+    
+    // Ensure the domain is properly added to the project
+    if (!existingProject) {
+      try {
+        console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
+        const domainAddResult = await addDomainToVercel(domainName, project.id);
         
-        console.warn(`Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}. 
-          This likely means the cleanup step failed or the domain can't be removed. Aborting deployment.`);
-        throw new Error(`Cannot proceed with deployment: ${domainName} is still in use by project ${domainAddResult.error.projectId}`);
+        // If domain is still in use by a different project
+        if (!domainAddResult.success && 
+            domainAddResult.error && 
+            domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
+          
+          console.error(`Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}.
+            Cannot proceed with deployment to a different project.`);
+          throw new Error(`Cannot proceed with deployment: ${domainName} is in use by project ${domainAddResult.error.projectId}`);
+        }
+        
+        console.log(`Domain ${domainName} successfully added/confirmed to project ${project.id}`);
+      } catch (domainError: any) {
+        console.error(`Failed to add domain to project: ${domainError.message}`);
+        throw new Error(`Domain configuration failed: ${domainError.message}`);
       }
-      
-      console.log(`Domain ${domainName} successfully added/confirmed to project ${project.id}`);
-    } catch (domainError: any) {
-      console.error(`Failed to add domain to project: ${domainError.message}`);
-      throw new Error(`Domain configuration failed: ${domainError.message}`);
     }
     
-    // 3. Create a deployment for the project
+    // Create a deployment for the project
     const deployment = await createDeployment(project.id!, domainName);
     console.log(`Deployment created with ID: ${deployment.id}`);
     
@@ -1056,7 +1168,7 @@ export async function deployDomain(domainName: string): Promise<{
     console.log('Waiting for deployment to initialize (10 seconds)...');
     await new Promise(resolve => setTimeout(resolve, 10000));
     
-    // 4. Check deployment status to ensure it's ready
+    // Check deployment status to ensure it's ready
     let deploymentStatus;
     try {
       deploymentStatus = await getDeploymentStatus(deployment.id!);
@@ -1065,7 +1177,7 @@ export async function deployDomain(domainName: string): Promise<{
       console.error('Error checking deployment status:', statusError);
     }
     
-    // 5. Set the custom domain as an alias for the deployment
+    // Set the custom domain as an alias for the deployment
     try {
       console.log(`Setting alias ${domainName} for deployment ${deployment.id}`);
       await setDeploymentAlias(deployment.id!, domainName);
@@ -1075,7 +1187,7 @@ export async function deployDomain(domainName: string): Promise<{
       // Continue anyway as the domain might be set up through the earlier process
     }
     
-    // 6. Verify the domain to ensure it's properly configured
+    // Verify the domain to ensure it's properly configured
     try {
       console.log(`Verifying domain ${domainName} for project ${project.id}`);
       const verificationResult = await verifyDomainInVercel(domainName, project.id);
@@ -1098,6 +1210,151 @@ export async function deployDomain(domainName: string): Promise<{
     };
   } catch (error: any) {
     console.error('Error deploying domain:', error);
+    throw error;
+  }
+}
+
+/**
+ * Clean up empty projects that have no deployments and no domains
+ * This is useful to remove projects that were created but not fully deployed
+ */
+export async function cleanupEmptyProjects(): Promise<{
+  success: boolean;
+  cleanedProjects: number;
+  message: string;
+}> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    console.log('Starting cleanup of empty projects...');
+    
+    // Get all projects
+    const projects = await getAllProjects();
+    console.log(`Found ${projects.length} projects to check`);
+    
+    let cleanedCount = 0;
+    
+    // For each project, check if it has any domains or deployments
+    for (const project of projects) {
+      try {
+        // Skip if this is the main project
+        if (project.id === process.env.VERCEL_PROJECT_ID) {
+          console.log(`Skipping main project: ${project.id} (${project.name})`);
+          continue;
+        }
+        
+        // Check if the project has any domains
+        const domains = await getProjectDomains(project.id);
+        
+        // If the project has domains, skip it
+        if (domains.length > 0) {
+          console.log(`Project ${project.id} (${project.name}) has ${domains.length} domains, skipping`);
+          continue;
+        }
+        
+        // Check if the project has any deployments
+        const deployments = await getProjectDeployments(project.id);
+        
+        // If the project has deployments but no domains, check if the deployments are recent
+        // We only want to delete projects that have no domains and no recent deployments
+        const hasRecentDeployments = deployments.some((deployment: any) => {
+          // Check if deployment is less than 24 hours old
+          const deploymentDate = new Date(deployment.created);
+          const hoursSinceDeployment = (Date.now() - deploymentDate.getTime()) / (1000 * 60 * 60);
+          return hoursSinceDeployment < 24;
+        });
+        
+        if (deployments.length > 0 && hasRecentDeployments) {
+          console.log(`Project ${project.id} (${project.name}) has ${deployments.length} recent deployments, skipping`);
+          continue;
+        }
+        
+        // If we get here, the project has no domains and no recent deployments, so it's safe to delete
+        console.log(`Deleting empty project ${project.id} (${project.name})`);
+        
+        // Construct the API URL for deletion
+        let url = `https://api.vercel.com/v9/projects/${project.id}`;
+        if (VERCEL_TEAM_ID) {
+          url += `?teamId=${VERCEL_TEAM_ID}`;
+        }
+        
+        // Make the API request to delete the project
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${VERCEL_TOKEN}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.status === 204 || response.ok) {
+          console.log(`Successfully deleted empty project ${project.id} (${project.name})`);
+          cleanedCount++;
+        } else {
+          const errorData = await response.json();
+          console.warn(`Failed to delete project ${project.id}: ${JSON.stringify(errorData)}`);
+        }
+      } catch (projectError) {
+        console.warn(`Error processing project ${project.id}: ${projectError}`);
+        // Continue to next project
+      }
+    }
+    
+    return {
+      success: true,
+      cleanedProjects: cleanedCount,
+      message: `Cleaned up ${cleanedCount} empty projects`
+    };
+  } catch (error: any) {
+    console.error('Error cleaning up empty projects:', error);
+    return {
+      success: false,
+      cleanedProjects: 0,
+      message: `Error cleaning up projects: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Get all deployments for a project
+ */
+async function getProjectDeployments(projectId: string): Promise<any[]> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v6/deployments?projectId=${projectId}`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `&teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get deployments for project ${projectId}: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data.deployments || [];
+  } catch (error: any) {
+    console.error(`Error getting deployments for project ${projectId}:`, error);
     throw error;
   }
 } 

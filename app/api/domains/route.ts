@@ -95,16 +95,6 @@ export async function POST(request: NextRequest) {
       // Try to add the domain to Cloudflare
       const cfResult = await addDomainToCloudflare(name);
       
-      // Also add the domain to Vercel 
-      let vercelResult = null;
-      try {
-        vercelResult = await addDomainToVercel(name);
-        console.log(`Domain added to Vercel: ${name}`);
-      } catch (vercelError) {
-        console.error('Error adding domain to Vercel:', vercelError);
-        // We continue even if Vercel fails, as we can retry later
-      }
-      
       // Create domain with Cloudflare information
       const domain = await Domain.create({
         name,
@@ -130,20 +120,10 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({
         ...domain.toJSON(),
-        vercelStatus: vercelResult ? 'added' : 'failed',
         message: 'Domain added successfully. Please update your domain nameservers to the ones shown in the table to complete verification.',
       }, { status: 201 });
     } catch (error) {
       console.error('Error adding domain to Cloudflare:', error);
-      
-      // Try to add to Vercel anyway
-      let vercelResult = null;
-      try {
-        vercelResult = await addDomainToVercel(name);
-        console.log(`Domain added to Vercel: ${name}`);
-      } catch (vercelError) {
-        console.error('Error adding domain to Vercel:', vercelError);
-      }
       
       // If Cloudflare fails, fall back to just getting nameservers
       console.log('Falling back to fetching global nameservers...');
@@ -172,7 +152,6 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({
         ...domain.toJSON(),
-        vercelStatus: vercelResult ? 'added' : 'failed',
         message: 'Domain added with global nameservers. Please update your domain nameservers to the ones shown in the table.',
       }, { status: 201 });
     }
