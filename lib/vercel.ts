@@ -652,33 +652,39 @@ export async function createDeployment(projectId: string, domainName: string): P
         },
         {
           file: 'next.config.js',
-          data: `module.exports = {
-            reactStrictMode: true,
-            async rewrites() {
-              return [
-                {
-                  source: '/:path*',
-                  destination: \`\${process.env.MAIN_APP_URL}/:path*\`
-                }
-              ];
-            }
-          }`,
+          data: `// Default URL if environment variable is not set
+const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
+
+module.exports = {
+  reactStrictMode: true,
+  async rewrites() {
+    return [
+      {
+        source: '/:path*',
+        destination: \`\${mainAppUrl}/:path*\`
+      }
+    ];
+  }
+}`,
           encoding: 'utf-8'
         },
         {
           file: 'pages/index.js',
           data: `export default function Home() {
-            return <div>Loading ${domainName} content...</div>;
-          }
-          
-          export async function getServerSideProps() {
-            return {
-              redirect: {
-                destination: \`\${process.env.MAIN_APP_URL}/\`,
-                permanent: false,
-              }
-            };
-          }`,
+  return <div>Loading ${domainName} content...</div>;
+}
+
+export async function getServerSideProps() {
+  // Default URL if environment variable is not set
+  const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
+  
+  return {
+    redirect: {
+      destination: \`\${mainAppUrl}/\`,
+      permanent: false,
+    }
+  };
+}`,
           encoding: 'utf-8'
         }
       ],
@@ -690,7 +696,7 @@ export async function createDeployment(projectId: string, domainName: string): P
       },
       env: {
         DOMAIN_NAME: domainName,
-        MAIN_APP_URL: process.env.MAIN_APP_URL || 'https://yourfavystore.com'
+        MAIN_APP_URL: 'https://yourfavystore.com'
       }
     };
     
