@@ -5,9 +5,17 @@ import DomainTester from './DomainTester';
 import DNSChecker from './DNSChecker';
 import DomainFixer from './DomainFixer';
 
+type Domain = {
+  _id: string;
+  name: string;
+  verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
+  isActive: boolean;
+  cloudflareZoneId?: string;
+};
+
 export default function DiagnosticsPanel() {
   const [activeTab, setActiveTab] = useState<'domain-test' | 'dns-check' | 'fix-issues'>('domain-test');
-  const [domains, setDomains] = useState<any[]>([]);
+  const [domains, setDomains] = useState<Domain[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Fetch domains for the dropdown
@@ -16,13 +24,16 @@ export default function DiagnosticsPanel() {
       try {
         setIsLoading(true);
         const response = await fetch('/api/domains');
-        const data = await response.json();
-        
-        if (data.domains) {
-          setDomains(data.domains);
+        if (!response.ok) {
+          throw new Error('Failed to fetch domains');
         }
+        
+        const data = await response.json();
+        // The data is directly an array of domains, not nested under a property
+        setDomains(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error('Error fetching domains:', error);
+        setDomains([]);
       } finally {
         setIsLoading(false);
       }

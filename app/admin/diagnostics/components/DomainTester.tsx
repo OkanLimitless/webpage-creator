@@ -5,7 +5,9 @@ import { useState } from 'react';
 type Domain = {
   _id: string;
   name: string;
+  verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
   isActive: boolean;
+  cloudflareZoneId?: string;
 };
 
 type DomainTesterProps = {
@@ -13,23 +15,22 @@ type DomainTesterProps = {
 };
 
 export default function DomainTester({ domains }: DomainTesterProps) {
-  const [domainToTest, setDomainToTest] = useState<string>('');
+  const [selectedDomain, setSelectedDomain] = useState<string>('');
   const [customDomain, setCustomDomain] = useState<string>('');
   const [useCustomDomain, setUseCustomDomain] = useState<boolean>(false);
   const [testResults, setTestResults] = useState<any>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleTest = async () => {
+    const domainToTest = useCustomDomain ? customDomain : selectedDomain;
     
-    // Determine which domain to test
-    const domainValue = useCustomDomain ? customDomain : domainToTest;
-    
-    if (!domainValue) {
+    if (!domainToTest) {
+      alert('Please select or enter a domain to test');
       return;
     }
     
     setIsLoading(true);
+    setTestResults(null);
     
     try {
       const response = await fetch('/api/diagnostics/test-domain-routing', {
@@ -37,16 +38,14 @@ export default function DomainTester({ domains }: DomainTesterProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ domain: domainValue }),
+        body: JSON.stringify({ domain: domainToTest }),
       });
       
       const data = await response.json();
       setTestResults(data.results);
     } catch (error) {
-      console.error('Error testing domain:', error);
-      setTestResults({
-        error: 'Failed to test domain routing',
-      });
+      console.error('Error testing domain routing:', error);
+      setTestResults({ error: 'Failed to test domain routing' });
     } finally {
       setIsLoading(false);
     }
@@ -56,156 +55,168 @@ export default function DomainTester({ domains }: DomainTesterProps) {
     <div>
       <h2 className="text-lg font-semibold mb-4">Domain Routing Test</h2>
       <p className="mb-4 text-gray-600">
-        This tool simulates how your domain is processed by the application's routing system.
-        It helps diagnose issues where domains might be incorrectly handled.
+        This tool simulates how your domain is processed by the application's routing system. It helps diagnose issues where domains might be incorrectly handled.
       </p>
       
-      <form onSubmit={handleSubmit} className="mb-6">
-        <div className="mb-4">
-          <div className="flex items-center mb-2">
-            <input
-              type="radio"
-              id="selectDomain"
-              name="domainSource"
-              checked={!useCustomDomain}
-              onChange={() => setUseCustomDomain(false)}
-              className="mr-2"
-            />
-            <label htmlFor="selectDomain" className="text-sm text-gray-700">
-              Select from your domains
-            </label>
-          </div>
-          
+      <div className="space-y-4 mb-6">
+        <div className="flex items-center space-x-2">
+          <input
+            type="radio"
+            id="selectFromDomains"
+            checked={!useCustomDomain}
+            onChange={() => setUseCustomDomain(false)}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+          />
+          <label htmlFor="selectFromDomains" className="text-sm font-medium text-gray-700">
+            Select from your domains
+          </label>
+        </div>
+        
+        {!useCustomDomain && (
           <select
-            value={domainToTest}
-            onChange={(e) => setDomainToTest(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-            disabled={useCustomDomain || isLoading}
+            value={selectedDomain}
+            onChange={(e) => setSelectedDomain(e.target.value)}
+            className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            disabled={isLoading}
           >
             <option value="">Select a domain</option>
             {domains.map((domain) => (
               <option key={domain._id} value={domain.name}>
-                {domain.name} {!domain.isActive && '(inactive)'}
+                {domain.name}
               </option>
             ))}
           </select>
+        )}
+        
+        <div className="flex items-center space-x-2">
+          <input
+            type="radio"
+            id="enterCustomDomain"
+            checked={useCustomDomain}
+            onChange={() => setUseCustomDomain(true)}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+          />
+          <label htmlFor="enterCustomDomain" className="text-sm font-medium text-gray-700">
+            Enter a custom domain
+          </label>
         </div>
         
-        <div className="mb-4">
-          <div className="flex items-center mb-2">
-            <input
-              type="radio"
-              id="customDomain"
-              name="domainSource"
-              checked={useCustomDomain}
-              onChange={() => setUseCustomDomain(true)}
-              className="mr-2"
-            />
-            <label htmlFor="customDomain" className="text-sm text-gray-700">
-              Enter a custom domain
-            </label>
-          </div>
-          
+        {useCustomDomain && (
           <input
             type="text"
             value={customDomain}
             onChange={(e) => setCustomDomain(e.target.value)}
             placeholder="Enter domain (e.g., example.com)"
-            className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-            disabled={!useCustomDomain || isLoading}
+            className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            disabled={isLoading}
           />
-        </div>
+        )}
         
         <button
-          type="submit"
-          disabled={(!domainToTest && !useCustomDomain) || (useCustomDomain && !customDomain) || isLoading}
+          onClick={handleTest}
+          disabled={isLoading || (!selectedDomain && !useCustomDomain) || (useCustomDomain && !customDomain)}
           className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-2 px-4 rounded-md shadow-sm"
         >
-          {isLoading ? 'Testing...' : 'Test Domain Routing'}
+          {isLoading ? 'Testing Domain Routing...' : 'Test Domain Routing'}
         </button>
-      </form>
+      </div>
       
+      {/* Results Section */}
       {testResults && (
         <div className="border rounded-md overflow-hidden">
-          <div className="bg-gray-100 p-4 font-medium border-b">Test Results</div>
+          <div className="bg-gray-100 p-4 font-medium border-b">Test Results for {testResults.domain}</div>
           <div className="p-4">
             {testResults.error ? (
               <div className="text-red-600">{testResults.error}</div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-6">
+                {/* Domain Processing Overview */}
                 <div>
-                  <h3 className="font-medium text-gray-700">1. Middleware Processing</h3>
-                  <div className="mt-2 bg-gray-50 p-3 rounded text-sm font-mono whitespace-pre-wrap">
-                    {testResults.middleware && (
-                      <>
-                        <div>Has subdomain: {testResults.middleware.hasSubdomain ? 'Yes' : 'No'}</div>
-                        <div>Extracted subdomain: {testResults.middleware.subdomain || 'None'}</div>
-                        <div>Routing to: {testResults.middleware.routingTo}</div>
-                      </>
-                    )}
+                  <h3 className="font-medium text-gray-700 mb-2">Domain Processing Overview</h3>
+                  <div className="bg-gray-50 p-3 rounded space-y-2">
+                    <div>
+                      <span className="text-gray-600">Original:</span> {testResults.extraction.original}
+                    </div>
+                    <div>
+                      <span className="text-gray-600">After www removal:</span> {testResults.extraction.afterWwwRemoval}
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Domain parts:</span> {testResults.extraction.parts.join(', ')}
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Is TLD only:</span> {testResults.extraction.isTLD ? 'Yes' : 'No'}
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Is valid format:</span> {testResults.extraction.isValid ? 'Yes' : 'No'}
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Routing to:</span> {testResults.middleware.routingTo}
+                    </div>
                   </div>
                 </div>
-                
+
+                {/* Database Status */}
                 <div>
-                  <h3 className="font-medium text-gray-700">2. Domain Extraction</h3>
-                  <div className="mt-2 bg-gray-50 p-3 rounded text-sm font-mono whitespace-pre-wrap">
-                    {testResults.extraction && (
-                      <>
-                        <div>Original domain: {testResults.extraction.original}</div>
-                        <div>After www removal: {testResults.extraction.afterWwwRemoval}</div>
-                        <div>Domain parts: [{testResults.extraction.parts.join(', ')}]</div>
-                        <div>Valid format: {testResults.extraction.isValid ? 'Yes' : 'No'}</div>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                <div>
-                  <h3 className="font-medium text-gray-700">3. Database Lookup</h3>
-                  <div className="mt-2 bg-gray-50 p-3 rounded text-sm font-mono whitespace-pre-wrap">
-                    {testResults.database && (
-                      <>
-                        <div>Domain found: {testResults.database.found ? 'Yes' : 'No'}</div>
-                        {testResults.database.found && (
-                          <>
-                            <div>Domain ID: {testResults.database.id}</div>
-                            <div>Is active: {testResults.database.isActive ? 'Yes' : 'No'}</div>
-                            <div>Has root page: {testResults.database.hasRootPage ? 'Yes' : 'No'}</div>
-                          </>
-                        )}
-                        {!testResults.database.found && (
-                          <div className="text-red-600 mt-2">
-                            Domain not found in database. This will result in a "Domain not found" error.
+                  <h3 className="font-medium text-gray-700 mb-2">Database Status</h3>
+                  <div className="bg-gray-50 p-3 rounded">
+                    {testResults.database.found ? (
+                      <div className="space-y-2">
+                        <div className="text-green-600 font-medium">Found in database</div>
+                        <div>
+                          <span className="text-gray-600">Domain Name:</span> {testResults.database.name}
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Active:</span> {testResults.database.isActive ? 'Yes' : 'No'}
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Has Root Page:</span> {testResults.database.hasRootPage ? 'Yes' : 'No'}
+                        </div>
+                        {testResults.database.hasRootPage && (
+                          <div>
+                            <span className="text-gray-600">Root Page Active:</span> {testResults.database.rootPageActive ? 'Yes' : 'No'}
                           </div>
                         )}
-                      </>
+                      </div>
+                    ) : (
+                      <div className="text-red-600">Not found in database</div>
                     )}
                   </div>
                 </div>
-                
-                {testResults.issues && testResults.issues.length > 0 && (
+
+                {/* Issues & Recommendations */}
+                {(testResults.issues.length > 0 || testResults.recommendations.length > 0) && (
                   <div>
-                    <h3 className="font-medium text-gray-700">Issues Detected</h3>
-                    <div className="mt-2 bg-red-50 border border-red-100 p-3 rounded text-sm">
-                      <ul className="list-disc list-inside space-y-1 text-red-700">
-                        {testResults.issues.map((issue: string, index: number) => (
-                          <li key={index}>{issue}</li>
-                        ))}
-                      </ul>
-                    </div>
+                    {testResults.issues.length > 0 && (
+                      <div className="mb-4">
+                        <h3 className="font-medium text-gray-700 mb-2">Issues Detected</h3>
+                        <div className="bg-red-50 border border-red-100 p-3 rounded">
+                          <ul className="list-disc list-inside space-y-1 text-red-700">
+                            {testResults.issues.map((issue: string, index: number) => (
+                              <li key={index}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {testResults.recommendations.length > 0 && (
+                      <div>
+                        <h3 className="font-medium text-gray-700 mb-2">Recommendations</h3>
+                        <div className="bg-blue-50 border border-blue-100 p-3 rounded">
+                          <ul className="list-disc list-inside space-y-1 text-blue-700">
+                            {testResults.recommendations.map((rec: string, index: number) => (
+                              <li key={index}>{rec}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 
-                {testResults.recommendations && (
-                  <div>
-                    <h3 className="font-medium text-gray-700">Recommendations</h3>
-                    <div className="mt-2 bg-blue-50 border border-blue-100 p-3 rounded text-sm">
-                      <ul className="list-disc list-inside space-y-1 text-blue-700">
-                        {testResults.recommendations.map((rec: string, index: number) => (
-                          <li key={index}>{rec}</li>
-                        ))}
-                      </ul>
-                    </div>
+                {testResults.issues.length === 0 && (
+                  <div className="bg-green-50 border border-green-100 p-3 rounded text-green-700">
+                    No routing issues detected with this domain.
                   </div>
                 )}
               </div>

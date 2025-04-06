@@ -6,7 +6,7 @@ import GenerateRootPageButton from './components/GenerateRootPageButton';
 interface Domain {
   _id: string;
   name: string;
-  isVerified: boolean;
+  verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
   createdAt: string;
   hasRootPage?: boolean; // Flag to indicate if a root page exists
 }
@@ -71,6 +71,9 @@ export default function DomainsList() {
     return <div className="text-center p-4">No domains found. Add your first domain to get started.</div>;
   }
 
+  // Helper function to determine if a domain is verified
+  const isVerified = (status: string) => status === 'active';
+
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-6">Manage Domains</h1>
@@ -104,11 +107,11 @@ export default function DomainsList() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                    domain.isVerified 
+                    isVerified(domain.verificationStatus) 
                       ? 'bg-green-100 text-green-800' 
                       : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {domain.isVerified ? 'Verified' : 'Pending Verification'}
+                    {isVerified(domain.verificationStatus) ? 'Verified' : 'Pending Verification'}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -126,7 +129,7 @@ export default function DomainsList() {
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  {!domain.hasRootPage && domain.isVerified && (
+                  {!domain.hasRootPage && isVerified(domain.verificationStatus) && (
                     <GenerateRootPageButton 
                       domainId={domain._id}
                       domainName={domain.name}
