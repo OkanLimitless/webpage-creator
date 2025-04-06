@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test:screenshot": "ts-node tools/test-screenshot.ts",
-    "test:blob": "ts-node tools/test-vercel-blob.ts"
+    "test:blob": "ts-node tools/test-vercel-blob.ts",
+    "cleanup:projects": "node scripts/cleanup-duplicate-projects.js"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.8.0",

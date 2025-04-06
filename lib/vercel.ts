@@ -537,6 +537,32 @@ export async function createVercelProject(domainName: string, framework: string 
       throw new Error('Vercel API token not set');
     }
     
+    // If we have a VERCEL_PROJECT_ID set, always use that for all domains
+    // This ensures we have just one project for all domains
+    if (process.env.VERCEL_PROJECT_ID) {
+      console.log(`Using main project ID ${process.env.VERCEL_PROJECT_ID} for domain ${domainName}`);
+      
+      try {
+        // Get the project details
+        const mainProject = await getProject(process.env.VERCEL_PROJECT_ID);
+        
+        // Ensure the domain is attached to this project
+        try {
+          console.log(`Ensuring domain ${domainName} is attached to main project ${process.env.VERCEL_PROJECT_ID}...`);
+          await addDomainToProject(process.env.VERCEL_PROJECT_ID, domainName);
+          console.log(`Domain ${domainName} successfully attached to main project`);
+        } catch (domainError: any) {
+          console.warn(`Warning: Failed to attach domain to main project: ${domainError.message}`);
+          // Continue anyway, as we'll try again later
+        }
+        
+        return mainProject;
+      } catch (error) {
+        console.warn(`Error getting main project (${process.env.VERCEL_PROJECT_ID}):`, error);
+        // Continue with the rest of the function
+      }
+    }
+    
     // Generate a project name based on the domain
     const projectName = `domain-${domainName.replace(/\./g, '-')}`;
     
@@ -574,6 +600,17 @@ export async function createVercelProject(domainName: string, framework: string 
     } catch (error) {
       console.warn(`Error checking for existing project with name ${projectName}:`, error);
       // Continue with project creation
+    }
+    
+    // If we reach here and we still have VERCEL_PROJECT_ID, use it as a last resort
+    if (process.env.VERCEL_PROJECT_ID) {
+      try {
+        console.log(`Using main project ID as fallback for ${domainName}`);
+        const mainProject = await getProject(process.env.VERCEL_PROJECT_ID);
+        return mainProject;
+      } catch (error) {
+        console.warn(`Error getting main project as fallback:`, error);
+      }
     }
     
     // If we reach here, we need to create a new project
@@ -638,6 +675,45 @@ export async function createVercelProject(domainName: string, framework: string 
     return data;
   } catch (error: any) {
     console.error('Error creating Vercel project:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get details of a single Vercel project
+ */
+async function getProject(projectId: string): Promise<any> {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN) {
+      throw new Error('Vercel API token not set');
+    }
+    
+    // Construct the API URL
+    let apiUrl = `https://api.vercel.com/v9/projects/${projectId}`;
+    if (VERCEL_TEAM_ID) {
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    // Make the API request
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get project ${projectId}: ${data.error?.message || 'Unknown error'}`);
+    }
+    
+    return data;
+  } catch (error: any) {
+    console.error(`Error getting project ${projectId}:`, error);
     throw error;
   }
 }
@@ -1102,19 +1178,36 @@ export async function deployDomain(domainName: string): Promise<{
   try {
     console.log(`Starting deployment process for domain: ${domainName}`);
     
-    // First, check if the domain is already attached to a project
-    let existingProject = null;
-    try {
-      existingProject = await findProjectByDomain(domainName);
-      if (existingProject) {
-        console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+    // First, check if we have a main project ID set - we'll use this for all domains
+    let project = null;
+    const mainProjectId = process.env.VERCEL_PROJECT_ID;
+    
+    if (mainProjectId) {
+      console.log(`Using main project ID for all domains: ${mainProjectId}`);
+      try {
+        project = await getProject(mainProjectId);
+        console.log(`Successfully got main project: ${project.name} (${project.id})`);
+      } catch (error) {
+        console.warn(`Error getting main project: ${error}. Will try alternatives.`);
       }
-    } catch (error) {
-      console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
     }
     
-    // If domain is not attached to any project, check if we need to clean up first
-    if (!existingProject) {
+    // If we didn't get the main project, check if the domain is already attached to any project
+    if (!project) {
+      try {
+        const existingProject = await findProjectByDomain(domainName);
+        if (existingProject) {
+          console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+          project = existingProject;
+        }
+      } catch (error) {
+        console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
+      }
+    }
+    
+    // If we still don't have a project, create one or find an existing one
+    if (!project) {
+      // Clean up any existing domain associations to avoid conflicts
       console.log(`Cleaning up domain ${domainName} from any existing projects...`);
       try {
         const cleanupResult = await removeDomainFromAllProjects(domainName);
@@ -1126,38 +1219,32 @@ export async function deployDomain(domainName: string): Promise<{
       } catch (cleanupError: any) {
         console.warn(`Error during domain cleanup (continuing anyway): ${cleanupError.message}`);
       }
-    }
-    
-    // Create or find a project for the domain
-    let project;
-    if (existingProject) {
-      project = existingProject;
-    } else {
+      
+      // Create or find a project for the domain
       project = await createVercelProject(domainName);
     }
+    
     console.log(`Using project with ID: ${project.id} (${project.name})`);
     
     // Ensure the domain is properly added to the project
-    if (!existingProject) {
-      try {
-        console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
-        const domainAddResult = await addDomainToVercel(domainName, project.id);
+    try {
+      console.log(`Ensuring domain ${domainName} is added to project ${project.id}`);
+      const domainAddResult = await addDomainToVercel(domainName, project.id);
+      
+      // If domain is still in use by a different project
+      if (!domainAddResult.success && 
+          domainAddResult.error && 
+          domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
         
-        // If domain is still in use by a different project
-        if (!domainAddResult.success && 
-            domainAddResult.error && 
-            domainAddResult.error.code === 'domain_already_in_use_by_different_project') {
-          
-          console.error(`Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}.
-            Cannot proceed with deployment to a different project.`);
-          throw new Error(`Cannot proceed with deployment: ${domainName} is in use by project ${domainAddResult.error.projectId}`);
-        }
-        
-        console.log(`Domain ${domainName} successfully added/confirmed to project ${project.id}`);
-      } catch (domainError: any) {
-        console.error(`Failed to add domain to project: ${domainError.message}`);
-        throw new Error(`Domain configuration failed: ${domainError.message}`);
+        console.error(`Domain ${domainName} is still in use by project ${domainAddResult.error.projectId}.
+          Cannot proceed with deployment to a different project.`);
+        throw new Error(`Cannot proceed with deployment: ${domainName} is in use by project ${domainAddResult.error.projectId}`);
       }
+      
+      console.log(`Domain ${domainName} successfully added/confirmed to project ${project.id}`);
+    } catch (domainError: any) {
+      console.error(`Failed to add domain to project: ${domainError.message}`);
+      throw new Error(`Domain configuration failed: ${domainError.message}`);
     }
     
     // Create a deployment for the project

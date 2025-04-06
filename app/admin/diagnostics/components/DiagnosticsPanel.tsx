@@ -5,6 +5,7 @@ import DomainTester from './DomainTester';
 import DNSChecker from './DNSChecker';
 import DomainFixer from './DomainFixer';
 import RootDomainTester from './RootDomainTester';
+import ProjectsCleanup from './ProjectsCleanup';
 
 type Domain = {
   _id: string;
@@ -15,7 +16,7 @@ type Domain = {
 };
 
 export default function DiagnosticsPanel() {
-  const [activeTab, setActiveTab] = useState<'domain-test' | 'dns-check' | 'fix-issues' | 'root-domain-test'>('domain-test');
+  const [activeTab, setActiveTab] = useState<'domain-test' | 'dns-check' | 'fix-issues' | 'root-domain-test' | 'projects-cleanup'>('domain-test');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -53,7 +54,7 @@ export default function DiagnosticsPanel() {
 
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
-          <nav className="-mb-px flex space-x-8">
+          <nav className="-mb-px flex space-x-6">
             <button
               onClick={() => setActiveTab('domain-test')}
               className={`${
@@ -97,6 +98,17 @@ export default function DiagnosticsPanel() {
             >
               Fix Issues
             </button>
+            
+            <button
+              onClick={() => setActiveTab('projects-cleanup')}
+              className={`${
+                activeTab === 'projects-cleanup'
+                  ? 'border-red-500 text-red-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Projects Cleanup
+            </button>
           </nav>
         </div>
 
@@ -113,6 +125,7 @@ export default function DiagnosticsPanel() {
               {activeTab === 'root-domain-test' && <RootDomainTester domains={domains} />}
               {activeTab === 'dns-check' && <DNSChecker domains={domains} />}
               {activeTab === 'fix-issues' && <DomainFixer domains={domains} />}
+              {activeTab === 'projects-cleanup' && <ProjectsCleanup />}
             </>
           )}
         </div>
