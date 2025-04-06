@@ -17,6 +17,20 @@ function simulateMiddleware(hostname: string) {
   // Check if TLD only
   const isDomainJustTLD = commonTLDs.includes(lowerHostname);
   
+  // Special handling for www prefixed domains
+  const isWwwSubdomain = hostname.toLowerCase().startsWith('www.');
+  
+  if (isWwwSubdomain) {
+    return {
+      hasSubdomain: false,  // We don't treat www as a real subdomain for routing
+      subdomain: 'www',
+      isWwwSubdomain: true,
+      routingTo: '/(root) route handler',
+      isTLD: false,
+      issues: []
+    };
+  }
+  
   if (isDomainJustTLD || !lowerHostname.includes('.')) {
     return {
       hasSubdomain: false,
@@ -47,6 +61,9 @@ function simulateMiddleware(hostname: string) {
 
 // Simulate domain extraction
 function simulateDomainExtraction(hostname: string) {
+  // Check for www first
+  const hasWwwPrefix = hostname.toLowerCase().startsWith('www.');
+  
   // Remove www. if present
   let domain = hostname.replace(/^www\./i, '');
   
@@ -75,6 +92,7 @@ function simulateDomainExtraction(hostname: string) {
   
   return {
     original: hostname,
+    hasWwwPrefix,
     afterWwwRemoval: domain,
     parts: domain.split('.'),
     isTLD,
@@ -123,6 +141,17 @@ export async function POST(request: NextRequest) {
     
     if (results.extraction.issues?.length > 0) {
       results.issues.push(...results.extraction.issues);
+    }
+    
+    // Check for www subdomain
+    if (results.extraction.hasWwwPrefix) {
+      results.wwwHandling = {
+        detected: true,
+        handledBy: '/(root) route handler',
+        redirectPossible: true
+      };
+      
+      results.recommendations.push('www subdomains are now handled by the root domain handler');
     }
     
     // Check if domain is TLD only
@@ -207,6 +236,16 @@ export async function POST(request: NextRequest) {
         const rootPage = await RootPage.findOne({ domainId: domainDoc._id });
         results.database.hasRootPage = !!rootPage;
         results.database.rootPageActive = rootPage ? rootPage.isActive : false;
+        
+        // Check for WWW to non-WWW redirect
+        if (rootPage) {
+          results.database.redirectWwwToNonWww = rootPage.redirectWwwToNonWww !== false; // default to true if undefined
+        
+          // Add recommendation for www to non-www redirect if www detected
+          if (results.extraction.hasWwwPrefix && rootPage.redirectWwwToNonWww) {
+            results.recommendations.push('This www subdomain will be redirected to the non-www version (301 redirect)');
+          }
+        }
         
         // Add issues for inactive domain or missing root page
         if (!domainDoc.isActive) {

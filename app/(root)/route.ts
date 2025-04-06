@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     domain = domain.toLowerCase();
     
     console.log('Original domain after parsing:', domain);
+    console.log('Host had www prefix:', host.toLowerCase().startsWith('www.'));
     
     // Check if we have a TLD-only domain issue
     const isDomainJustTLD = commonTLDs.includes(domain);
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
       const forwardedHost = request.headers.get('x-forwarded-host');
       if (forwardedHost && forwardedHost.includes('.') && !commonTLDs.includes(forwardedHost.toLowerCase())) {
         console.log(`Using x-forwarded-host header: ${forwardedHost}`);
-        domain = forwardedHost.toLowerCase();
+        domain = forwardedHost.toLowerCase().replace(/^www\./i, ''); // Remove www. here too
       } 
       else {
         // If TLD-only, try to find an active domain in the database that ends with this TLD
@@ -406,6 +407,30 @@ Request URL: ${request.url}
     
     console.log(`Found root page: ${rootPage.title} (ID: ${rootPage._id})`);
     console.log(`Root page active status: ${rootPage.isActive ? 'Active' : 'Inactive'}`);
+    
+    // Handle www to non-www redirection if needed
+    const hasWwwPrefix = host.toLowerCase().startsWith('www.');
+    const shouldRedirect = hasWwwPrefix && rootPage.redirectWwwToNonWww;
+    
+    if (shouldRedirect) {
+      // Get the current URL and update it without the www prefix
+      try {
+        const url = new URL(request.url);
+        url.hostname = domain; // domain is already without www
+        
+        console.log(`Redirecting from www to non-www: ${url.toString()}`);
+        
+        return NextResponse.redirect(url.toString(), {
+          status: 301, // Permanent redirect for SEO
+          headers: {
+            'Cache-Control': 'max-age=3600',
+          }
+        });
+      } catch (error) {
+        console.error('Error creating redirect URL:', error);
+        // Continue with normal page serving if redirect fails
+      }
+    }
     
     // Generate the HTML for the root page
     console.log('Generating root page HTML');

@@ -22,6 +22,8 @@ export default function DomainTester({ domains }: DomainTesterProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showTldTest, setShowTldTest] = useState<boolean>(false);
   const [tldTestDomain, setTldTestDomain] = useState<string>('');
+  const [showWwwTest, setShowWwwTest] = useState<boolean>(false);
+  const [wwwTestDomain, setWwwTestDomain] = useState<string>('');
 
   const handleTest = async () => {
     const domainToTest = useCustomDomain ? customDomain : selectedDomain;
@@ -97,6 +99,48 @@ export default function DomainTester({ domains }: DomainTesterProps) {
     }
   };
 
+  const handleWwwTest = async () => {
+    if (!wwwTestDomain) {
+      alert('Please enter a domain to test with www prefix');
+      return;
+    }
+    
+    // Ensure the domain doesn't already have www prefix
+    let domain = wwwTestDomain.toLowerCase();
+    if (domain.startsWith('www.')) {
+      domain = domain.substring(4);
+    }
+    
+    // Add www prefix for testing
+    const wwwDomain = `www.${domain}`;
+    
+    setIsLoading(true);
+    setTestResults(null);
+    
+    try {
+      const response = await fetch('/api/diagnostics/test-domain-routing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain: wwwDomain }),
+      });
+      
+      const data = await response.json();
+      setTestResults({
+        ...data.results,
+        note: `Testing with www prefix: "${wwwDomain}"`
+      });
+    } catch (error) {
+      console.error('Error testing www domain:', error);
+      setTestResults({
+        error: 'Failed to test www routing'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-4">Domain Route Tester</h2>
@@ -104,7 +148,7 @@ export default function DomainTester({ domains }: DomainTesterProps) {
         Test how a domain will be processed by the routing system.
       </p>
       
-      {/* TLD issue box */}
+      {/* Testing options */}
       <div className="mb-6 bg-blue-50 border border-blue-200 p-4 rounded-md">
         <div className="flex items-start">
           <div className="flex-shrink-0">
@@ -113,18 +157,40 @@ export default function DomainTester({ domains }: DomainTesterProps) {
             </svg>
           </div>
           <div className="ml-3">
-            <h3 className="text-sm font-medium text-blue-800">Testing TLD-only Domain Issues</h3>
-            <div className="mt-2 text-sm text-blue-700">
+            <h3 className="text-sm font-medium text-blue-800">Domain Testing Options</h3>
+            <div className="mt-2 text-sm text-blue-700 space-y-2">
               <p>
-                If you're seeing "Domain not found: com" errors, use the TLD test below to simulate how your application
-                handles a TLD-only request.
+                Choose the type of domain test to run:
               </p>
-              <button 
-                className="text-blue-800 font-medium underline mt-2"
-                onClick={() => setShowTldTest(!showTldTest)}
-              >
-                {showTldTest ? 'Hide TLD test' : 'Show TLD test'}
-              </button>
+              <div className="flex flex-wrap gap-2 mt-1">
+                <button 
+                  className={`text-blue-800 text-xs font-medium px-2 py-1 rounded-full ${!showTldTest && !showWwwTest ? 'bg-blue-200' : 'bg-white border border-blue-300'}`}
+                  onClick={() => {
+                    setShowTldTest(false);
+                    setShowWwwTest(false);
+                  }}
+                >
+                  Standard Test
+                </button>
+                <button 
+                  className={`text-blue-800 text-xs font-medium px-2 py-1 rounded-full ${showTldTest ? 'bg-blue-200' : 'bg-white border border-blue-300'}`}
+                  onClick={() => {
+                    setShowTldTest(true);
+                    setShowWwwTest(false);
+                  }}
+                >
+                  TLD-only Test
+                </button>
+                <button 
+                  className={`text-blue-800 text-xs font-medium px-2 py-1 rounded-full ${showWwwTest ? 'bg-blue-200' : 'bg-white border border-blue-300'}`}
+                  onClick={() => {
+                    setShowTldTest(false);
+                    setShowWwwTest(true);
+                  }}
+                >
+                  WWW Test
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -158,6 +224,38 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                 className="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-400 text-white py-2 px-4 rounded-r-md shadow-sm"
               >
                 {isLoading ? 'Testing...' : 'Test TLD'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : showWwwTest ? (
+        <div className="mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+          <h3 className="text-md font-medium mb-3">WWW Subdomain Test</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Enter a domain to test with the www prefix (e.g., "www.example.com").
+            This tests how your application handles www-prefixed domains.
+          </p>
+          
+          <div className="mb-4">
+            <label htmlFor="wwwTestDomain" className="block text-sm font-medium text-gray-700 mb-1">
+              Domain to test with www prefix
+            </label>
+            <div className="flex">
+              <input
+                type="text"
+                id="wwwTestDomain"
+                value={wwwTestDomain}
+                onChange={(e) => setWwwTestDomain(e.target.value)}
+                placeholder="example.com"
+                className="flex-1 p-2 border border-gray-300 rounded-l-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                disabled={isLoading}
+              />
+              <button
+                onClick={handleWwwTest}
+                disabled={isLoading || !wwwTestDomain}
+                className="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white py-2 px-4 rounded-r-md shadow-sm"
+              >
+                {isLoading ? 'Testing...' : 'Test WWW'}
               </button>
             </div>
           </div>
@@ -248,6 +346,11 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                   <h3 className="font-medium text-gray-700">Domain Information</h3>
                   <div className="mt-2 bg-gray-50 p-3 rounded">
                     <p><span className="font-medium">Domain:</span> {testResults.domain}</p>
+                    {testResults.domain.startsWith('www.') && (
+                      <p className="text-blue-600 text-sm mt-1">
+                        This is a www subdomain which will be handled by the root domain handler.
+                      </p>
+                    )}
                     {testResults.tldOnly && (
                       <div className="mt-2 text-amber-600 text-sm">
                         <p className="font-bold">⚠️ TLD-only domain detected!</p>
@@ -257,8 +360,8 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                             PRIMARY_DOMAIN is set to: {testResults.primaryDomain.value}
                           </p>
                         ) : (
-                          <p className="text-red-600">
-                            No PRIMARY_DOMAIN environment variable is set. This will cause errors.
+                          <p>
+                            Using database-based domain fallback for TLD-only requests.
                           </p>
                         )}
                       </div>
@@ -271,6 +374,11 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                   <div className="mt-2 bg-gray-50 p-3 rounded text-sm">
                     <p><span className="font-medium">Original:</span> {testResults.extraction.original}</p>
                     <p><span className="font-medium">After processing:</span> {testResults.extraction.afterWwwRemoval}</p>
+                    {testResults.extraction.original !== testResults.extraction.afterWwwRemoval && (
+                      <p className="text-blue-600">
+                        www prefix was detected and removed during processing.
+                      </p>
+                    )}
                     <p>
                       <span className="font-medium">Valid format:</span> 
                       <span className={testResults.extraction.isValid ? 'text-green-600' : 'text-red-600'}>
@@ -302,7 +410,12 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                       <span className="font-medium">Has subdomain:</span> 
                       {testResults.middleware.hasSubdomain ? 'Yes' : 'No'}
                     </p>
-                    {testResults.middleware.hasSubdomain && (
+                    {testResults.domain.startsWith('www.') && (
+                      <p className="text-blue-600">
+                        www prefix detected and will be handled by the root domain handler.
+                      </p>
+                    )}
+                    {testResults.middleware.hasSubdomain && !testResults.domain.startsWith('www.') && (
                       <p>
                         <span className="font-medium">Subdomain:</span> {testResults.middleware.subdomain}
                         {testResults.middleware.isValidSubdomain === false && (
@@ -332,6 +445,11 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                         Using PRIMARY_DOMAIN for database check because the input was TLD-only.
                       </p>
                     )}
+                    {testResults.usedDomainWithMatchingTLD && (
+                      <p className="text-amber-600 mb-2">
+                        Using domain with matching TLD for database check: {testResults.matchingTldDomain}
+                      </p>
+                    )}
                     {testResults.database.found ? (
                       <>
                         <p className="text-green-600 font-medium">Domain found in database</p>
@@ -355,12 +473,22 @@ export default function DomainTester({ domains }: DomainTesterProps) {
                           </span>
                         </p>
                         {testResults.database.hasRootPage && (
-                          <p>
-                            <span className="font-medium">Root page active:</span> 
-                            <span className={testResults.database.rootPageActive ? 'text-green-600' : 'text-red-600'}>
-                              {testResults.database.rootPageActive ? 'Yes' : 'No'}
-                            </span>
-                          </p>
+                          <>
+                            <p>
+                              <span className="font-medium">Root page active:</span> 
+                              <span className={testResults.database.rootPageActive ? 'text-green-600' : 'text-red-600'}>
+                                {testResults.database.rootPageActive ? 'Yes' : 'No'}
+                              </span>
+                            </p>
+                            {testResults.database.redirectWwwToNonWww !== undefined && (
+                              <p>
+                                <span className="font-medium">WWW to non-WWW redirect:</span> 
+                                <span className={testResults.database.redirectWwwToNonWww ? 'text-green-600' : 'text-amber-600'}>
+                                  {testResults.database.redirectWwwToNonWww ? 'Enabled' : 'Disabled'}
+                                </span>
+                              </p>
+                            )}
+                          </>
                         )}
                       </>
                     ) : (

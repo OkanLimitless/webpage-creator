@@ -111,11 +111,43 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
   
-  // Check if the hostname has a subdomain
+  // Check if the hostname has www prefix and treat it as a root domain request
+  const hasWwwPrefix = cleanHostname.startsWith('www.');
+  if (hasWwwPrefix) {
+    console.log(`[Middleware] WWW prefix detected, routing to root domain handler`);
+    
+    try {
+      // Create an absolute URL using the current URL's origin for the rewrite
+      const url = new URL(request.url);
+      
+      // Build the full path to the root route handler
+      let rootPath = pathname;
+      if (!rootPath.startsWith('/')) {
+        rootPath = `/${rootPath}`;
+      }
+      
+      const rewritePath = `/(root)${rootPath}`;
+      
+      console.log(`[Middleware] Rewriting www request to root handler: ${rewritePath}`);
+      
+      // Explicitly rewrite to the (root) group route with the full URL including origin
+      const rewriteUrl = new URL(rewritePath, url.origin);
+      console.log(`[Middleware] Full rewrite URL: ${rewriteUrl.toString()}`);
+      
+      console.log('----------- MIDDLEWARE END -----------');
+      return NextResponse.rewrite(rewriteUrl);
+    } catch (error) {
+      console.error(`[Middleware] Error rewriting URL for www: ${error}`);
+      console.log('----------- MIDDLEWARE ERROR END -----------');
+      return NextResponse.next();
+    }
+  }
+  
+  // Check if the hostname has a subdomain (excluding www which we already handled)
   const hasSubdomain = hasValidSubdomain(cleanHostname);
   
-  // If no subdomain or www, explicitly route to the root domain handler
-  if (!hasSubdomain || cleanHostname.startsWith('www.')) {
+  // If no subdomain, explicitly route to the root domain handler
+  if (!hasSubdomain) {
     // Root domain request - explicitly rewrite to (root) route handler
     console.log(`[Middleware] Root domain request: ${cleanHostname}${pathname}`);
     
@@ -149,7 +181,7 @@ export function middleware(request: NextRequest) {
   
   // For requests with a subdomain (e.g., landing.example.com), rewrite to subdomain route
   const subdomain = getSubdomain(cleanHostname);
-  console.log(`[Middleware] Subdomain request: ${subdomain}.${cleanHostname}${pathname}`);
+  console.log(`[Middleware] Subdomain request: ${subdomain}.${getBaseDomain(cleanHostname)}${pathname}`);
   
   try {
     // Rewrite the URL to include the subdomain in the path
@@ -162,6 +194,16 @@ export function middleware(request: NextRequest) {
     console.log('----------- MIDDLEWARE ERROR END -----------');
     return NextResponse.next();
   }
+}
+
+// Get the base domain without subdomain
+function getBaseDomain(hostname: string): string {
+  const parts = hostname.split('.');
+  if (parts.length >= 3) {
+    // Remove the first part (subdomain) and join the rest
+    return parts.slice(1).join('.');
+  }
+  return hostname;
 }
 
 // Function to check if a hostname has a valid subdomain

@@ -1,5 +1,3 @@
-import { IRootPage } from './models/RootPage';
-
 /**
  * Generate HTML for a root domain page
  * This creates a clean, professional, responsive landing page for the root domain
@@ -7,474 +5,93 @@ import { IRootPage } from './models/RootPage';
  * @param rootPage The root page configuration object
  * @returns HTML string for the root domain page
  */
-export function generateRootPageHtml(rootPage: IRootPage): string {
-  // Extract primary color or use default blue
-  const primaryColor = rootPage.primaryColor || '#3b82f6';
-  
-  // Create feature HTML blocks
-  const featuresHtml = rootPage.features.map(feature => `
-    <div class="feature">
-      ${feature.iconName ? `<div class="feature-icon">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${getIconPath(feature.iconName)}"></path>
-        </svg>
-      </div>` : ''}
-      <h3>${feature.title}</h3>
-      <p>${feature.description}</p>
-    </div>
-  `).join('');
-  
-  // Create testimonials HTML blocks if they exist
-  const testimonialsHtml = rootPage.testimonials && rootPage.testimonials.length > 0 ? `
-    <section class="testimonials">
-      <div class="container">
-        <h2>What Our Customers Say</h2>
-        <div class="testimonials-grid">
-          ${rootPage.testimonials.map(testimonial => `
-            <div class="testimonial">
-              <div class="testimonial-content">
-                <p>"${testimonial.comment}"</p>
-              </div>
-              <div class="testimonial-author">
-                ${testimonial.avatarUrl ? `<img src="${testimonial.avatarUrl}" alt="${testimonial.name}" class="testimonial-avatar">` : ''}
-                <div>
-                  <h4>${testimonial.name}</h4>
-                  ${testimonial.role ? `<p class="testimonial-role">${testimonial.role}</p>` : ''}
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    </section>
-  ` : '';
-  
-  // Create contact section HTML if email or phone exists
-  const contactHtml = (rootPage.contactEmail || rootPage.contactPhone || rootPage.contactAddress) ? `
-    <section class="contact">
-      <div class="container">
-        <h2>${rootPage.contactTitle || 'Contact Us'}</h2>
-        <div class="contact-wrapper">
-          <div class="contact-info">
-            ${rootPage.contactEmail ? `<p><strong>Email:</strong> <a href="mailto:${rootPage.contactEmail}">${rootPage.contactEmail}</a></p>` : ''}
-            ${rootPage.contactPhone ? `<p><strong>Phone:</strong> <a href="tel:${rootPage.contactPhone.replace(/[^0-9+]/g, '')}">${rootPage.contactPhone}</a></p>` : ''}
-            ${rootPage.contactAddress ? `<p><strong>Address:</strong> ${rootPage.contactAddress}</p>` : ''}
-          </div>
-          <div class="contact-form">
-            <form onsubmit="event.preventDefault(); alert('Message sent! We will get back to you soon.');">
-              <div class="form-group">
-                <label for="name">Name</label>
-                <input type="text" id="name" name="name" required>
-              </div>
-              <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" name="email" required>
-              </div>
-              <div class="form-group">
-                <label for="message">Message</label>
-                <textarea id="message" name="message" rows="4" required></textarea>
-              </div>
-              <button type="submit" class="btn btn-primary">Send Message</button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </section>
-  ` : '';
-  
-  // Footer HTML with privacy policy and terms if they exist
-  const footerHtml = `
-    <footer>
-      <div class="container">
-        <div class="footer-content">
-          <div class="footer-logo">
-            ${rootPage.logoUrl ? `<img src="${rootPage.logoUrl}" alt="${rootPage.companyName || rootPage.title}" class="logo">` : ''}
-            <p>${rootPage.companyName || rootPage.title} © ${new Date().getFullYear()}</p>
-          </div>
-          <div class="footer-links">
-            ${rootPage.privacyPolicyUrl ? `<a href="${rootPage.privacyPolicyUrl}">Privacy Policy</a>` : ''}
-            ${rootPage.termsUrl ? `<a href="${rootPage.termsUrl}">Terms of Service</a>` : ''}
-          </div>
-        </div>
-      </div>
-    </footer>
-  `;
-  
-  // Hero button HTML if button text and URL exist
-  const heroButtonHtml = (rootPage.heroButtonText && rootPage.heroButtonUrl) ? `
-    <a href="${rootPage.heroButtonUrl}" class="btn btn-primary">${rootPage.heroButtonText}</a>
-  ` : '';
-  
-  // Assemble the complete HTML
-  return `<!DOCTYPE html>
+export function generateRootPageHtml(rootPage: any): string {
+  // Basic HTML structure
+  const html = `
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${rootPage.title}</title>
   <meta name="description" content="${rootPage.description}">
-  <meta property="og:title" content="${rootPage.title}">
-  <meta property="og:description" content="${rootPage.description}">
-  ${rootPage.heroImageUrl ? `<meta property="og:image" content="${rootPage.heroImageUrl}">` : ''}
-  <link rel="icon" type="image/png" href="${rootPage.logoUrl || 'https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.png'}">
-  <style>
-    :root {
-      --primary-color: ${primaryColor};
-      --primary-dark: ${darkenColor(primaryColor, 20)};
-      --primary-light: ${lightenColor(primaryColor, 20)};
-      --text-color: #333;
-      --text-light: #666;
-      --background-light: #f9fafb;
-      --border-color: #e5e7eb;
+  
+  <!-- Meta tags -->
+  ${rootPage.metaTags?.map((tag: string) => {
+    // Parse meta tags in format "name:content"
+    const parts = tag.split(':');
+    if (parts.length >= 2) {
+      const name = parts[0].trim();
+      const content = parts.slice(1).join(':').trim();
+      return `<meta name="${name}" content="${content}">`;
     }
-    
-    * {
+    return '';
+  }).join('\n  ') || ''}
+  
+  <!-- Default styles -->
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
       margin: 0;
       padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.6;
-      color: var(--text-color);
-    }
-    
-    a {
-      color: var(--primary-color);
-      text-decoration: none;
     }
     
     .container {
-      width: 100%;
       max-width: 1200px;
       margin: 0 auto;
       padding: 0 20px;
     }
     
-    .btn {
-      display: inline-block;
-      padding: 12px 24px;
-      border-radius: 6px;
-      font-weight: 600;
-      text-align: center;
-      transition: all 0.3s ease;
-      cursor: pointer;
+    h1, h2, h3, h4, h5, h6 {
+      color: #111;
     }
     
-    .btn-primary {
-      background-color: var(--primary-color);
-      color: white;
-      border: none;
+    a {
+      color: #0070f3;
+      text-decoration: none;
     }
     
-    .btn-primary:hover {
-      background-color: var(--primary-dark);
+    a:hover {
+      text-decoration: underline;
     }
     
-    /* Header Styles */
-    header {
-      background-color: white;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      padding: 20px 0;
-      position: fixed;
-      width: 100%;
-      top: 0;
-      z-index: 100;
-    }
-    
-    .header-container {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    
-    .logo {
-      height: 40px;
-    }
-    
-    .site-title {
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--primary-color);
-    }
-    
-    /* Hero Section */
-    .hero {
-      padding: 120px 0 60px;
-      background-color: var(--background-light);
-      text-align: center;
-    }
-    
-    .hero h1 {
-      font-size: 48px;
-      margin-bottom: 20px;
-      line-height: 1.2;
-    }
-    
-    .hero p {
-      font-size: 20px;
-      color: var(--text-light);
-      max-width: 700px;
-      margin: 0 auto 30px;
-    }
-    
-    .hero-image {
+    img {
       max-width: 100%;
-      margin-top: 40px;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      height: auto;
     }
     
-    /* Features Section */
-    .features {
-      padding: 80px 0;
-    }
-    
-    .features h2 {
-      text-align: center;
-      margin-bottom: 50px;
-      font-size: 36px;
-    }
-    
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 40px;
-    }
-    
-    .feature {
-      text-align: center;
-      padding: 30px;
-      border-radius: 8px;
-      transition: all 0.3s ease;
-    }
-    
-    .feature:hover {
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-      transform: translateY(-5px);
-    }
-    
-    .feature-icon {
-      background-color: var(--primary-light);
-      color: var(--primary-color);
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 20px;
-    }
-    
-    .feature h3 {
-      margin-bottom: 15px;
-      font-size: 20px;
-    }
-    
-    .feature p {
-      color: var(--text-light);
-    }
-    
-    /* Testimonials Section */
-    .testimonials {
-      padding: 80px 0;
-      background-color: var(--background-light);
-    }
-    
-    .testimonials h2 {
-      text-align: center;
-      margin-bottom: 50px;
-      font-size: 36px;
-    }
-    
-    .testimonials-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 30px;
-    }
-    
-    .testimonial {
-      background-color: white;
-      border-radius: 8px;
-      padding: 30px;
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-    }
-    
-    .testimonial-content p {
-      font-style: italic;
-      margin-bottom: 20px;
-    }
-    
-    .testimonial-author {
-      display: flex;
-      align-items: center;
-    }
-    
-    .testimonial-avatar {
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      margin-right: 15px;
-      object-fit: cover;
-    }
-    
-    .testimonial-author h4 {
-      font-size: 18px;
-      margin: 0;
-    }
-    
-    .testimonial-role {
-      color: var(--text-light);
-      font-size: 14px;
-    }
-    
-    /* Contact Section */
-    .contact {
-      padding: 80px 0;
-    }
-    
-    .contact h2 {
-      text-align: center;
-      margin-bottom: 50px;
-      font-size: 36px;
-    }
-    
-    .contact-wrapper {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 40px;
-    }
-    
-    .contact-info p {
-      margin-bottom: 20px;
-    }
-    
-    .form-group {
-      margin-bottom: 20px;
-    }
-    
-    .form-group label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: 500;
-    }
-    
-    .form-group input,
-    .form-group textarea {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      font-size: 16px;
-    }
-    
-    .form-group textarea {
-      resize: vertical;
-    }
-    
-    /* Footer */
-    footer {
-      background-color: #333;
-      color: white;
-      padding: 40px 0;
-    }
-    
-    .footer-content {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    
-    .footer-logo {
-      display: flex;
-      align-items: center;
-    }
-    
-    .footer-logo img {
-      height: 30px;
-      margin-right: 15px;
-    }
-    
-    .footer-links a {
-      color: white;
-      margin-left: 20px;
-      opacity: 0.8;
-      transition: opacity 0.3s;
-    }
-    
-    .footer-links a:hover {
-      opacity: 1;
-    }
-    
-    /* Responsive */
+    /* Responsive adjustments */
     @media (max-width: 768px) {
-      .hero h1 {
-        font-size: 36px;
+      h1 {
+        font-size: 2rem;
       }
       
-      .hero p {
-        font-size: 18px;
-      }
-      
-      .features-grid,
-      .testimonials-grid,
-      .contact-wrapper {
-        grid-template-columns: 1fr;
-      }
-      
-      .footer-content {
-        flex-direction: column;
-        text-align: center;
-      }
-      
-      .footer-links {
-        margin-top: 20px;
-      }
-      
-      .footer-links a {
-        margin: 0 10px;
+      h2 {
+        font-size: 1.5rem;
       }
     }
+    
+    /* Custom CSS */
+    ${rootPage.customCss || ''}
   </style>
+  
+  <!-- Custom head content -->
+  ${rootPage.customHead || ''}
 </head>
 <body>
-  <header>
-    <div class="container header-container">
-      ${rootPage.logoUrl 
-        ? `<a href="/"><img src="${rootPage.logoUrl}" alt="${rootPage.companyName || rootPage.title}" class="logo"></a>` 
-        : `<a href="/" class="site-title">${rootPage.companyName || rootPage.title}</a>`
-      }
-    </div>
-  </header>
-  
-  <section class="hero">
-    <div class="container">
-      <h1>${rootPage.heroTitle}</h1>
-      <p>${rootPage.heroSubtitle}</p>
-      ${heroButtonHtml}
-      ${rootPage.heroImageUrl ? `<img src="${rootPage.heroImageUrl}" alt="${rootPage.heroTitle}" class="hero-image">` : ''}
-    </div>
-  </section>
-  
-  <section class="features">
-    <div class="container">
-      <h2>Our Services</h2>
-      <div class="features-grid">
-        ${featuresHtml}
-      </div>
-    </div>
-  </section>
-  
-  ${testimonialsHtml}
-  
-  ${contactHtml}
-  
-  ${footerHtml}
+  <div class="container">
+    ${rootPage.content || `
+      <h1>${rootPage.title}</h1>
+      <p>${rootPage.description}</p>
+    `}
+  </div>
 </body>
 </html>
-`;
+  `.trim();
+  
+  return html;
 }
 
 /**
