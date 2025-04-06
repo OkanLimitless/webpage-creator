@@ -7,6 +7,9 @@ import { generateRootPageHtml } from '@/lib/rootPageGenerator';
 // Mark this route as dynamic to prevent static optimization issues
 export const dynamic = 'force-dynamic';
 
+// Common TLDs
+const commonTLDs = ['com', 'net', 'org', 'io', 'app', 'dev', 'co', 'ai', 'tech', 'site', 'online'];
+
 export async function GET(request: NextRequest) {
   // Set up detailed logging for debugging
   console.log('----------- ROOT DOMAIN ROUTE HANDLER START -----------');
@@ -15,7 +18,6 @@ export async function GET(request: NextRequest) {
   console.log('Request host:', request.headers.get('host'));
   console.log('Request method:', request.method);
   console.log('Request pathname:', request.nextUrl.pathname);
-  console.log('PRIMARY_DOMAIN env var:', process.env.PRIMARY_DOMAIN || 'Not set');
   
   try {
     await connectToDatabase();
@@ -33,97 +35,75 @@ export async function GET(request: NextRequest) {
     // Force lowercase
     domain = domain.toLowerCase();
     
-    // Original code for handling domain
     console.log('Original domain after parsing:', domain);
     
-    // Enhanced TLD detection
-    const commonTLDs = ['com', 'net', 'org', 'io', 'app', 'dev', 'co', 'ai', 'tech', 'site', 'online'];
+    // Check if we have a TLD-only domain issue
     const isDomainJustTLD = commonTLDs.includes(domain);
+    const invalidDomainFormat = !domain.includes('.');
     
-    // Check for TLD-only domain problem
-    if (isDomainJustTLD || !domain.includes('.')) {
-      console.warn(`CRITICAL: Received domain appears to be just a TLD or invalid: "${domain}"`);
-      
-      // Try multiple fallback strategies
-      
-      // 1. Check PRIMARY_DOMAIN environment variable
-      const primaryDomain = process.env.PRIMARY_DOMAIN;
-      if (primaryDomain) {
-        console.log(`Using PRIMARY_DOMAIN env var: ${primaryDomain}`);
-        domain = primaryDomain;
-      } else {
-        console.warn('PRIMARY_DOMAIN environment variable not set, trying other methods');
-        
-        // 2. Try to extract from request URL
-        try {
-          const urlObj = new URL(request.url);
-          console.log('URL parsed from request:', urlObj.toString());
-          console.log('URL hostname:', urlObj.hostname);
-          
-          if (urlObj.hostname && urlObj.hostname !== domain && urlObj.hostname.includes('.')) {
-            console.log(`Using hostname from URL: ${urlObj.hostname}`);
-            domain = urlObj.hostname;
-          }
-        } catch (e) {
-          console.error('Error parsing URL:', e);
-        }
-        
-        // 3. Try to extract from headers
-        try {
-          // Check x-forwarded-host header (commonly used by proxies)
-          const forwardedHost = request.headers.get('x-forwarded-host');
-          if (forwardedHost && forwardedHost.includes('.') && !commonTLDs.includes(forwardedHost)) {
-            console.log(`Using x-forwarded-host header: ${forwardedHost}`);
-            domain = forwardedHost;
-          }
-          
-          // Check referer header as last resort
-          const referer = request.headers.get('referer');
-          if (referer && domain === 'com') {
-            try {
-              const refererUrl = new URL(referer);
-              if (refererUrl.hostname && refererUrl.hostname.includes('.')) {
-                console.log(`Using hostname from referer: ${refererUrl.hostname}`);
-                domain = refererUrl.hostname;
-              }
-            } catch (e) {
-              console.error('Error parsing referer URL:', e);
-            }
-          }
-        } catch (e) {
-          console.error('Error extracting domain from headers:', e);
-        }
-        
-        // 4. Fallback to a hardcoded domain as last resort
-        if (domain === 'com' || !domain.includes('.')) {
-          const fallbackDomain = 'yourfavystore.com';
-          console.warn(`Still have invalid domain "${domain}", falling back to hardcoded domain: ${fallbackDomain}`);
-          domain = fallbackDomain;
-        }
-      }
-    }
-    
-    // Extra check for Vercel preview URLs or localhost
+    // Handle Vercel preview and local development
     if (host.includes('vercel.app') || host.includes('localhost')) {
       console.log('Detected Vercel preview URL or localhost');
-      // For preview/dev, use the PRIMARY_DOMAIN env var or fallback
-      const primaryDomain = process.env.PRIMARY_DOMAIN;
-      if (primaryDomain) {
-        domain = primaryDomain;
-        console.log(`Using primary domain for preview URL: ${domain}`);
+      
+      // For these cases, we'll try to find an active domain in the database
+      const activeDomains = await Domain.find({ isActive: true }).sort({ createdAt: -1 }).limit(1);
+      
+      if (activeDomains.length > 0) {
+        domain = activeDomains[0].name;
+        console.log(`Using most recently created active domain: ${domain}`);
       } else {
-        console.warn('PRIMARY_DOMAIN environment variable not set, using fallback');
-        domain = 'yourfavystore.com';
-        console.log(`Using fallback domain: ${domain}`);
+        // Fallback to a default domain
+        domain = 'example.com';
+        console.log(`No active domains found, using default: ${domain}`);
+      }
+    }
+    // Handle TLD-only issue
+    else if (isDomainJustTLD || invalidDomainFormat) {
+      console.warn(`CRITICAL: Received domain appears to be just a TLD or invalid: "${domain}"`);
+      
+      // First try using x-forwarded-host header
+      const forwardedHost = request.headers.get('x-forwarded-host');
+      if (forwardedHost && forwardedHost.includes('.') && !commonTLDs.includes(forwardedHost.toLowerCase())) {
+        console.log(`Using x-forwarded-host header: ${forwardedHost}`);
+        domain = forwardedHost.toLowerCase();
+      } 
+      else {
+        // If TLD-only, try to find an active domain in the database that ends with this TLD
+        if (isDomainJustTLD) {
+          console.log(`Looking for domains with TLD: ${domain}`);
+          const domainsWithTLD = await Domain.find({ 
+            name: { $regex: new RegExp(`\\.${domain}$`, 'i') },
+            isActive: true 
+          }).sort({ createdAt: -1 });
+          
+          if (domainsWithTLD.length > 0) {
+            domain = domainsWithTLD[0].name;
+            console.log(`Using domain with matching TLD: ${domain}`);
+          } else {
+            // Try to find any active domain as fallback
+            const fallbackDomains = await Domain.find({ isActive: true }).sort({ createdAt: -1 }).limit(1);
+            
+            if (fallbackDomains.length > 0) {
+              domain = fallbackDomains[0].name;
+              console.log(`Using fallback domain: ${domain}`);
+            } else {
+              console.error('No active domains found in database for fallback');
+            }
+          }
+        }
       }
     }
     
     console.log(`Final domain after all processing: ${domain}`);
-    console.log(`Looking up domain '${domain}' in database`);
     
     // Validate that we have a proper domain name with at least one dot
     if (!domain.includes('.')) {
       console.error(`Invalid domain format: ${domain}`);
+      
+      // If we can't determine the domain, show an error page with all available domains
+      const allDomains = await Domain.find({ isActive: true }).select('name');
+      const availableDomains = allDomains.map(d => d.name).join(', ');
+      
       return new NextResponse(`
         <!DOCTYPE html>
         <html lang="en">
@@ -160,7 +140,8 @@ export async function GET(request: NextRequest) {
           <div class="error-container">
             <h1>Invalid Domain Format</h1>
             <h2>${domain}</h2>
-            <p>The domain format is invalid. A proper domain should look like "example.com".</p>
+            <p>The domain format is invalid. Please try accessing one of our websites directly:</p>
+            <p>${availableDomains || 'No active domains available'}</p>
             <p>Debug info: Request received at ${new Date().toISOString()}</p>
             <pre>
 Host: ${host}
@@ -181,75 +162,85 @@ Request URL: ${request.url}
     
     // Find the domain in our database with case-insensitive matching and escaping special regex characters
     const escapedDomain = domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const domainDoc = await Domain.findOne({ 
+    let domainDoc = await Domain.findOne({ 
       name: { $regex: new RegExp(`^${escapedDomain}$`, 'i') } 
     });
     
+    // If domain not found, try to find a fallback domain
     if (!domainDoc) {
       console.error(`Domain not found in database: ${domain}`);
-      console.log(`Checking all domains in database...`);
-      const allDomains = await Domain.find({}).select('name isActive');
-      console.log('Available domains:', allDomains.map(d => `${d.name} (${d.isActive ? 'active' : 'inactive'})`));
       
-      return new NextResponse(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Domain Not Found</title>
-          <style>
-            body { 
-              font-family: system-ui, sans-serif; 
-              display: flex; 
-              justify-content: center; 
-              align-items: center; 
-              height: 100vh; 
-              margin: 0;
-              padding: 20px;
-              text-align: center;
-              background-color: #f9fafb;
-            }
-            .error-container {
-              max-width: 600px;
-              padding: 40px;
-              background-color: white;
-              border-radius: 8px;
-              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }
-            h1 { color: #ef4444; margin-bottom: 10px; }
-            h2 { color: #1f2937; margin-bottom: 20px; }
-            p { color: #6b7280; margin-bottom: 15px; }
-            code { 
-              background-color: #f3f4f6; 
-              padding: 2px 4px; 
-              border-radius: 4px;
-              font-family: monospace;
-            }
-            pre { white-space: pre-wrap; text-align: left; background: #f5f5f5; padding: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="error-container">
-            <h1>Domain Not Found</h1>
-            <h2>${domain}</h2>
-            <p>This domain is not registered in our system. If you believe this is an error, please check the domain name and try again.</p>
-            <p>Debug info: Request received at ${new Date().toISOString()}</p>
-            <pre>
+      // Try to find any active domain as fallback
+      const fallbackDomains = await Domain.find({ isActive: true }).sort({ createdAt: -1 }).limit(1);
+      
+      if (fallbackDomains.length > 0) {
+        domainDoc = fallbackDomains[0];
+        console.log(`Using fallback domain: ${domainDoc.name}`);
+      } else {
+        console.log(`Checking all domains in database...`);
+        const allDomains = await Domain.find({}).select('name isActive');
+        console.log('Available domains:', allDomains.map(d => `${d.name} (${d.isActive ? 'active' : 'inactive'})`));
+        
+        return new NextResponse(`
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Domain Not Found</title>
+            <style>
+              body { 
+                font-family: system-ui, sans-serif; 
+                display: flex; 
+                justify-content: center; 
+                align-items: center; 
+                height: 100vh; 
+                margin: 0;
+                padding: 20px;
+                text-align: center;
+                background-color: #f9fafb;
+              }
+              .error-container {
+                max-width: 600px;
+                padding: 40px;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+              }
+              h1 { color: #ef4444; margin-bottom: 10px; }
+              h2 { color: #1f2937; margin-bottom: 20px; }
+              p { color: #6b7280; margin-bottom: 15px; }
+              code { 
+                background-color: #f3f4f6; 
+                padding: 2px 4px; 
+                border-radius: 4px;
+                font-family: monospace;
+              }
+              pre { white-space: pre-wrap; text-align: left; background: #f5f5f5; padding: 10px; }
+            </style>
+          </head>
+          <body>
+            <div class="error-container">
+              <h1>Domain Not Found</h1>
+              <h2>${domain}</h2>
+              <p>This domain is not registered in our system. If you believe this is an error, please check the domain name and try again.</p>
+              <p>Debug info: Request received at ${new Date().toISOString()}</p>
+              <pre>
 Host: ${host}
 Request URL: ${request.url}
-            </pre>
-          </div>
-        </body>
-        </html>
-      `, {
-        status: 404,
-        headers: {
-          'Content-Type': 'text/html',
-          'Cache-Control': 'no-store, must-revalidate',
-          'X-Content-Type-Options': 'nosniff',
-        }
-      });
+              </pre>
+            </div>
+          </body>
+          </html>
+        `, {
+          status: 404,
+          headers: {
+            'Content-Type': 'text/html',
+            'Cache-Control': 'no-store, must-revalidate',
+            'X-Content-Type-Options': 'nosniff',
+          }
+        });
+      }
     }
     
     console.log(`Found domain in database: ${domainDoc.name} (ID: ${domainDoc._id})`);
@@ -258,7 +249,7 @@ Request URL: ${request.url}
     
     // Check if the domain is active
     if (!domainDoc.isActive) {
-      console.log(`Domain ${domain} is not active`);
+      console.log(`Domain ${domainDoc.name} is not active`);
       return new NextResponse(`
         <!DOCTYPE html>
         <html lang="en">
@@ -293,7 +284,7 @@ Request URL: ${request.url}
         <body>
           <div class="error-container">
             <h1>Domain Inactive</h1>
-            <h2>${domain}</h2>
+            <h2>${domainDoc.name}</h2>
             <p>This domain is currently inactive. Please contact the administrator for more information.</p>
           </div>
         </body>
@@ -313,7 +304,7 @@ Request URL: ${request.url}
     const rootPage = await RootPage.findOne({ domainId: domainDoc._id });
     
     if (!rootPage) {
-      console.log(`No custom root page found for domain: ${domain}`);
+      console.log(`No custom root page found for domain: ${domainDoc.name}`);
       
       // Return a simple placeholder HTML if no custom root page exists
       return new NextResponse(`
@@ -322,7 +313,7 @@ Request URL: ${request.url}
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>${domain}</title>
+          <title>${domainDoc.name}</title>
           <style>
             body { 
               font-family: system-ui, sans-serif; 
@@ -348,7 +339,7 @@ Request URL: ${request.url}
         </head>
         <body>
           <div class="container">
-            <h1>${domain}</h1>
+            <h1>${domainDoc.name}</h1>
             <p>Welcome to our website. We're working on adding content to make your experience better.</p>
             <p>This domain is registered and active, but no custom root page has been created yet.</p>
           </div>
@@ -365,14 +356,14 @@ Request URL: ${request.url}
     
     // Check if the root page is active
     if (!rootPage.isActive) {
-      console.log(`Root page for domain ${domain} is not active`);
+      console.log(`Root page for domain ${domainDoc.name} is not active`);
       return new NextResponse(`
         <!DOCTYPE html>
         <html lang="en">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>${domain}</title>
+          <title>${domainDoc.name}</title>
           <style>
             body { 
               font-family: system-ui, sans-serif; 
@@ -398,7 +389,7 @@ Request URL: ${request.url}
         </head>
         <body>
           <div class="container">
-            <h1>${domain}</h1>
+            <h1>${domainDoc.name}</h1>
             <p>This website is currently under maintenance.</p>
             <p>Please check back later.</p>
           </div>

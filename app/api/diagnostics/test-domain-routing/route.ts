@@ -23,7 +23,7 @@ function simulateMiddleware(hostname: string) {
       subdomain: '',
       routingTo: 'Route Handler with TLD fallback',
       isTLD: true,
-      issues: ['Hostname appears to be just a TLD or invalid, will use PRIMARY_DOMAIN fallback']
+      issues: ['Hostname appears to be just a TLD or invalid, will need advanced fallback handling']
     };
   }
   
@@ -69,7 +69,7 @@ function simulateDomainExtraction(hostname: string) {
     if (process.env.PRIMARY_DOMAIN) {
       fallbackOptions.push(`PRIMARY_DOMAIN: ${process.env.PRIMARY_DOMAIN}`);
     } else {
-      fallbackOptions.push('No PRIMARY_DOMAIN environment variable set (fallback will fail)');
+      fallbackOptions.push('Database-based fallback: Will try to find an active domain with matching TLD');
     }
   }
   
@@ -131,24 +131,62 @@ export async function POST(request: NextRequest) {
       results.tldOnly = {
         detected: true,
         willFallbackToPrimaryDomain: !!process.env.PRIMARY_DOMAIN,
-        primaryDomainSet: !!process.env.PRIMARY_DOMAIN
+        primaryDomainSet: !!process.env.PRIMARY_DOMAIN,
+        databaseFallback: true
       };
       
-      if (!process.env.PRIMARY_DOMAIN) {
-        results.issues.push('No PRIMARY_DOMAIN environment variable set to handle TLD-only requests');
-        results.recommendations.push('Set PRIMARY_DOMAIN environment variable to handle TLD-only requests');
-      } else {
-        results.recommendations.push(`Using PRIMARY_DOMAIN (${process.env.PRIMARY_DOMAIN}) as fallback for TLD-only requests`);
+      // Find all domains with this TLD if it's a TLD-only case
+      if (results.extraction.isTLD) {
+        const domainsWithTLD = await Domain.find({ 
+          name: { $regex: new RegExp(`\\.${domain}$`, 'i') },
+          isActive: true 
+        }).sort({ createdAt: -1 });
+        
+        results.tldOnly.matchingDomains = domainsWithTLD.map((d: any) => d.name);
+        
+        if (domainsWithTLD.length > 0) {
+          results.tldOnly.hasDatabaseFallback = true;
+          results.tldOnly.databaseFallbackDomain = domainsWithTLD[0].name;
+          
+          results.recommendations.push(`Can use database fallback domain: ${domainsWithTLD[0].name}`);
+        } else {
+          results.tldOnly.hasDatabaseFallback = false;
+          results.issues.push('No domains found with this TLD for fallback');
+          results.recommendations.push('Add a domain with this TLD to the database');
+        }
       }
+      
+      // Adding Cloudflare-specific recommendations for TLD-only issues
+      results.recommendations.push('Check your Cloudflare SSL settings - "Full" or "Flexible" often works better than "Full (strict)" for TLD-only issues');
+      results.recommendations.push('Ensure your DNS A record points directly to 76.76.21.21 (Vercel\'s IP)');
     }
     
     // Get the actual domain name to check in DB (after www removal and port removal)
-    // If it's just a TLD, use PRIMARY_DOMAIN if available for database check
+    // If it's just a TLD, try to find a matching domain in the database for testing
     let domainToCheck = results.extraction.afterWwwRemoval;
+    let usedFallbackForDbCheck = false;
     
-    if (results.extraction.isTLD && process.env.PRIMARY_DOMAIN) {
-      domainToCheck = process.env.PRIMARY_DOMAIN;
-      results.usedPrimaryDomainForDbCheck = true;
+    if (results.extraction.isTLD) {
+      // First try PRIMARY_DOMAIN if set
+      if (process.env.PRIMARY_DOMAIN) {
+        domainToCheck = process.env.PRIMARY_DOMAIN;
+        usedFallbackForDbCheck = true;
+        results.usedPrimaryDomainForDbCheck = true;
+      } 
+      // Then try to find a domain with matching TLD
+      else {
+        const domainsWithTLD = await Domain.find({ 
+          name: { $regex: new RegExp(`\\.${domain}$`, 'i') },
+          isActive: true 
+        }).sort({ createdAt: -1 }).limit(1);
+        
+        if (domainsWithTLD.length > 0) {
+          domainToCheck = domainsWithTLD[0].name;
+          usedFallbackForDbCheck = true;
+          results.usedDomainWithMatchingTLD = true;
+          results.matchingTldDomain = domainToCheck;
+        }
+      }
     }
     
     // Check DB for domain
@@ -189,14 +227,34 @@ export async function POST(request: NextRequest) {
           results.recommendations.push('Activate the root page in the database');
         }
       } else {
-        results.issues.push('Domain not found in database');
-        results.recommendations.push('Add this domain to the database');
+        if (usedFallbackForDbCheck) {
+          results.issues.push(`Fallback domain ${domainToCheck} not found in database`);
+          results.recommendations.push('Add a domain with this TLD to the database');
+        } else {
+          results.issues.push('Domain not found in database');
+          results.recommendations.push('Add this domain to the database');
+        }
+        
+        // Provide a list of available domains
+        const allDomains = await Domain.find({ isActive: true }).select('name');
+        if (allDomains.length > 0) {
+          results.availableDomains = allDomains.map((d: any) => d.name);
+          results.recommendations.push(`Available domains: ${allDomains.map((d: any) => d.name).join(', ')}`);
+        } else {
+          results.issues.push('No active domains found in the database');
+          results.recommendations.push('Add at least one active domain to the database');
+        }
       }
     }
     
-    // If TLD case and PRIMARY_DOMAIN is not set, make it a high priority recommendation
-    if (results.extraction.isTLD && !process.env.PRIMARY_DOMAIN) {
-      results.recommendations.unshift('⚠️ CRITICAL: Set PRIMARY_DOMAIN environment variable to fix "Domain not found: com" errors');
+    // Check if Cloudflare SSL settings might be affecting us
+    if (results.extraction.isTLD) {
+      results.cloudflareCheck = {
+        potentialIssue: 'TLD-only domains are often caused by Cloudflare SSL settings',
+        recommendation: 'Try setting Cloudflare SSL to "Flexible" instead of "Full (strict)"'
+      };
+      
+      results.recommendations.push('If using Cloudflare, change SSL mode to "Flexible" or "Full" (not "Full (strict)")');
     }
     
     return NextResponse.json({ results });

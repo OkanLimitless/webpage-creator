@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Enhanced list of common TLDs
+const commonTLDs = ['com', 'net', 'org', 'io', 'app', 'dev', 'co', 'ai', 'tech', 'site', 'online'];
+
 // This function can be marked `async` if using `await` inside
 export function middleware(request: NextRequest) {
   // Set up detailed logging for debugging
@@ -14,7 +17,6 @@ export function middleware(request: NextRequest) {
   console.log('[Middleware] Processing request:', request.url);
   console.log('[Middleware] Request hostname:', hostname);
   console.log('[Middleware] Request pathname:', pathname);
-  console.log('[Middleware] PRIMARY_DOMAIN env var:', process.env.PRIMARY_DOMAIN || 'Not set');
   
   // If it's a request to the public assets or API, skip routing middleware
   if (
@@ -47,8 +49,7 @@ export function middleware(request: NextRequest) {
   
   console.log('[Middleware] Clean hostname:', cleanHostname);
   
-  // Enhanced TLD detection
-  const commonTLDs = ['com', 'net', 'org', 'io', 'app', 'dev', 'co', 'ai', 'tech', 'site', 'online'];
+  // Check if TLD only
   const isDomainJustTLD = commonTLDs.includes(cleanHostname);
   
   // Check for common issues - some setups might incorrectly split the domain
@@ -59,13 +60,13 @@ export function middleware(request: NextRequest) {
     
     // Try to get the domain from headers
     const xForwardedHost = request.headers.get('x-forwarded-host');
-    if (xForwardedHost && xForwardedHost.includes('.') && !commonTLDs.includes(xForwardedHost)) {
+    if (xForwardedHost && xForwardedHost.includes('.') && !commonTLDs.includes(xForwardedHost.toLowerCase())) {
       console.log(`[Middleware] Found valid x-forwarded-host: ${xForwardedHost}`);
       
       // Rewrite the URL with this host
       try {
         const url = new URL(request.url);
-        url.hostname = xForwardedHost;
+        url.hostname = xForwardedHost.toLowerCase();
         console.log(`[Middleware] Rewriting URL with x-forwarded-host: ${url.toString()}`);
         
         console.log('----------- MIDDLEWARE END -----------');
@@ -75,7 +76,37 @@ export function middleware(request: NextRequest) {
       }
     }
     
-    // In this case, we'll pass through to the route handler which has more robust fallback logic
+    // If it's a TLD like "com" and we know the original request domain from other headers,
+    // try to restore it
+    const referer = request.headers.get('referer');
+    if (isDomainJustTLD && referer) {
+      try {
+        const refererUrl = new URL(referer);
+        if (refererUrl.hostname && refererUrl.hostname.includes('.')) {
+          const refererParts = refererUrl.hostname.toLowerCase().split('.');
+          // If the referer's TLD matches our TLD-only domain, it's likely the right domain
+          if (refererParts[refererParts.length - 1] === cleanHostname) {
+            console.log(`[Middleware] Detected full domain from referer: ${refererUrl.hostname}`);
+            
+            // Rewrite the URL with this hostname
+            try {
+              const url = new URL(request.url);
+              url.hostname = refererUrl.hostname;
+              console.log(`[Middleware] Rewriting URL with referer hostname: ${url.toString()}`);
+              
+              console.log('----------- MIDDLEWARE END -----------');
+              return NextResponse.rewrite(url);
+            } catch (error) {
+              console.error(`[Middleware] Error rewriting URL with referer hostname:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[Middleware] Error parsing referer:`, error);
+      }
+    }
+    
+    // If no better option, pass through to the route handler which has more robust fallback logic
     console.log('----------- MIDDLEWARE END (passing to route handler for TLD) -----------');
     return NextResponse.next();
   }
