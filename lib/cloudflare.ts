@@ -281,7 +281,8 @@ export async function createDnsRecord(
   domain: string,
   type: 'CNAME' = 'CNAME', 
   content: string = 'cname.vercel-dns.com',
-  zoneId?: string
+  zoneId?: string,
+  proxied: boolean = false // Default to false which is required for Vercel SSL to work properly
 ) {
   try {
     // For Cloudflare DNS API, we should use just the subdomain as name when it's in the correct zone
@@ -297,7 +298,7 @@ export async function createDnsRecord(
       name,
       content,
       ttl: 1, // Auto TTL
-      proxied: false, // IMPORTANT: Always false for Vercel records to avoid redirect loops
+      proxied: proxied, // Explicitly set proxied value - for Vercel domains this should typically be false
     }, effectiveZoneId);
     
     console.log(`DNS record creation response:`, JSON.stringify(response));

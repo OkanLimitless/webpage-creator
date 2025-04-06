@@ -61,11 +61,24 @@ export async function POST(request: NextRequest, { params }: Params) {
     // Ensure domain is properly registered with Vercel
     console.log(`Ensuring domain ${domain.name} is registered with Vercel...`);
     let vercelResult;
+    let vercelDnsTarget = 'cname.vercel-dns.com'; // Default DNS target
+    
     try {
       // Only add if not already configured
       if (!vercelDomainStatus?.exists) {
         vercelResult = await addDomainToVercel(domain.name);
         console.log(`Domain ${domain.name} registered with Vercel:`, vercelResult);
+        
+        // Extract the specific DNS target that Vercel wants us to use
+        if (vercelResult?.configurationDnsRecords?.length > 0) {
+          const cnameRecord = vercelResult.configurationDnsRecords.find(
+            (r: any) => r.type === 'CNAME'
+          );
+          if (cnameRecord) {
+            vercelDnsTarget = cnameRecord.value;
+            console.log(`Using Vercel-provided DNS target: ${vercelDnsTarget}`);
+          }
+        }
         
         // Trigger verification if domain was added
         if (vercelResult?.success) {
@@ -81,6 +94,17 @@ export async function POST(request: NextRequest, { params }: Params) {
       } else {
         console.log(`Domain ${domain.name} already exists in Vercel, skipping registration`);
         vercelResult = { success: true, alreadyConfigured: true };
+        
+        // Even for existing domains, we should check if they have specific configuration
+        if (vercelDomainStatus?.vercelDomain?.configurationDnsRecords?.length > 0) {
+          const cnameRecord = vercelDomainStatus.vercelDomain.configurationDnsRecords.find(
+            (r: any) => r.type === 'CNAME'
+          );
+          if (cnameRecord) {
+            vercelDnsTarget = cnameRecord.value;
+            console.log(`Using existing Vercel DNS target: ${vercelDnsTarget}`);
+          }
+        }
       }
     } catch (error) {
       console.error(`Error registering domain with Vercel:`, error);
@@ -105,20 +129,24 @@ export async function POST(request: NextRequest, { params }: Params) {
         const existingRecords = await getDnsRecords(domain.name, domain.cloudflareZoneId);
         console.log(`Found ${existingRecords.length} existing DNS records`);
         
+        // First, try to set up CNAME for root domain (apex domain) - some providers support this
         // Check if there's already a CNAME record for the root domain
         const rootCnameRecord = existingRecords.find((r: any) => 
           r.type === 'CNAME' && 
-          (r.name === domain.name || r.name === '@') && 
+          (r.name === domain.name || r.name === `${domain.name}.` || r.name === '@') && 
           r.content.includes('vercel')
         );
         
-        // Create CNAME record for root domain pointing to Vercel only if it doesn't already exist
         if (!rootCnameRecord) {
-          console.log(`Creating CNAME record for root domain ${domain.name}...`);
+          // For root domain, we'll attempt to use the same approach as subdomains first
+          console.log(`Setting up DNS for root domain ${domain.name} pointing to ${vercelDnsTarget}`);
           
           try {
-            await createDnsRecord('@', domain.name, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId);
-            dnsResult.messages.push(`Created CNAME record for ${domain.name} pointing to cname.vercel-dns.com`);
+            // Important: For Cloudflare to work properly with Vercel, proxying should be disabled
+            // This allows SSL certificates to work correctly
+            await createDnsRecord('@', domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId);
+            dnsResult.messages.push(`Created CNAME record for ${domain.name} pointing to ${vercelDnsTarget}`);
+            dnsResult.messages.push(`NOTE: If using Cloudflare SSL 'Full (Strict)', ensure SSL is also configured on Vercel`);
           } catch (cnameError: any) {
             console.error(`Failed to create CNAME record for root domain: ${cnameError.message}`);
             dnsResult.messages.push(`Failed to create CNAME record for root domain: ${cnameError.message}`);
@@ -131,6 +159,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                 throw new Error('Cloudflare API token is not configured');
               }
               
+              // Vercel's recommended A record value
               const aRecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${domain.cloudflareZoneId}/dns_records`, {
                 method: 'POST',
                 headers: {
@@ -142,13 +171,14 @@ export async function POST(request: NextRequest, { params }: Params) {
                   name: '@',
                   content: '76.76.21.21',
                   ttl: 1,
-                  proxied: false
+                  proxied: false // Important: Set to false for Vercel to verify domain
                 })
               });
               
               const aRecordData = await aRecordResponse.json();
               if (aRecordData.success) {
                 dnsResult.messages.push(`Created A record for ${domain.name} pointing to 76.76.21.21 (fallback)`);
+                dnsResult.messages.push(`NOTE: If using Cloudflare SSL 'Full (Strict)', you might need to disable it or use 'Full' instead`);
               } else {
                 console.error(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
                 dnsResult.messages.push(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
@@ -159,8 +189,13 @@ export async function POST(request: NextRequest, { params }: Params) {
             }
           }
         } else {
-          console.log(`CNAME record for root domain already exists, skipping creation`);
-          dnsResult.messages.push(`CNAME record for ${domain.name} already exists pointing to Vercel`);
+          console.log(`CNAME record for root domain already exists: ${rootCnameRecord.content}`);
+          dnsResult.messages.push(`CNAME record for ${domain.name} already exists pointing to ${rootCnameRecord.content}`);
+          
+          // Check if the record is proxied - for Vercel with Full Strict, it should not be
+          if (rootCnameRecord.proxied) {
+            dnsResult.messages.push(`WARNING: Your CNAME record is proxied through Cloudflare. This might cause SSL issues with 'Full (Strict)' mode.`);
+          }
         }
         
         // Check if there's already a www CNAME record
@@ -172,10 +207,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         
         // Create the CNAME record for www subdomain if it doesn't exist
         if (!wwwCnameRecord) {
-          await createDnsRecord('www', domain.name, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId);
-          dnsResult.messages.push(`Created CNAME record for www.${domain.name} pointing to cname.vercel-dns.com`);
+          await createDnsRecord('www', domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId);
+          dnsResult.messages.push(`Created CNAME record for www.${domain.name} pointing to ${vercelDnsTarget}`);
         } else {
-          console.log(`CNAME record for www subdomain already exists, skipping creation`);
+          console.log(`CNAME record for www subdomain already exists: ${wwwCnameRecord.content}`);
           dnsResult.messages.push(`CNAME record for www.${domain.name} already exists`);
         }
         
@@ -249,6 +284,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     
     console.log(`Root page created successfully for domain ${domain.name}`);
     
+    // Add Cloudflare-specific advice for SSL settings
+    let sslAdvice = '';
+    if (dnsResult.messages.some(msg => msg.includes('CNAME'))) {
+      sslAdvice = 'If you\'re using Cloudflare SSL "Full (Strict)" mode with a CNAME record, you may need to disable proxy for the CNAME record or switch to "Full" SSL mode.';
+    }
+    
     return NextResponse.json({
       success: true,
       rootPage: rootPage.toJSON(),
@@ -259,6 +300,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         'The root page has been created successfully in the database',
         ...(!vercelResult ? ['The domain could not be registered with Vercel. Please check your Vercel configuration.'] : []),
         ...(!dnsResult.success ? ['DNS records could not be created. Please add them manually.'] : []),
+        ...(sslAdvice ? [sslAdvice] : []),
         'It may take some time for DNS changes to propagate (up to 24-48 hours)',
         'If the page is not accessible, please check your domain configuration in Cloudflare and Vercel'
       ]
