@@ -9,6 +9,103 @@ interface Params {
   };
 }
 
+// Helper function to set PRIMARY_DOMAIN in Vercel
+async function setPrimaryDomain(domain: string) {
+  try {
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
+    
+    if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
+      throw new Error('VERCEL_TOKEN and VERCEL_PROJECT_ID must be set');
+    }
+    
+    // Check if env var already exists
+    let url = `https://api.vercel.com/v8/projects/${VERCEL_PROJECT_ID}/env`;
+    if (VERCEL_TEAM_ID) {
+      url += `?teamId=${VERCEL_TEAM_ID}`;
+    }
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get environment variables: ${JSON.stringify(data)}`);
+    }
+    
+    // Find if PRIMARY_DOMAIN already exists
+    const primaryDomainEnv = data.envs.find((env: any) => env.key === 'PRIMARY_DOMAIN');
+    
+    // If it exists, update it. Otherwise, create it.
+    if (primaryDomainEnv) {
+      const updateUrl = `https://api.vercel.com/v8/projects/${VERCEL_PROJECT_ID}/env/${primaryDomainEnv.id}`;
+      const updateQueryParams = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : '';
+      
+      const updateResponse = await fetch(`${updateUrl}${updateQueryParams}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${VERCEL_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          value: domain,
+          target: ['production', 'preview', 'development']
+        })
+      });
+      
+      const updateData = await updateResponse.json();
+      
+      if (!updateResponse.ok) {
+        throw new Error(`Failed to update PRIMARY_DOMAIN: ${JSON.stringify(updateData)}`);
+      }
+      
+      return {
+        action: 'updated',
+        previousValue: primaryDomainEnv.value,
+        newValue: domain
+      };
+    } else {
+      let createUrl = `https://api.vercel.com/v8/projects/${VERCEL_PROJECT_ID}/env`;
+      if (VERCEL_TEAM_ID) {
+        createUrl += `?teamId=${VERCEL_TEAM_ID}`;
+      }
+      
+      const createResponse = await fetch(createUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${VERCEL_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          key: 'PRIMARY_DOMAIN',
+          value: domain,
+          target: ['production', 'preview', 'development'],
+          type: 'plain'
+        })
+      });
+      
+      const createData = await createResponse.json();
+      
+      if (!createResponse.ok) {
+        throw new Error(`Failed to create PRIMARY_DOMAIN: ${JSON.stringify(createData)}`);
+      }
+      
+      return {
+        action: 'created',
+        value: domain
+      };
+    }
+  } catch (error) {
+    throw error;
+  }
+}
+
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     await connectToDatabase();
@@ -209,6 +306,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             
             if (zoneData.success && zoneData.result.ssl?.mode === 'full_strict') {
               results.nextSteps.push('Consider changing Cloudflare SSL mode from "Full (strict)" to "Full" or "Flexible" for better compatibility with Vercel');
+            } else if (zoneData.success && !zoneData.result.ssl?.mode) {
+              results.nextSteps.push('Consider enabling Cloudflare SSL and setting it to "Flexible" for better compatibility with Vercel');
             }
           } else {
             results.actions.push({
@@ -225,6 +324,30 @@ export async function POST(request: NextRequest, { params }: Params) {
           error: error.message
         });
       }
+    }
+    
+    // Fix 5: Set PRIMARY_DOMAIN environment variable in Vercel
+    try {
+      const primaryDomainResult = await setPrimaryDomain(domain.name);
+      
+      results.actions.push({
+        description: 'Set PRIMARY_DOMAIN environment variable in Vercel',
+        success: true,
+        details: primaryDomainResult.action === 'updated' 
+          ? `Updated from ${primaryDomainResult.previousValue} to ${primaryDomainResult.newValue}` 
+          : `Created with value ${primaryDomainResult.value}`
+      });
+      
+      results.nextSteps.push('Deploy your application to apply the PRIMARY_DOMAIN environment variable change');
+      
+    } catch (error: any) {
+      results.actions.push({
+        description: 'Attempted to set PRIMARY_DOMAIN environment variable',
+        success: false,
+        error: error.message
+      });
+      results.remainingIssues.push('Failed to set PRIMARY_DOMAIN environment variable');
+      results.nextSteps.push('Make sure VERCEL_TOKEN and VERCEL_PROJECT_ID are set correctly');
     }
     
     // Determine overall success

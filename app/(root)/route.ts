@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   console.log('Request host:', request.headers.get('host'));
   console.log('Request method:', request.method);
   console.log('Request pathname:', request.nextUrl.pathname);
+  console.log('PRIMARY_DOMAIN env var:', process.env.PRIMARY_DOMAIN || 'Not set');
   
   try {
     await connectToDatabase();
@@ -29,31 +30,80 @@ export async function GET(request: NextRequest) {
     // Remove port number if present (for development)
     domain = domain.split(':')[0];
     
-    // Handle potential issues with domain header parsing
-    // Some clients might incorrectly split the domain or send partial domains
-    if (domain === 'com' || domain === 'net' || domain === 'org' || domain === 'io' || 
-        domain === 'app' || domain === 'dev' || domain === 'co' || domain === 'ai') {
-      // These are likely TLDs being mistakenly treated as whole domains
-      console.warn(`Received domain appears to be just a TLD: "${domain}". Using PRIMARY_DOMAIN instead.`);
+    // Force lowercase
+    domain = domain.toLowerCase();
+    
+    // Original code for handling domain
+    console.log('Original domain after parsing:', domain);
+    
+    // Enhanced TLD detection
+    const commonTLDs = ['com', 'net', 'org', 'io', 'app', 'dev', 'co', 'ai', 'tech', 'site', 'online'];
+    const isDomainJustTLD = commonTLDs.includes(domain);
+    
+    // Check for TLD-only domain problem
+    if (isDomainJustTLD || !domain.includes('.')) {
+      console.warn(`CRITICAL: Received domain appears to be just a TLD or invalid: "${domain}"`);
+      
+      // Try multiple fallback strategies
+      
+      // 1. Check PRIMARY_DOMAIN environment variable
       const primaryDomain = process.env.PRIMARY_DOMAIN;
       if (primaryDomain) {
+        console.log(`Using PRIMARY_DOMAIN env var: ${primaryDomain}`);
         domain = primaryDomain;
-        console.log(`Using PRIMARY_DOMAIN: ${domain}`);
       } else {
-        // If no primary domain set, we can try to derive the full domain from the request URL
+        console.warn('PRIMARY_DOMAIN environment variable not set, trying other methods');
+        
+        // 2. Try to extract from request URL
         try {
           const urlObj = new URL(request.url);
+          console.log('URL parsed from request:', urlObj.toString());
+          console.log('URL hostname:', urlObj.hostname);
+          
           if (urlObj.hostname && urlObj.hostname !== domain && urlObj.hostname.includes('.')) {
+            console.log(`Using hostname from URL: ${urlObj.hostname}`);
             domain = urlObj.hostname;
-            console.log(`Derived domain from URL: ${domain}`);
           }
         } catch (e) {
           console.error('Error parsing URL:', e);
         }
+        
+        // 3. Try to extract from headers
+        try {
+          // Check x-forwarded-host header (commonly used by proxies)
+          const forwardedHost = request.headers.get('x-forwarded-host');
+          if (forwardedHost && forwardedHost.includes('.') && !commonTLDs.includes(forwardedHost)) {
+            console.log(`Using x-forwarded-host header: ${forwardedHost}`);
+            domain = forwardedHost;
+          }
+          
+          // Check referer header as last resort
+          const referer = request.headers.get('referer');
+          if (referer && domain === 'com') {
+            try {
+              const refererUrl = new URL(referer);
+              if (refererUrl.hostname && refererUrl.hostname.includes('.')) {
+                console.log(`Using hostname from referer: ${refererUrl.hostname}`);
+                domain = refererUrl.hostname;
+              }
+            } catch (e) {
+              console.error('Error parsing referer URL:', e);
+            }
+          }
+        } catch (e) {
+          console.error('Error extracting domain from headers:', e);
+        }
+        
+        // 4. Fallback to a hardcoded domain as last resort
+        if (domain === 'com' || !domain.includes('.')) {
+          const fallbackDomain = 'yourfavystore.com';
+          console.warn(`Still have invalid domain "${domain}", falling back to hardcoded domain: ${fallbackDomain}`);
+          domain = fallbackDomain;
+        }
       }
     }
     
-    // Extra check for Vercel preview URLs (e.g., project-name.vercel.app) or localhost
+    // Extra check for Vercel preview URLs or localhost
     if (host.includes('vercel.app') || host.includes('localhost')) {
       console.log('Detected Vercel preview URL or localhost');
       // For preview/dev, use the PRIMARY_DOMAIN env var or fallback
@@ -68,6 +118,7 @@ export async function GET(request: NextRequest) {
       }
     }
     
+    console.log(`Final domain after all processing: ${domain}`);
     console.log(`Looking up domain '${domain}' in database`);
     
     // Validate that we have a proper domain name with at least one dot
@@ -102,6 +153,7 @@ export async function GET(request: NextRequest) {
             h1 { color: #ef4444; margin-bottom: 10px; }
             h2 { color: #1f2937; margin-bottom: 20px; }
             p { color: #6b7280; margin-bottom: 15px; }
+            pre { white-space: pre-wrap; text-align: left; background: #f5f5f5; padding: 10px; }
           </style>
         </head>
         <body>
@@ -110,6 +162,10 @@ export async function GET(request: NextRequest) {
             <h2>${domain}</h2>
             <p>The domain format is invalid. A proper domain should look like "example.com".</p>
             <p>Debug info: Request received at ${new Date().toISOString()}</p>
+            <pre>
+Host: ${host}
+Request URL: ${request.url}
+            </pre>
           </div>
         </body>
         </html>
@@ -170,6 +226,7 @@ export async function GET(request: NextRequest) {
               border-radius: 4px;
               font-family: monospace;
             }
+            pre { white-space: pre-wrap; text-align: left; background: #f5f5f5; padding: 10px; }
           </style>
         </head>
         <body>
@@ -178,10 +235,14 @@ export async function GET(request: NextRequest) {
             <h2>${domain}</h2>
             <p>This domain is not registered in our system. If you believe this is an error, please check the domain name and try again.</p>
             <p>Debug info: Request received at ${new Date().toISOString()}</p>
+            <pre>
+Host: ${host}
+Request URL: ${request.url}
+            </pre>
           </div>
         </body>
         </html>
-      `, { 
+      `, {
         status: 404,
         headers: {
           'Content-Type': 'text/html',
