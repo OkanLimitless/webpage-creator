@@ -88,36 +88,65 @@ async function addVercelDnsToCloudflare() {
       }
     }
     
-    // 3. Add A record for root domain
-    console.log('\n3. Adding A record for root domain...');
-    
-    const rootRecordData = {
-      type: 'A',
-      name: '@',
-      content: '76.76.21.21',
-      ttl: 3600,
-      proxied: true
-    };
+    // 3. Add CNAME record for root domain (or A record as fallback)
+    console.log('\n3. Adding CNAME record for root domain...');
     
     try {
-      const rootRecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`, {
+      // First try with CNAME record (optimal for Vercel)
+      const rootCnameData = {
+        type: 'CNAME',
+        name: '@',
+        content: 'cname.vercel-dns.com',
+        ttl: 3600,
+        proxied: true
+      };
+      
+      const rootCnameResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${CF_API_TOKEN}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(rootRecordData)
+        body: JSON.stringify(rootCnameData)
       });
       
-      const rootRecordResult = await rootRecordResponse.json();
+      const rootCnameResult = await rootCnameResponse.json();
       
-      if (rootRecordResult.success) {
-        console.log(`✅ Added A record for root domain (${domain} → 76.76.21.21)`);
+      if (rootCnameResult.success) {
+        console.log(`✅ Added CNAME record for root domain (${domain} → cname.vercel-dns.com)`);
       } else {
-        console.error(`❌ Failed to add A record for root domain: ${rootRecordResult.errors[0]?.message || 'Unknown error'}`);
+        console.error(`❌ Failed to add CNAME record for root domain: ${rootCnameResult.errors[0]?.message || 'Unknown error'}`);
+        
+        // If CNAME failed, try with A record as fallback (some DNS providers don't allow CNAME at root)
+        console.log('Attempting to create A record as fallback...');
+        
+        const rootARecordData = {
+          type: 'A',
+          name: '@',
+          content: '76.76.21.21',
+          ttl: 3600,
+          proxied: true
+        };
+        
+        const rootARecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${CF_API_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(rootARecordData)
+        });
+        
+        const rootARecordResult = await rootARecordResponse.json();
+        
+        if (rootARecordResult.success) {
+          console.log(`✅ Added A record for root domain (${domain} → 76.76.21.21) as fallback`);
+        } else {
+          console.error(`❌ Failed to add A record for root domain: ${rootARecordResult.errors[0]?.message || 'Unknown error'}`);
+        }
       }
     } catch (error) {
-      console.error(`❌ Error adding A record: ${error.message}`);
+      console.error(`❌ Error adding DNS record for root domain: ${error.message}`);
     }
     
     // 4. Add CNAME record for 'www' subdomain

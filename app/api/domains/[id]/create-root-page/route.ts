@@ -105,47 +105,62 @@ export async function POST(request: NextRequest, { params }: Params) {
         const existingRecords = await getDnsRecords(domain.name, domain.cloudflareZoneId);
         console.log(`Found ${existingRecords.length} existing DNS records`);
         
-        // Check if there's already a Vercel A record for the root domain
-        const rootARecord = existingRecords.find((r: any) => 
-          r.type === 'A' && 
+        // Check if there's already a CNAME record for the root domain
+        const rootCnameRecord = existingRecords.find((r: any) => 
+          r.type === 'CNAME' && 
           (r.name === domain.name || r.name === '@') && 
-          r.content === '76.76.21.21'
+          r.content.includes('vercel')
         );
         
-        // Create A record for root domain pointing to Vercel only if it doesn't already exist
-        if (!rootARecord) {
-          console.log(`Creating A record for root domain ${domain.name}...`);
-          const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
-          if (!CF_API_TOKEN) {
-            throw new Error('Cloudflare API token is not configured');
-          }
+        // Create CNAME record for root domain pointing to Vercel only if it doesn't already exist
+        if (!rootCnameRecord) {
+          console.log(`Creating CNAME record for root domain ${domain.name}...`);
           
-          // Create the A record for the root domain
-          const aRecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${domain.cloudflareZoneId}/dns_records`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${CF_API_TOKEN}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              type: 'A',
-              name: '@',
-              content: '76.76.21.21',
-              ttl: 1,
-              proxied: false
-            })
-          });
-          
-          const aRecordData = await aRecordResponse.json();
-          if (aRecordData.success) {
-            dnsResult.messages.push(`Created A record for ${domain.name} pointing to 76.76.21.21`);
-          } else {
-            console.error(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
-            dnsResult.messages.push(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
+          try {
+            await createDnsRecord('@', domain.name, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId);
+            dnsResult.messages.push(`Created CNAME record for ${domain.name} pointing to cname.vercel-dns.com`);
+          } catch (cnameError: any) {
+            console.error(`Failed to create CNAME record for root domain: ${cnameError.message}`);
+            dnsResult.messages.push(`Failed to create CNAME record for root domain: ${cnameError.message}`);
+            
+            // If CNAME fails, try with A record as fallback (some DNS providers don't allow CNAME at root)
+            console.log(`Attempting to create A record as fallback...`);
+            try {
+              const CF_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+              if (!CF_API_TOKEN) {
+                throw new Error('Cloudflare API token is not configured');
+              }
+              
+              const aRecordResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${domain.cloudflareZoneId}/dns_records`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${CF_API_TOKEN}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  type: 'A',
+                  name: '@',
+                  content: '76.76.21.21',
+                  ttl: 1,
+                  proxied: false
+                })
+              });
+              
+              const aRecordData = await aRecordResponse.json();
+              if (aRecordData.success) {
+                dnsResult.messages.push(`Created A record for ${domain.name} pointing to 76.76.21.21 (fallback)`);
+              } else {
+                console.error(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
+                dnsResult.messages.push(`Failed to create A record: ${JSON.stringify(aRecordData.errors)}`);
+              }
+            } catch (aRecordError: any) {
+              console.error(`Failed to create A record fallback: ${aRecordError.message}`);
+              dnsResult.messages.push(`Failed to create A record fallback: ${aRecordError.message}`);
+            }
           }
         } else {
-          console.log(`A record for root domain already exists, skipping creation`);
-          dnsResult.messages.push(`A record for ${domain.name} already exists pointing to 76.76.21.21`);
+          console.log(`CNAME record for root domain already exists, skipping creation`);
+          dnsResult.messages.push(`CNAME record for ${domain.name} already exists pointing to Vercel`);
         }
         
         // Check if there's already a www CNAME record

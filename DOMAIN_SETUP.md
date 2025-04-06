@@ -66,8 +66,10 @@ node scripts/add-vercel-dns-to-cloudflare.js yourdomain.com
 ```
 
 This will add the following DNS records:
-- A record for the root domain (@) pointing to 76.76.21.21
+- CNAME record for the root domain (@) pointing to cname.vercel-dns.com
 - CNAME record for www pointing to cname.vercel-dns.com
+
+Note: Some DNS providers don't allow CNAME records for root domains. In those cases, an A record pointing to 76.76.21.21 will be used as a fallback.
 
 ## Step 6: Create a Root Page
 
@@ -110,7 +112,9 @@ This error indicates that the DNS resolution for your domain is failing. Possibl
 
 If your landing pages work but the root domain shows 404:
 
-1. Verify that the A record for the root domain exists and points to 76.76.21.21
+1. Verify that you have either:
+   - A CNAME record for the root domain pointing to cname.vercel-dns.com (preferred), OR
+   - An A record for the root domain pointing to 76.76.21.21 (fallback)
 2. Check that the domain is verified in Vercel
 3. Generate a root page for the domain in the application
 
