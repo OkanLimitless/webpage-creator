@@ -619,12 +619,13 @@ export async function createDeployment(projectId: string, domainName: string): P
     // Construct the API URL
     let apiUrl = `https://api.vercel.com/v13/deployments`;
     if (VERCEL_TEAM_ID) {
-      apiUrl += `?teamId=${VERCEL_TEAM_ID}`;
+      apiUrl += `?teamId=${VERCEL_TEAM_ID}&projectId=${projectId}`;
+    } else {
+      apiUrl += `?projectId=${projectId}`;
     }
     
     // Create a template deployment configuration
     const deploymentConfig = {
-      projectId,
       name: domainName,
       target: 'production',
       source: 'cli',
