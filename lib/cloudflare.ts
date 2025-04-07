@@ -279,7 +279,7 @@ function getEffectiveZoneId(providedZoneId?: string): string {
 export async function createDnsRecord(
   subdomain: string, 
   domain: string,
-  type: 'CNAME' = 'CNAME', 
+  type: 'CNAME' | 'A' | 'AAAA' | 'TXT' | 'MX' | 'NS', 
   content: string = 'cname.vercel-dns.com',
   zoneId?: string,
   proxied: boolean = false // Default to false which is required for Vercel SSL to work properly

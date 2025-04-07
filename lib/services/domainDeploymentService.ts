@@ -133,6 +133,73 @@ async function processDomainDeployment(
         domain.deploymentUrl = vercelDeployment.customDomain || vercelDeployment.deploymentUrl;
         await domain.save();
         console.log(`[${new Date().toISOString()}] Updated domain with deployment info (${Date.now() - startTime}ms)`);
+        
+        // NEW: Configure Cloudflare DNS records for Vercel
+        if (domain.cloudflareZoneId) {
+          console.log(`[${new Date().toISOString()}] Setting up Cloudflare DNS records for Vercel...`);
+          deploymentRecord.addLog(`Setting up Cloudflare DNS records for Vercel integration`, 'info');
+          
+          try {
+            // Import the Cloudflare function
+            const { createDnsRecord } = await import('@/lib/cloudflare');
+            
+            // Try to create a CNAME record for the root domain first
+            try {
+              console.log(`[${new Date().toISOString()}] Creating CNAME record for root domain ${domainName}...`);
+              const cnameResult = await createDnsRecord('@', domainName, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId, false);
+              
+              if (cnameResult.success) {
+                console.log(`[${new Date().toISOString()}] Successfully created CNAME record for root domain`);
+                deploymentRecord.addLog(`Created CNAME record for ${domainName} pointing to cname.vercel-dns.com`, 'info');
+              } else {
+                console.log(`[${new Date().toISOString()}] Failed to create CNAME record, trying A record as fallback...`);
+                deploymentRecord.addLog(`Failed to create CNAME record: ${JSON.stringify(cnameResult.errors || 'Unknown error')}`, 'warning');
+                
+                // If CNAME fails, try an A record (some providers don't allow CNAME at root)
+                const aRecordResult = await createDnsRecord('@', domainName, 'A', '76.76.21.21', domain.cloudflareZoneId, false);
+                
+                if (aRecordResult.success) {
+                  console.log(`[${new Date().toISOString()}] Successfully created A record for root domain`);
+                  deploymentRecord.addLog(`Created A record for ${domainName} pointing to 76.76.21.21`, 'info');
+                } else {
+                  console.error(`[${new Date().toISOString()}] Failed to create A record: ${JSON.stringify(aRecordResult.errors || 'Unknown error')}`);
+                  deploymentRecord.addLog(`Failed to create A record: ${JSON.stringify(aRecordResult.errors || 'Unknown error')}`, 'error');
+                }
+              }
+            } catch (rootDnsError: any) {
+              console.error(`[${new Date().toISOString()}] Error setting up root domain DNS: ${rootDnsError.message}`);
+              deploymentRecord.addLog(`Error setting up root domain DNS: ${rootDnsError.message}`, 'error');
+            }
+            
+            // Always create a CNAME record for www subdomain
+            try {
+              console.log(`[${new Date().toISOString()}] Creating CNAME record for www.${domainName}...`);
+              const wwwResult = await createDnsRecord('www', domainName, 'CNAME', 'cname.vercel-dns.com', domain.cloudflareZoneId, false);
+              
+              if (wwwResult.success) {
+                console.log(`[${new Date().toISOString()}] Successfully created CNAME record for www subdomain`);
+                deploymentRecord.addLog(`Created CNAME record for www.${domainName} pointing to cname.vercel-dns.com`, 'info');
+              } else {
+                console.error(`[${new Date().toISOString()}] Failed to create CNAME record for www: ${JSON.stringify(wwwResult.errors || 'Unknown error')}`);
+                deploymentRecord.addLog(`Failed to create CNAME record for www: ${JSON.stringify(wwwResult.errors || 'Unknown error')}`, 'warning');
+              }
+            } catch (wwwDnsError: any) {
+              console.error(`[${new Date().toISOString()}] Error setting up www subdomain DNS: ${wwwDnsError.message}`);
+              deploymentRecord.addLog(`Error setting up www subdomain DNS: ${wwwDnsError.message}`, 'warning');
+            }
+            
+            await deploymentRecord.save();
+            console.log(`[${new Date().toISOString()}] Finished setting up Cloudflare DNS records`);
+          } catch (cloudflareError: any) {
+            console.error(`[${new Date().toISOString()}] Error importing or using Cloudflare functions: ${cloudflareError.message}`);
+            deploymentRecord.addLog(`Failed to set up Cloudflare DNS: ${cloudflareError.message}`, 'error');
+            await deploymentRecord.save();
+          }
+        } else {
+          console.warn(`[${new Date().toISOString()}] No Cloudflare Zone ID available for ${domainName}, skipping DNS setup`);
+          deploymentRecord.addLog(`No Cloudflare Zone ID available, skipping DNS setup`, 'warning');
+          await deploymentRecord.save();
+        }
       }
       
       // Monitor the deployment until it's complete
