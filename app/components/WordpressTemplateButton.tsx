@@ -37,7 +37,7 @@ export default function WordpressTemplateButton({
         throw new Error(data.error || 'Failed to start WordPress template deployment');
       }
 
-      toast.success(`WordPress template deployment started for ${domainName}`);
+      toast.success(`WordPress ISR blog deployment started for ${domainName}`);
     } catch (error: any) {
       console.error('Error deploying WordPress template:', error);
       toast.error(error.message || 'Failed to deploy WordPress template');
@@ -52,7 +52,7 @@ export default function WordpressTemplateButton({
       disabled={disabled || isLoading}
       className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      {isLoading ? 'Deploying...' : 'Deploy WordPress Site'}
+      {isLoading ? 'Deploying...' : 'Deploy WordPress Blog'}
     </button>
   );
 } 

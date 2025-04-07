@@ -116,71 +116,47 @@ async function deployWordpressTemplate(
       throw new Error('Vercel API token not set');
     }
     
-    // Construct the deployment API URL
-    let deploymentUrl = `https://api.vercel.com/v13/deployments`;
+    // First, let's import the WordPress ISR blog template from GitHub
+    deployment.addLog(`Importing WordPress ISR blog template from GitHub...`, 'info');
+    await deployment.save();
+    
+    // Construct the import API URL for Vercel
+    let importUrl = `https://api.vercel.com/v1/integrations/github/repos/vercel/examples/imports`;
     if (VERCEL_TEAM_ID) {
-      deploymentUrl += `?teamId=${VERCEL_TEAM_ID}&projectId=${project.id}`;
-    } else {
-      deploymentUrl += `?projectId=${project.id}`;
+      importUrl += `?teamId=${VERCEL_TEAM_ID}`;
     }
     
-    deployment.addLog(`Using WordPress API URL: ${wordpressApiUrl}`, 'info');
-    await deployment.save();
-    
-    // Create deployment configuration for WordPress Template
-    const deploymentConfig = {
-      name: domainName,
-      target: 'production',
-      source: 'cli',
-      projectSettings: {
-        framework: "nextjs",
-        devCommand: null,
-        buildCommand: null,
-        outputDirectory: ".next",
-        rootDirectory: null,
-        nodeVersion: "18.x"
-      },
-      env: {
-        WORDPRESS_API_URL: wordpressApiUrl
-      },
-      gitMetadata: {
-        commitAuthorName: "Vercel Template Deployer",
-        commitMessage: "Deploy from WordPress template"
-      },
-      template: "nextjs-wordpress-isr-blog"
-    };
-    
-    deployment.addLog(`Sending request to Vercel API for template deployment...`, 'info');
-    await deployment.save();
-    
-    // Make the API request to create the deployment
-    const response = await fetch(deploymentUrl, {
+    // Make the import request to fetch the ISR blog example
+    const importResponse = await fetch(importUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${VERCEL_TOKEN}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(deploymentConfig)
+      body: JSON.stringify({
+        name: domainName,
+        project: project.id,
+        skipInitialBuild: false,
+        subfolder: 'examples/cms-wordpress', // This is the subfolder for the WordPress ISR blog example
+        envVars: [
+          {
+            key: 'WORDPRESS_API_URL',
+            value: wordpressApiUrl,
+            target: ['production', 'preview', 'development']
+          }
+        ]
+      })
     });
     
-    const data = await response.json();
+    const importData = await importResponse.json();
     
-    if (!response.ok) {
-      deployment.addLog(`Failed to create deployment: ${JSON.stringify(data.error)}`, 'error');
+    if (!importResponse.ok) {
+      deployment.addLog(`Failed to import template: ${JSON.stringify(importData.error)}`, 'error');
       await deployment.save();
-      throw new Error(`Vercel API error: ${data.error?.message || 'Unknown error'}`);
+      throw new Error(`Vercel API error: ${importData.error?.message || 'Unknown error'}`);
     }
     
-    if (!data.id) {
-      deployment.addLog(`Deployment response missing ID: ${JSON.stringify(data)}`, 'error');
-      await deployment.save();
-      throw new Error('Deployment response missing ID');
-    }
-    
-    // Update deployment record with the deployment ID
-    deployment.deploymentId = data.id;
-    deployment.addLog(`Template deployment initiated successfully (ID: ${data.id})`, 'info');
-    await deployment.save();
+    deployment.addLog(`WordPress template imported successfully`, 'info');
     
     // Add the domain to the project
     const domainResult = await addDomainToVercel(domainName, project.id);
@@ -190,13 +166,11 @@ async function deployWordpressTemplate(
       deployment.addLog(`Domain ${domainName} added to project`, 'info');
     }
     
-    // Add log with URL information
-    if (data.url) {
-      deployment.addLog(`Deployment URL: https://${data.url}`, 'info');
-    }
-    
+    // Update deployment record
+    deployment.deploymentId = project.id; // Using project ID since the import doesn't return a specific deployment ID
     deployment.status = 'deployed';
     deployment.completedAt = new Date();
+    deployment.addLog(`Deployment triggered successfully. Vercel will now build and deploy your site.`, 'info');
     await deployment.save();
     
     // Update the domain record
