@@ -192,7 +192,7 @@ async function deployWordpressTemplate(
           deploymentUrl += `?projectId=${project.id}`;
         }
         
-        // Create minimal WordPress blog deployment
+        // Create minimal WordPress blog deployment - using a different approach
         const deploymentResponse = await fetch(deploymentUrl, {
           method: 'POST',
           headers: {
@@ -202,27 +202,230 @@ async function deployWordpressTemplate(
           body: JSON.stringify({
             name: domainName,
             target: 'production',
-            source: 'git',
-            gitSource: {
-              type: 'github',
-              repo: 'vercel/next.js',
-              ref: 'canary',
-              path: 'examples/cms-wordpress',
-              deployHooks: {
-                push: {
-                  enabled: false // Disable auto-deployments on push
-                }
-              }
-            },
             framework: 'nextjs',
+            // Use a simple deployment with basic files
+            files: [
+              {
+                file: 'package.json',
+                data: JSON.stringify({
+                  name: `wordpress-blog-${domainName.replace(/\./g, '-')}`,
+                  version: '1.0.0',
+                  private: true,
+                  scripts: {
+                    dev: 'next dev',
+                    build: 'next build',
+                    start: 'next start'
+                  },
+                  dependencies: {
+                    next: "latest",
+                    react: "latest",
+                    "react-dom": "latest",
+                    "date-fns": "latest",
+                    "classnames": "latest"
+                  }
+                }),
+                encoding: 'utf-8'
+              },
+              {
+                file: '.env.local',
+                data: `WORDPRESS_API_URL=${wordpressApiUrl}`,
+                encoding: 'utf-8'
+              },
+              {
+                file: 'next.config.js',
+                data: `
+/** @type {import('next').NextConfig} */
+module.exports = {
+  images: {
+    domains: [
+      'secure.gravatar.com',
+      'nowshipping.store',
+      'i0.wp.com',
+      'i1.wp.com',
+      'i2.wp.com',
+    ],
+  },
+}`,
+                encoding: 'utf-8'
+              },
+              {
+                file: 'lib/api.js',
+                data: `
+const API_URL = process.env.WORDPRESS_API_URL
+
+async function fetchAPI(query, { variables } = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      query,
+      variables,
+    }),
+  })
+
+  const json = await res.json()
+  if (json.errors) {
+    console.error(json.errors)
+    throw new Error('Failed to fetch API')
+  }
+  return json.data
+}
+
+export async function getRecentPosts() {
+  const data = await fetchAPI(\`
+    query RecentPosts {
+      posts(first: 10, where: { orderby: { field: DATE, order: DESC } }) {
+        edges {
+          node {
+            title
+            excerpt
+            slug
+            date
+          }
+        }
+      }
+    }
+  \`)
+  return data?.posts?.edges?.map(({ node }) => node) || []
+}
+`,
+                encoding: 'utf-8'
+              },
+              {
+                file: 'pages/index.js',
+                data: `
+import Head from 'next/head'
+import { useEffect, useState } from 'react'
+
+export default function Home() {
+  const [posts, setPosts] = useState([])
+  const [loading, setLoading] = useState(true)
+  
+  useEffect(() => {
+    async function loadPosts() {
+      try {
+        const res = await fetch('/api/posts')
+        const data = await res.json()
+        setPosts(data)
+      } catch (error) {
+        console.error('Error loading posts:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    loadPosts()
+  }, [])
+
+  return (
+    <div className="container">
+      <Head>
+        <title>${domainName} - WordPress Blog</title>
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
+
+      <main>
+        <h1>
+          Welcome to ${domainName}
+        </h1>
+        
+        {loading ? (
+          <p>Loading posts...</p>
+        ) : posts.length > 0 ? (
+          <div className="posts">
+            {posts.map(post => (
+              <div key={post.slug} className="post">
+                <h2>{post.title}</h2>
+                <div dangerouslySetInnerHTML={{ __html: post.excerpt }} />
+                <p className="date">{new Date(post.date).toLocaleDateString()}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p>No posts found. Your WordPress content will appear here once configured.</p>
+        )}
+      </main>
+
+      <style jsx>{\`
+        .container {
+          min-height: 100vh;
+          padding: 0 0.5rem;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+        }
+        main {
+          padding: 5rem 0;
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          width: 100%;
+          max-width: 800px;
+        }
+        h1 {
+          margin: 0 0 2rem;
+          line-height: 1.15;
+          font-size: 3rem;
+          text-align: center;
+        }
+        .posts {
+          width: 100%;
+        }
+        .post {
+          margin-bottom: 2rem;
+          padding: 1.5rem;
+          border: 1px solid #eaeaea;
+          border-radius: 10px;
+        }
+        .post h2 {
+          margin-top: 0;
+        }
+        .date {
+          color: #666;
+          font-size: 0.9rem;
+        }
+      \`}</style>
+    </div>
+  )
+}
+`,
+                encoding: 'utf-8'
+              },
+              {
+                file: 'pages/api/posts.js',
+                data: `
+import { getRecentPosts } from '../../lib/api'
+
+export default async function handler(req, res) {
+  try {
+    const posts = await getRecentPosts()
+    res.status(200).json(posts)
+  } catch (error) {
+    console.error('Error fetching posts:', error)
+    res.status(500).json({ error: 'Failed to fetch posts' })
+  }
+}
+`,
+                encoding: 'utf-8'
+              }
+            ],
+            projectSettings: {
+              framework: "nextjs",
+              buildCommand: null,
+              outputDirectory: ".next",
+              nodeVersion: "18.x"
+            },
             env: [
               {
                 key: 'WORDPRESS_API_URL',
                 value: wordpressApiUrl,
                 target: ['production', 'preview', 'development']
               }
-            ],
-            files: [] // Required empty array
+            ]
           })
         });
         
