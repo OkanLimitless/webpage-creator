@@ -120,43 +120,145 @@ async function deployWordpressTemplate(
     deployment.addLog(`Importing WordPress ISR blog template from GitHub...`, 'info');
     await deployment.save();
     
-    // Construct the import API URL for Vercel
-    let importUrl = `https://api.vercel.com/v1/integrations/github/repos/vercel/examples/imports`;
-    if (VERCEL_TEAM_ID) {
-      importUrl += `?teamId=${VERCEL_TEAM_ID}`;
+    // Flag to track if any method succeeded
+    let deploymentSucceeded = false;
+    let lastError = null;
+    
+    // First try the GitHub import
+    try {
+      // Construct the import API URL for Vercel
+      let importUrl = `https://api.vercel.com/v1/integrations/github/repos/vercel/next.js/imports`;
+      if (VERCEL_TEAM_ID) {
+        importUrl += `?teamId=${VERCEL_TEAM_ID}`;
+      }
+      
+      // Make the import request to fetch the ISR blog example
+      const importResponse = await fetch(importUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${VERCEL_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: domainName,
+          project: project.id,
+          skipInitialBuild: false,
+          subfolder: 'examples/cms-wordpress', // Path to WordPress example in Next.js repo
+          ref: 'canary', // Use the canary branch which contains the latest examples
+          envVars: [
+            {
+              key: 'WORDPRESS_API_URL',
+              value: wordpressApiUrl,
+              target: ['production', 'preview', 'development']
+            }
+          ]
+        })
+      });
+      
+      const importData = await importResponse.json();
+      
+      if (!importResponse.ok) {
+        const errorMessage = importData.error?.message || 'Unknown error';
+        const errorCode = importData.error?.code || 'unknown_error';
+        
+        deployment.addLog(`GitHub import failed (code: ${errorCode}): ${errorMessage}`, 'warning');
+        deployment.addLog(`Will try direct deployment method next.`, 'info');
+        lastError = new Error(`GitHub import error (${errorCode}): ${errorMessage}`);
+      } else {
+        deployment.addLog(`WordPress template imported successfully`, 'info');
+        deploymentSucceeded = true;
+        // Set the deployment ID if available in the response
+        if (importData.id) {
+          deployment.deploymentId = importData.id;
+        }
+      }
+    } catch (importError: any) {
+      deployment.addLog(`Error during GitHub import: ${importError.message}`, 'warning');
+      deployment.addLog(`Will try direct deployment method next.`, 'info');
+      lastError = importError;
     }
     
-    // Make the import request to fetch the ISR blog example
-    const importResponse = await fetch(importUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${VERCEL_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: domainName,
-        project: project.id,
-        skipInitialBuild: false,
-        subfolder: 'examples/cms-wordpress', // This is the subfolder for the WordPress ISR blog example
-        envVars: [
-          {
-            key: 'WORDPRESS_API_URL',
-            value: wordpressApiUrl,
-            target: ['production', 'preview', 'development']
+    // If GitHub import failed, try direct deployment
+    if (!deploymentSucceeded) {
+      try {
+        deployment.addLog(`Attempting direct template deployment...`, 'info');
+        await deployment.save();
+        
+        // Construct direct deployment URL
+        let deploymentUrl = `https://api.vercel.com/v13/deployments`;
+        if (VERCEL_TEAM_ID) {
+          deploymentUrl += `?teamId=${VERCEL_TEAM_ID}&projectId=${project.id}`;
+        } else {
+          deploymentUrl += `?projectId=${project.id}`;
+        }
+        
+        // Create minimal WordPress blog deployment
+        const deploymentResponse = await fetch(deploymentUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${VERCEL_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: domainName,
+            target: 'production',
+            source: 'git',
+            gitSource: {
+              type: 'github',
+              repo: 'vercel/next.js',
+              ref: 'canary',
+              path: 'examples/cms-wordpress',
+              deployHooks: {
+                push: {
+                  enabled: false // Disable auto-deployments on push
+                }
+              }
+            },
+            framework: 'nextjs',
+            env: [
+              {
+                key: 'WORDPRESS_API_URL',
+                value: wordpressApiUrl,
+                target: ['production', 'preview', 'development']
+              }
+            ],
+            files: [] // Required empty array
+          })
+        });
+        
+        const deploymentData = await deploymentResponse.json();
+        
+        if (!deploymentResponse.ok) {
+          const errorMessage = deploymentData.error?.message || 'Unknown error';
+          const errorCode = deploymentData.error?.code || 'unknown_error';
+          
+          deployment.addLog(`Failed to create deployment (code: ${errorCode}): ${errorMessage}`, 'error');
+          deployment.addLog(`API Response: ${JSON.stringify(deploymentData)}`, 'error');
+          await deployment.save();
+          lastError = new Error(`Vercel API error (${errorCode}): ${errorMessage}`);
+        } else {
+          if (!deploymentData.id) {
+            deployment.addLog(`Deployment response missing ID: ${JSON.stringify(deploymentData)}`, 'error');
+            await deployment.save();
+            lastError = new Error('Deployment response missing ID');
+          } else {
+            deployment.deploymentId = deploymentData.id;
+            deployment.addLog(`Template deployment initiated successfully (ID: ${deploymentData.id})`, 'info');
+            await deployment.save();
+            deploymentSucceeded = true;
           }
-        ]
-      })
-    });
-    
-    const importData = await importResponse.json();
-    
-    if (!importResponse.ok) {
-      deployment.addLog(`Failed to import template: ${JSON.stringify(importData.error)}`, 'error');
-      await deployment.save();
-      throw new Error(`Vercel API error: ${importData.error?.message || 'Unknown error'}`);
+        }
+      } catch (directDeployError: any) {
+        deployment.addLog(`Error during direct deployment: ${directDeployError.message}`, 'error');
+        await deployment.save();
+        lastError = directDeployError;
+      }
     }
     
-    deployment.addLog(`WordPress template imported successfully`, 'info');
+    // If all deployment methods failed, throw the last error
+    if (!deploymentSucceeded) {
+      throw lastError || new Error('All deployment methods failed');
+    }
     
     // Add the domain to the project
     const domainResult = await addDomainToVercel(domainName, project.id);
@@ -167,7 +269,6 @@ async function deployWordpressTemplate(
     }
     
     // Update deployment record
-    deployment.deploymentId = project.id; // Using project ID since the import doesn't return a specific deployment ID
     deployment.status = 'deployed';
     deployment.completedAt = new Date();
     deployment.addLog(`Deployment triggered successfully. Vercel will now build and deploy your site.`, 'info');
