@@ -17,9 +17,9 @@ The redirect loop issue is caused by several factors:
 We've made the following changes to fix this issue:
 
 1. **Simplified the Next.js template**:
-   - Removed the `getServerSideProps` redirect
-   - Enhanced `next.config.js` with proper headers and conditional rewrites
-   - Added client-side JavaScript redirection with a delay to prevent loops
+   - Removed the `getServerSideProps` redirect completely
+   - Used a clean client-side React `useEffect` hook for redirection with a delay
+   - Added proper cache control headers to prevent redirect caching
 
 2. **DNS configuration enforcement**:
    - Added checks to ensure Cloudflare DNS records for Vercel are set to DNS-only (gray cloud)
@@ -89,9 +89,13 @@ When combined with Cloudflare's proxy, this created multiple redirects that even
 
 ### New Approach
 
-1. We now use only one redirection method (rewrites in `next.config.js`)
-2. We've added headers to control caching and prevent redirect loops
-3. We've implemented a client-side redirect with a delay as a fallback
+1. We now use a simpler approach with just rewrites and client-side redirection
+2. We're using React's `useEffect` hook for a clean, controlled client-side redirect
+3. We've added cache control headers to prevent browsers from caching redirects
 4. We enforce DNS-only mode for all Vercel DNS records
 
-These changes ensure that redirection happens cleanly without creating loops. 
+These changes ensure that redirection happens cleanly without creating loops.
+
+## Troubleshooting Build Errors
+
+If you encounter build errors related to Next.js configuration, it may be due to version compatibility issues. Our template has been updated to be compatible with Next.js 13.x, removing advanced features that might not be supported in all versions. 

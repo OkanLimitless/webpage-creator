@@ -888,14 +888,7 @@ module.exports = {
       {
         source: '/:path*',
         destination: \`\${mainAppUrl}/:path*\`,
-        // Avoid infinite redirect loops with the header
-        has: [
-          {
-            type: 'header',
-            key: 'x-vercel-protection',
-            value: { not: 'active' }
-          }
-        ]
+        // Remove the problematic 'has' condition that's causing build errors
       }
     ];
   },
@@ -904,10 +897,6 @@ module.exports = {
       {
         source: '/:path*',
         headers: [
-          { 
-            key: 'x-vercel-protection', 
-            value: 'active' 
-          },
           { 
             key: 'Cache-Control', 
             value: 'no-cache, no-store, must-revalidate' 
@@ -929,9 +918,22 @@ module.exports = {
         },
         {
           file: 'pages/index.js',
-          data: `export default function Home() {
-  // Show a simple loading message or redirect using client-side JavaScript
-  // This avoids the server-side redirect that could cause loops
+          data: `// Use a simple client-side redirection approach with a delay
+// to prevent immediate redirection loops
+import { useEffect } from 'react';
+
+export default function Home() {
+  useEffect(() => {
+    // Redirect with a slight delay to avoid immediate redirection loops
+    const redirectTimer = setTimeout(() => {
+      const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
+      window.location.href = mainAppUrl;
+    }, 1500);
+    
+    // Clear the timeout if the component unmounts
+    return () => clearTimeout(redirectTimer);
+  }, []);
+  
   return (
     <div style={{ 
       display: 'flex', 
@@ -944,14 +946,6 @@ module.exports = {
       <div style={{ textAlign: 'center' }}>
         <h1>Welcome to ${domainName}</h1>
         <p>Redirecting to main site...</p>
-        <script dangerouslySetInnerHTML={{ 
-          __html: \`
-            // Delay redirect slightly to avoid immediate redirect loops
-            setTimeout(function() {
-              window.location.href = "\${process.env.MAIN_APP_URL || 'https://yourfavystore.com'}";
-            }, 1000);
-          \`
-        }} />
       </div>
     </div>
   );

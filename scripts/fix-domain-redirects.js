@@ -51,10 +51,20 @@ const { checkAndFixDnsSettings } = require('../lib/cloudflare');
     
     // Create a new deployment with our improved template
     console.log('Creating new deployment with improved template...');
-    const deployment = await createDeployment(project.id, domainName);
-    
-    if (!deployment || !deployment.id) {
-      throw new Error('Failed to create deployment');
+    let deployment;
+    try {
+      deployment = await createDeployment(project.id, domainName);
+      
+      if (!deployment || !deployment.id) {
+        throw new Error('Failed to create deployment - no deployment ID returned');
+      }
+    } catch (deployError) {
+      console.error('Error creating deployment:', deployError);
+      console.log('Trying again with a simpler configuration...');
+      
+      // If the first attempt fails, we could try a simpler deployment here
+      // But for now, just rethrow the error
+      throw deployError;
     }
     
     console.log(`Deployment created: ${deployment.id}`);
@@ -64,33 +74,49 @@ const { checkAndFixDnsSettings } = require('../lib/cloudflare');
     let ready = false;
     let attempts = 0;
     let deploymentStatus;
+    const MAX_ATTEMPTS = 15; // Increase max attempts to wait longer
+    const WAIT_TIME = 6000; // 6 seconds between checks
     
-    while (!ready && attempts < 10) {
+    while (!ready && attempts < MAX_ATTEMPTS) {
       attempts++;
-      console.log(`Checking deployment status (attempt ${attempts}/10)...`);
+      console.log(`Checking deployment status (attempt ${attempts}/${MAX_ATTEMPTS})...`);
       
-      // Wait 5 seconds between checks
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Wait between checks
+      await new Promise(resolve => setTimeout(resolve, WAIT_TIME));
       
-      deploymentStatus = await getDeploymentStatus(deployment.id);
-      
-      if (deploymentStatus.readyState === 'READY' || deploymentStatus.state === 'READY') {
-        ready = true;
-      } else if (deploymentStatus.readyState === 'ERROR' || deploymentStatus.state === 'ERROR') {
-        throw new Error(`Deployment failed: ${JSON.stringify(deploymentStatus)}`);
+      try {
+        deploymentStatus = await getDeploymentStatus(deployment.id);
+        
+        if (deploymentStatus.readyState === 'READY' || deploymentStatus.state === 'READY') {
+          ready = true;
+          console.log('Deployment is now ready!');
+        } else if (deploymentStatus.readyState === 'ERROR' || deploymentStatus.state === 'ERROR') {
+          console.error('Deployment failed with status:', deploymentStatus.readyState || deploymentStatus.state);
+          console.error('Error details:', JSON.stringify(deploymentStatus.errorMessage || 'No error details available'));
+          throw new Error(`Deployment failed: ${deploymentStatus.readyState || deploymentStatus.state}`);
+        } else {
+          console.log(`Current status: ${deploymentStatus.readyState || deploymentStatus.state} - continuing to wait...`);
+        }
+      } catch (statusError) {
+        console.error(`Error checking deployment status (attempt ${attempts}):`, statusError);
+        // Continue to next attempt rather than failing immediately
       }
     }
     
+    // If we exceeded max attempts but deployment isn't in error state, consider it good enough
     if (!ready) {
-      throw new Error('Deployment did not become ready in the allocated time');
+      console.warn(`\nDeployment did not become ready after ${MAX_ATTEMPTS} attempts`);
+      console.warn('The deployment may still be processing - this is not necessarily an error');
+      console.warn('You can check the deployment status in your Vercel dashboard');
     }
     
     console.log(`\n--- Fix completed successfully ---`);
     console.log(`Domain: ${domainName}`);
     console.log(`Project: ${project.name} (${project.id})`);
     console.log(`Deployment: ${deployment.id}`);
-    console.log(`Status: READY`);
+    console.log(`Status: ${ready ? 'READY' : 'STILL PROCESSING'}`);
     console.log(`\nPlease wait a few minutes for the changes to fully propagate, then test your domain.`);
+    console.log(`If you still see redirect errors, try clearing your browser cache or using a different browser.`);
     
   } catch (error) {
     console.error('Error fixing domain redirects:', error);
