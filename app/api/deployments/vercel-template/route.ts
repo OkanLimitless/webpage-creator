@@ -94,16 +94,27 @@ async function deployWordpressTemplate(
     deployment.addLog(`Creating Vercel project for ${domainName}...`, 'info');
     await deployment.save();
     
-    // Create the Vercel project
-    const project = await createVercelProject(domainName, 'nextjs');
-    
-    if (!project || !project.id) {
-      throw new Error('Failed to create Vercel project');
+    // Create the Vercel project with timeout protection
+    let project: any = null;
+    try {
+      // Race between the project creation and a 60-second timeout
+      project = await Promise.race([
+        createVercelProject(domainName, 'nextjs'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Project creation timed out after 60s')), 60000))
+      ]);
+      
+      if (!project || !project.id) {
+        throw new Error('Failed to create Vercel project');
+      }
+      
+      deployment.vercelProjectId = project.id;
+      deployment.addLog(`Vercel project created successfully (ID: ${project.id})`, 'info');
+      await deployment.save();
+    } catch (projectError: any) {
+      deployment.addLog(`Error creating Vercel project: ${projectError.message}`, 'error');
+      await deployment.save();
+      throw projectError;
     }
-    
-    deployment.vercelProjectId = project.id;
-    deployment.addLog(`Vercel project created successfully (ID: ${project.id})`, 'info');
-    await deployment.save();
     
     // 2. Deploy the WordPress ISR blog template through Vercel API
     deployment.addLog(`Deploying NextJS WordPress ISR blog template...`, 'info');
