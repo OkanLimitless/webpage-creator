@@ -848,6 +848,151 @@ export async function createDeployment(projectId: string, domainName: string): P
       apiUrl += `?projectId=${projectId}`;
     }
     
+    // First, try to get the root page content from the database
+    let rootPageHtml = '';
+    try {
+      console.log(`[${new Date().toISOString()}] createDeployment: Fetching root page content for ${domainName}...`);
+      
+      // Import the required modules
+      const { connectToDatabase } = await import('@/lib/mongodb');
+      const { Domain } = await import('@/lib/models/Domain');
+      const { RootPage } = await import('@/lib/models/RootPage');
+      const { generateRootPageHtml } = await import('@/lib/rootPageGenerator');
+      const { createDomainRootPage } = await import('@/lib/utils/rootPageUtils');
+      
+      // Connect to database
+      await connectToDatabase();
+      
+      // Find the domain
+      const domain = await Domain.findOne({ name: domainName.toLowerCase() });
+      
+      if (domain) {
+        // Look for an existing root page
+        let rootPage = await RootPage.findOne({ domainId: domain._id });
+        
+        // If no root page exists, create one
+        if (!rootPage) {
+          console.log(`[${new Date().toISOString()}] createDeployment: No root page found for ${domainName}, creating one...`);
+          const rootPageResult = await createDomainRootPage(domain);
+          if (rootPageResult.success && rootPageResult.rootPage) {
+            rootPage = rootPageResult.rootPage;
+          }
+        }
+        
+        // If we have a root page, generate HTML for it
+        if (rootPage) {
+          console.log(`[${new Date().toISOString()}] createDeployment: Generating HTML for root page...`);
+          rootPageHtml = generateRootPageHtml(rootPage);
+        }
+      }
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] createDeployment: Error fetching root page content:`, error);
+      // Continue with default HTML if we failed to get the root page content
+    }
+    
+    // If we couldn't get the root page content, use a default template
+    if (!rootPageHtml) {
+      console.log(`[${new Date().toISOString()}] createDeployment: Using default HTML template for ${domainName}`);
+      rootPageHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${domainName}</title>
+  <meta name="description" content="Welcome to ${domainName}">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+      color: #111;
+    }
+    
+    a {
+      color: #0070f3;
+      text-decoration: none;
+    }
+    
+    a:hover {
+      text-decoration: underline;
+    }
+    
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+    
+    .my-8 {
+      margin-top: 2rem;
+      margin-bottom: 2rem;
+    }
+    
+    .p-4 {
+      padding: 1rem;
+    }
+    
+    .bg-gray-100 {
+      background-color: #f3f4f6;
+    }
+    
+    .border {
+      border: 1px solid;
+    }
+    
+    .border-gray-300 {
+      border-color: #d1d5db;
+    }
+    
+    .rounded {
+      border-radius: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>${domainName.split('.')[0].charAt(0).toUpperCase() + domainName.split('.')[0].slice(1)}</h1>
+    <p>Welcome to our website. We provide quality products and services to meet your needs.</p>
+    
+    <div class="my-8">
+      <h2>Our Services</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 30px 0;">
+        <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+          <h3>High Quality</h3>
+          <p>We pride ourselves on delivering products and services of the highest quality.</p>
+        </div>
+        <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+          <h3>Excellent Support</h3>
+          <p>Our support team is available 24/7 to assist you with any questions or concerns.</p>
+        </div>
+        <div class="my-4 p-4 bg-gray-100 border border-gray-300 rounded">
+          <h3>Secure & Reliable</h3>
+          <p>Your security is our priority. We use the latest technology to protect your data.</p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="my-8">
+      <h2>Contact Us</h2>
+      <p>Email: <a href="mailto:info@${domainName}">info@${domainName}</a></p>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+    }
+    
     // Create a template deployment configuration
     console.log(`[${new Date().toISOString()}] createDeployment: Preparing deployment configuration...`);
     const deploymentConfig = {
@@ -862,106 +1007,48 @@ export async function createDeployment(projectId: string, domainName: string): P
             version: '1.0.0',
             private: true,
             scripts: {
-              dev: 'next dev',
-              build: 'next build',
-              start: 'next start'
-            },
-            dependencies: {
-              next: '^13.4.0',
-              react: '^18.2.0',
-              'react-dom': '^18.2.0',
-              mongoose: '^7.0.0'
+              build: 'mkdir -p public && echo "Static site" > public/info.txt',
+              start: 'echo "Static site"'
             }
           }),
           encoding: 'utf-8'
         },
         {
-          file: 'next.config.js',
-          data: `// Default URL if environment variable is not set
-const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
-const domainName = process.env.DOMAIN_NAME || '${domainName}'; // Ensure domain name is available
-
-module.exports = {
-  reactStrictMode: true,
-  async rewrites() {
-    return [
-      {
-        source: '/:path*',
-        destination: \`\${mainAppUrl}/:path*\`,
-        // Remove the problematic 'has' condition that's causing build errors
-      }
-    ];
-  },
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          { 
-            key: 'Cache-Control', 
-            value: 'no-cache, no-store, must-revalidate' 
-          },
-          { 
-            key: 'Pragma', 
-            value: 'no-cache' 
-          },
-          { 
-            key: 'Expires', 
-            value: '0' 
-          }
-        ]
-      }
-    ];
-  }
-}`,
+          file: 'vercel.json',
+          data: JSON.stringify({
+            version: 2,
+            public: true,
+            cleanUrls: true,
+            trailingSlash: false,
+            headers: [
+              {
+                source: "/(.*)",
+                headers: [
+                  { key: "Cache-Control", value: "public, max-age=60, s-maxage=300, stale-while-revalidate=3600" },
+                  { key: "X-Content-Type-Options", value: "nosniff" }
+                ]
+              }
+            ]
+          }),
           encoding: 'utf-8'
         },
         {
-          file: 'pages/index.js',
-          data: `// Use a simple client-side redirection approach with a delay
-// to prevent immediate redirection loops
-import { useEffect } from 'react';
-
-export default function Home() {
-  useEffect(() => {
-    // Redirect with a slight delay to avoid immediate redirection loops
-    const redirectTimer = setTimeout(() => {
-      const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
-      window.location.href = mainAppUrl;
-    }, 1500);
-    
-    // Clear the timeout if the component unmounts
-    return () => clearTimeout(redirectTimer);
-  }, []);
-  
-  return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
-      height: '100vh',
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      fontSize: '16px'
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <h1>Welcome to ${domainName}</h1>
-        <p>Redirecting to main site...</p>
-      </div>
-    </div>
-  );
-}`,
+          file: 'public/index.html',
+          data: rootPageHtml,
           encoding: 'utf-8'
         }
       ],
       projectSettings: {
-        framework: 'nextjs',
-        devCommand: 'next dev',
-        buildCommand: 'next build',
-        outputDirectory: '.next'
+        framework: null, // Use static site
+        devCommand: null,
+        buildCommand: null,
+        outputDirectory: "public",
+        rootDirectory: null,
+        directoryListing: false,
+        nodeVersion: "18.x"
       },
       env: {
-        DOMAIN_NAME: domainName,
-        MAIN_APP_URL: 'https://yourfavystore.com'
+        DOMAIN_NAME: domainName
       }
     };
     
