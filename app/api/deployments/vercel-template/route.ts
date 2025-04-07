@@ -218,6 +218,9 @@ async function deployWordpressTemplate(
                     "react-dom": "latest",
                     "date-fns": "latest",
                     "classnames": "latest"
+                  },
+                  engines: {
+                    "node": "18.x" 
                   }
                 }),
                 encoding: 'utf-8'
@@ -412,8 +415,7 @@ export default async function handler(req, res) {
             projectSettings: {
               framework: "nextjs",
               buildCommand: null,
-              outputDirectory: ".next",
-              nodeVersion: "18.x"
+              outputDirectory: ".next"
             },
             env: {
               WORDPRESS_API_URL: wordpressApiUrl
