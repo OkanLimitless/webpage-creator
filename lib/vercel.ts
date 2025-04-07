@@ -631,7 +631,6 @@ export async function createVercelProject(domainName: string, framework: string 
         framework,
         buildCommand: null,
         outputDirectory: "public",
-        nodeVersion: "18.x", // Explicitly set Node.js version to 18.x for new projects
         environmentVariables: [
           { 
             key: 'DOMAIN_NAME', 
@@ -1587,7 +1586,6 @@ export async function deployDomain(domainName: string): Promise<{
           framework: 'static',
           buildCommand: null,
           outputDirectory: "public",
-          nodeVersion: "18.x", // Explicitly set Node.js version to 18.x for new projects
           environmentVariables: [
             { 
               key: 'DOMAIN_NAME', 
