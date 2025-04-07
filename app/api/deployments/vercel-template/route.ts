@@ -252,41 +252,25 @@ module.exports = {
                 data: `
 const API_URL = process.env.WORDPRESS_API_URL
 
-async function fetchAPI(query, { variables } = {}) {
-  const headers = { 'Content-Type': 'application/json' }
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      query,
-      variables,
-    }),
-  })
-
-  const json = await res.json()
-  if (json.errors) {
-    console.error(json.errors)
-    throw new Error('Failed to fetch API')
-  }
-  return json.data
-}
-
+/**
+ * Fetch posts from WordPress REST API
+ */
 export async function getRecentPosts() {
-  const data = await fetchAPI(\`
-    query RecentPosts {
-      posts(first: 10, where: { orderby: { field: DATE, order: DESC } }) {
-        edges {
-          node {
-            title
-            excerpt
-            slug
-            date
-          }
-        }
-      }
+  try {
+    // Use the /posts endpoint for the REST API
+    const res = await fetch(\`\${API_URL}/wp/v2/posts?_embed=true&per_page=10\`)
+    
+    // Check if response is OK
+    if (!res.ok) {
+      throw new Error(\`Failed to fetch posts: \${res.status}\`)
     }
-  \`)
-  return data?.posts?.edges?.map(({ node }) => node) || []
+    
+    const posts = await res.json()
+    return posts || []
+  } catch (error) {
+    console.error('Error fetching posts:', error)
+    return []
+  }
 }
 `,
                 encoding: 'utf-8'
@@ -334,10 +318,18 @@ export default function Home() {
         ) : posts.length > 0 ? (
           <div className="posts">
             {posts.map(post => (
-              <div key={post.slug} className="post">
-                <h2>{post.title}</h2>
-                <div dangerouslySetInnerHTML={{ __html: post.excerpt }} />
+              <div key={post.id} className="post">
+                <h2 dangerouslySetInnerHTML={{ __html: post.title.rendered }} />
+                <div dangerouslySetInnerHTML={{ __html: post.excerpt.rendered }} />
                 <p className="date">{new Date(post.date).toLocaleDateString()}</p>
+                <a 
+                  href={post.link} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="read-more"
+                >
+                  Read More
+                </a>
               </div>
             ))}
           </div>
@@ -387,6 +379,15 @@ export default function Home() {
           color: #666;
           font-size: 0.9rem;
         }
+        .read-more {
+          display: inline-block;
+          margin-top: 1rem;
+          color: #0070f3;
+          text-decoration: none;
+        }
+        .read-more:hover {
+          text-decoration: underline;
+        }
       \`}</style>
     </div>
   )
@@ -402,10 +403,15 @@ import { getRecentPosts } from '../../lib/api'
 export default async function handler(req, res) {
   try {
     const posts = await getRecentPosts()
+    
+    if (posts.length === 0) {
+      console.log('No posts found or error connecting to WordPress API')
+    }
+    
     res.status(200).json(posts)
   } catch (error) {
-    console.error('Error fetching posts:', error)
-    res.status(500).json({ error: 'Failed to fetch posts' })
+    console.error('Error in API route:', error)
+    res.status(500).json({ error: 'Failed to fetch posts', message: error.message })
   }
 }
 `,
