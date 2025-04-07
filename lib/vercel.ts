@@ -534,7 +534,7 @@ export async function addDomainAndSubdomainToVercel(domain: string, subdomain: s
 /**
  * Create a new project in Vercel for a domain
  */
-export async function createVercelProject(domainName: string, framework: string = 'nextjs'): Promise<CreateProjectResponse> {
+export async function createVercelProject(domainName: string, framework: string = 'other'): Promise<CreateProjectResponse> {
   const startTime = Date.now();
   try {
     console.log(`[${new Date().toISOString()}] createVercelProject: Starting project creation for ${domainName}...`);
@@ -1047,7 +1047,7 @@ export async function createDeployment(projectId: string, domainName: string): P
         }
       ],
       projectSettings: {
-        framework: "static", // Use static site instead of null or nextjs
+        framework: "other", // Use 'other' as a supported framework type
         devCommand: null,
         buildCommand: null,
         outputDirectory: "public",
@@ -1583,7 +1583,7 @@ export async function deployDomain(domainName: string): Promise<{
         },
         body: JSON.stringify({
           name: projectName,
-          framework: 'static',
+          framework: 'other',
           buildCommand: null,
           outputDirectory: "public",
           environmentVariables: [
@@ -1922,7 +1922,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     let project: any = null;
     try {
       project = await Promise.race([
-        createVercelProject(domainName, 'static'),
+        createVercelProject(domainName, 'other'),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Project creation timed out after 60s')), 60000))
       ]);
     } catch (projectError: any) {
