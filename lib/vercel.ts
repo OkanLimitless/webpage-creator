@@ -1009,9 +1009,15 @@ export async function createDeployment(projectId: string, domainName: string): P
             name: `domain-${domainName.replace(/\./g, '-')}`,
             version: '1.0.0',
             private: true,
+            dependencies: {
+              "next": "^13.4.0"
+            },
             scripts: {
               build: 'mkdir -p public && echo "Static site" > public/info.txt',
               start: 'echo "Static site"'
+            },
+            engines: {
+              "node": "18.x"
             }
           }),
           encoding: 'utf-8'
@@ -1042,7 +1048,7 @@ export async function createDeployment(projectId: string, domainName: string): P
         }
       ],
       projectSettings: {
-        framework: null, // Use static site
+        framework: "static", // Use static site instead of null or nextjs
         devCommand: null,
         buildCommand: null,
         outputDirectory: "public",
@@ -1578,7 +1584,10 @@ export async function deployDomain(domainName: string): Promise<{
         },
         body: JSON.stringify({
           name: projectName,
-          framework: 'nextjs',
+          framework: 'static',
+          buildCommand: null,
+          outputDirectory: "public",
+          nodeVersion: "18.x", // Explicitly set Node.js version to 18.x for new projects
           environmentVariables: [
             { 
               key: 'DOMAIN_NAME', 
@@ -1910,7 +1919,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     
     // Step 1: Create a project for the domain (or reuse existing)
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Creating/finding project for ${domainName}...`);
-    const project = await createVercelProject(domainName, 'nextjs');
+    const project = await createVercelProject(domainName, 'static');
     
     if (!project || !project.id) {
       throw new Error('Failed to create or find Vercel project');
