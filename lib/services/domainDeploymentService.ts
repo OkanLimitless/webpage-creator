@@ -200,6 +200,37 @@ async function processDomainDeployment(
           deploymentRecord.addLog(`No Cloudflare Zone ID available, skipping DNS setup`, 'warning');
           await deploymentRecord.save();
         }
+        
+        // NEW: Create root page for the domain
+        try {
+          console.log(`[${new Date().toISOString()}] Creating root page for ${domainName}...`);
+          deploymentRecord.addLog(`Attempting to create root page for domain`, 'info');
+          
+          // Import the root page utility
+          const { createDomainRootPage } = await import('@/lib/utils/rootPageUtils');
+          
+          // Create the root page
+          const rootPageResult = await createDomainRootPage(domain);
+          
+          if (rootPageResult.success) {
+            if (rootPageResult.alreadyExists) {
+              console.log(`[${new Date().toISOString()}] Root page already exists for ${domainName}`);
+              deploymentRecord.addLog(`Root page already exists for domain`, 'info');
+            } else {
+              console.log(`[${new Date().toISOString()}] Successfully created root page for ${domainName}`);
+              deploymentRecord.addLog(`Successfully created root page for domain`, 'info');
+            }
+          } else {
+            console.error(`[${new Date().toISOString()}] Failed to create root page: ${rootPageResult.message}`);
+            deploymentRecord.addLog(`Failed to create root page: ${rootPageResult.message}`, 'warning');
+          }
+          
+          await deploymentRecord.save();
+        } catch (rootPageError: any) {
+          console.error(`[${new Date().toISOString()}] Error creating root page: ${rootPageError.message}`);
+          deploymentRecord.addLog(`Error creating root page: ${rootPageError.message}`, 'warning');
+          await deploymentRecord.save();
+        }
       }
       
       // Monitor the deployment until it's complete

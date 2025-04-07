@@ -22,6 +22,14 @@ We've implemented several fixes to address the redirect loop issues:
    - Added extensive logging throughout the process
    - Created more robust timeouts and retries
 
+4. **Added automatic root page creation**:
+   - Domains now automatically get a root page when deployed
+   - No more redirection to the main site - each domain now has its own landing page
+   - Root pages are generated with a default template that includes:
+     - Services/features section
+     - Testimonials
+     - Contact information
+
 ## How to Fix Domains with Redirect Issues
 
 ### Option 1: Use Our Fix Script (Recommended)
@@ -37,6 +45,7 @@ This script will:
 2. Create or update the Vercel project for your domain
 3. Deploy our fixed template that prevents redirect loops
 4. Wait for the deployment to be ready (or warn you if it's taking longer than expected)
+5. Automatically create a root page for the domain if one doesn't exist yet
 
 ### Option 2: Manual Fix
 
@@ -51,6 +60,20 @@ If you prefer to fix the domain manually:
    - Use our deployDomainToVercel function from lib/vercel.ts
    - OR remove the domain from Vercel and add it back using our system
 
+3. Create a root page (if needed):
+   - Go to the Domains management interface
+   - Click "Generate Root Page" button for your domain
+
+## Managing Root Pages
+
+Each domain now automatically gets its own root page when deployed, but you can still customize it:
+
+1. Go to the Admin Dashboard
+2. Navigate to Domains
+3. Find your domain in the list
+4. Click "Manage" to access domain settings
+5. Select the "Root Page" tab to edit content
+
 ## Verifying the Fix
 
 After applying the fix, you should:
@@ -58,6 +81,8 @@ After applying the fix, you should:
 1. Wait 5-10 minutes for DNS and deployment changes to propagate
 2. Clear your browser cache completely (or try a different browser/incognito mode)
 3. Visit your domain
+
+You should now see a proper landing page instead of a redirect message.
 
 If you still see redirect errors:
 - Try waiting longer (DNS changes can take up to 24-48 hours to fully propagate)
@@ -77,6 +102,8 @@ The fix addresses three key issues that were causing the redirect loop:
 3. **Missing Cache Headers**: Without proper cache headers, browsers would cache redirects and get stuck in redirect loops.
 
 The new deployment template provides a single, clean redirection method with appropriate cache headers, and ensures that Cloudflare's proxy is disabled for Vercel DNS records.
+
+Additionally, we now automatically create a root page for every domain, eliminating the need for redirects entirely.
 
 ## Further Assistance
 

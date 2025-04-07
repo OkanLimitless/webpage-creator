@@ -1880,6 +1880,43 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     // Get deployment URL
     const deploymentUrl = deploymentStatus.url || `${domainName}.vercel.app`;
     
+    // Step 6: Create a root page for the domain in our database
+    let rootPageResult = { success: false, message: 'Root page creation not attempted' };
+    try {
+      console.log(`[${new Date().toISOString()}] deployDomainToVercel: Fetching domain from database to create root page...`);
+      
+      // Import the domain models and database connection
+      const { connectToDatabase } = await import('@/lib/mongodb');
+      const { Domain } = await import('@/lib/models/Domain');
+      
+      // Connect to the database
+      await connectToDatabase();
+      
+      // Find the domain in the database
+      const domainInDb = await Domain.findOne({ name: domainName.toLowerCase() });
+      
+      if (domainInDb) {
+        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Found domain in database, creating root page...`);
+        
+        // Import the root page utility
+        const { createDomainRootPage } = await import('@/lib/utils/rootPageUtils');
+        
+        // Create the root page
+        rootPageResult = await createDomainRootPage(domainInDb);
+        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Root page creation result:`, rootPageResult.message);
+      } else {
+        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Domain not found in database, skipping root page creation`);
+        rootPageResult = { success: false, message: 'Domain not found in database' };
+      }
+    } catch (rootPageError: any) {
+      console.error(`[${new Date().toISOString()}] deployDomainToVercel: Error creating root page:`, rootPageError);
+      rootPageResult = { 
+        success: false, 
+        message: `Error creating root page: ${rootPageError.message || 'Unknown error'}` 
+      };
+      // Continue with deployment even if root page creation fails
+    }
+    
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment process completed in ${Date.now() - startTime}ms`);
     
     return {
@@ -1890,6 +1927,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
       url: deploymentUrl,
       dnsRecords,
       deploymentStatus: deploymentStatus.readyState || deploymentStatus.state,
+      rootPage: rootPageResult,
       message: `Domain ${domainName} deployed successfully${ready ? '' : ' (deployment still processing)'}`
     };
   } catch (error: any) {
