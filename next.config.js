@@ -22,8 +22,8 @@ const nextConfig = {
   },
   // Enable SWC minification for better performance
   swcMinify: true,
-  // Specify the output type for better compatibility with Vercel
-  output: 'standalone',
+  // Commenting out the standalone output option which is causing build errors
+  // output: 'standalone',
 }
 
 module.exports = nextConfig 

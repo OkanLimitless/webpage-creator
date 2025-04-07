@@ -255,6 +255,8 @@ module.exports = {
       'i2.wp.com',
     ],
   },
+  // Do not use standalone output to avoid build errors
+  // output: 'standalone',
 }`,
                 encoding: 'utf-8'
               },
