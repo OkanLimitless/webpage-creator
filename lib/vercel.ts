@@ -1322,12 +1322,12 @@ async function findOrCreateProjectForDomain(domainName: string): Promise<any> {
     
     // Verify the domain is attached
     try {
-      const domains = await getProjectDomains(project.id);
+      const domains = await getProjectDomains(project.id!);
       const hasDomain = domains.some(d => d.name.toLowerCase() === domainName.toLowerCase());
       
       if (!hasDomain) {
         console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Domain not attached to new project, attaching now...`);
-        await addDomainToProject(project.id, domainName);
+        await addDomainToProject(project.id!, domainName);
       }
     } catch (verifyError) {
       console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error verifying domain attachment:`, verifyError);
