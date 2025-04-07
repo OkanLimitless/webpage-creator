@@ -106,17 +106,17 @@ export async function POST(request: NextRequest) {
         deploymentStatus: 'pending',
       });
 
-      // Start the domain deployment process asynchronously
-      try {
-        console.log(`Starting automatic deployment for new domain: ${name}`);
-        startDomainDeployment(domain._id.toString())
-          .catch(deployError => {
-            console.error(`Error during automatic deployment for ${name}:`, deployError);
-          });
-      } catch (deployError) {
-        console.error(`Failed to trigger automatic deployment for ${name}:`, deployError);
-        // We continue even if deployment fails, as it can be manually triggered later
-      }
+      // We no longer automatically deploy static sites - use WordPress template instead
+      // try {
+      //   console.log(`Starting automatic deployment for new domain: ${name}`);
+      //   startDomainDeployment(domain._id.toString())
+      //     .catch(deployError => {
+      //       console.error(`Error during automatic deployment for ${name}:`, deployError);
+      //     });
+      // } catch (deployError) {
+      //   console.error(`Failed to trigger automatic deployment for ${name}:`, deployError);
+      //   // We continue even if deployment fails, as it can be manually triggered later
+      // }
       
       return NextResponse.json({
         ...domain.toJSON(),
@@ -138,17 +138,17 @@ export async function POST(request: NextRequest) {
         deploymentStatus: 'pending',
       });
 
-      // Start the domain deployment process asynchronously
-      try {
-        console.log(`Starting automatic deployment for new domain with fallback: ${name}`);
-        startDomainDeployment(domain._id.toString())
-          .catch(deployError => {
-            console.error(`Error during automatic deployment for ${name}:`, deployError);
-          });
-      } catch (deployError) {
-        console.error(`Failed to trigger automatic deployment for ${name}:`, deployError);
-        // We continue even if deployment fails, as it can be manually triggered later
-      }
+      // We no longer automatically deploy static sites - use WordPress template instead
+      // try {
+      //   console.log(`Starting automatic deployment for new domain with fallback: ${name}`);
+      //   startDomainDeployment(domain._id.toString())
+      //     .catch(deployError => {
+      //       console.error(`Error during automatic deployment for ${name}:`, deployError);
+      //     });
+      // } catch (deployError) {
+      //   console.error(`Failed to trigger automatic deployment for ${name}:`, deployError);
+      //   // We continue even if deployment fails, as it can be manually triggered later
+      // }
       
       return NextResponse.json({
         ...domain.toJSON(),
