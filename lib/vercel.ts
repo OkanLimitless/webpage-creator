@@ -879,6 +879,7 @@ export async function createDeployment(projectId: string, domainName: string): P
           file: 'next.config.js',
           data: `// Default URL if environment variable is not set
 const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
+const domainName = process.env.DOMAIN_NAME || '${domainName}'; // Ensure domain name is available
 
 module.exports = {
   reactStrictMode: true,
@@ -886,7 +887,40 @@ module.exports = {
     return [
       {
         source: '/:path*',
-        destination: \`\${mainAppUrl}/:path*\`
+        destination: \`\${mainAppUrl}/:path*\`,
+        // Avoid infinite redirect loops with the header
+        has: [
+          {
+            type: 'header',
+            key: 'x-vercel-protection',
+            value: { not: 'active' }
+          }
+        ]
+      }
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { 
+            key: 'x-vercel-protection', 
+            value: 'active' 
+          },
+          { 
+            key: 'Cache-Control', 
+            value: 'no-cache, no-store, must-revalidate' 
+          },
+          { 
+            key: 'Pragma', 
+            value: 'no-cache' 
+          },
+          { 
+            key: 'Expires', 
+            value: '0' 
+          }
+        ]
       }
     ];
   }
@@ -896,19 +930,31 @@ module.exports = {
         {
           file: 'pages/index.js',
           data: `export default function Home() {
-  return <div>Loading ${domainName} content...</div>;
-}
-
-export async function getServerSideProps() {
-  // Default URL if environment variable is not set
-  const mainAppUrl = process.env.MAIN_APP_URL || 'https://yourfavystore.com';
-  
-  return {
-    redirect: {
-      destination: \`\${mainAppUrl}/\`,
-      permanent: false,
-    }
-  };
+  // Show a simple loading message or redirect using client-side JavaScript
+  // This avoids the server-side redirect that could cause loops
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      height: '100vh',
+      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontSize: '16px'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <h1>Welcome to ${domainName}</h1>
+        <p>Redirecting to main site...</p>
+        <script dangerouslySetInnerHTML={{ 
+          __html: \`
+            // Delay redirect slightly to avoid immediate redirect loops
+            setTimeout(function() {
+              window.location.href = "\${process.env.MAIN_APP_URL || 'https://yourfavystore.com'}";
+            }, 1000);
+          \`
+        }} />
+      </div>
+    </div>
+  );
 }`,
           encoding: 'utf-8'
         }
@@ -1766,5 +1812,100 @@ async function getProjectDeployments(projectId: string): Promise<any[]> {
   } catch (error: any) {
     console.error(`Error getting deployments for project ${projectId}:`, error);
     throw error;
+  }
+}
+
+/**
+ * Deploy a domain to Vercel with proper configuration to prevent redirect loops
+ * @param domainName The domain to deploy
+ * @returns Deployment response with URL and status
+ */
+export async function deployDomainToVercel(domainName: string): Promise<any> {
+  const startTime = Date.now();
+  try {
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Starting deployment process for domain ${domainName}...`);
+    
+    // Step 1: Create a project for the domain (or reuse existing)
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Creating/finding project for ${domainName}...`);
+    const project = await createVercelProject(domainName, 'nextjs');
+    
+    if (!project || !project.id) {
+      throw new Error('Failed to create or find Vercel project');
+    }
+    
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Using project: ${project.name} (${project.id})`);
+    
+    // Step 2: Create a deployment for the project
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Creating deployment for project...`);
+    const deployment = await createDeployment(project.id, domainName);
+    
+    if (!deployment || !deployment.id) {
+      throw new Error('Failed to create deployment');
+    }
+    
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment created with ID ${deployment.id}, waiting for it to be ready...`);
+    
+    // Step 3: Wait for deployment to be ready
+    let ready = false;
+    let attempts = 0;
+    let maxAttempts = 12; // 1 minute (5s intervals)
+    let deploymentStatus = deployment;
+    
+    while (!ready && attempts < maxAttempts) {
+      attempts++;
+      console.log(`[${new Date().toISOString()}] deployDomainToVercel: Checking deployment status (attempt ${attempts}/${maxAttempts})...`);
+      
+      // Wait 5 seconds between checks
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      deploymentStatus = await getDeploymentStatus(deployment.id);
+      
+      if (deploymentStatus.readyState === 'READY' || deploymentStatus.state === 'READY') {
+        ready = true;
+        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment is ready!`);
+      } else if (deploymentStatus.readyState === 'ERROR' || deploymentStatus.state === 'ERROR') {
+        console.error(`[${new Date().toISOString()}] deployDomainToVercel: Deployment failed:`, JSON.stringify(deploymentStatus));
+        throw new Error(`Deployment failed with status: ${deploymentStatus.readyState || deploymentStatus.state}`);
+      }
+    }
+    
+    if (!ready) {
+      console.warn(`[${new Date().toISOString()}] deployDomainToVercel: Deployment did not become ready in the allocated time (${maxAttempts * 5}s), but continuing anyway`);
+    }
+    
+    // Step 4: Add domain to the project (if not already done during project creation)
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Ensuring domain ${domainName} is attached to project...`);
+    const domainResult = await addDomainToVercel(domainName, project.id);
+    
+    // Step 5: Get DNS configuration requirements
+    let dnsRecords = [];
+    if (domainResult.configurationDnsRecords && Array.isArray(domainResult.configurationDnsRecords)) {
+      dnsRecords = domainResult.configurationDnsRecords;
+    }
+    
+    // Get deployment URL
+    const deploymentUrl = deploymentStatus.url || `${domainName}.vercel.app`;
+    
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment process completed in ${Date.now() - startTime}ms`);
+    
+    return {
+      success: true,
+      domain: domainName,
+      projectId: project.id,
+      deploymentId: deployment.id,
+      url: deploymentUrl,
+      dnsRecords,
+      deploymentStatus: deploymentStatus.readyState || deploymentStatus.state,
+      message: `Domain ${domainName} deployed successfully${ready ? '' : ' (deployment still processing)'}`
+    };
+  } catch (error: any) {
+    console.error(`[${new Date().toISOString()}] deployDomainToVercel: Error deploying domain ${domainName} (took ${Date.now() - startTime}ms):`, error);
+    
+    return {
+      success: false,
+      domain: domainName,
+      error: error.message || 'Unknown error',
+      message: `Failed to deploy domain: ${error.message || 'Unknown error'}`
+    };
   }
 } 

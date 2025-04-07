@@ -288,28 +288,37 @@ export async function createDnsRecord(
     // For Cloudflare DNS API, we should use just the subdomain as name when it's in the correct zone
     const name = subdomain;
     const effectiveZoneId = getEffectiveZoneId(zoneId);
-    console.log(`Creating DNS record for ${name} in domain ${domain} with zone ID: ${effectiveZoneId}`);
+    console.log(`[${new Date().toISOString()}] createDnsRecord: Creating DNS record for ${name} in domain ${domain} with zone ID: ${effectiveZoneId}`);
+    console.log(`[${new Date().toISOString()}] createDnsRecord: Type: ${type}, Content: ${content}, Proxied: ${proxied}`);
     
     // Check if this is a record pointing to Vercel
-    const isVercelRecord = content.includes('vercel');
+    const isVercelRecord = content.includes('vercel') || content === '76.76.21.21';
+    
+    // Force proxied to false if this is a Vercel record to prevent redirect loops
+    // Vercel requires DNS-only mode for its SSL to work properly
+    const shouldProxy = isVercelRecord ? false : proxied;
+    
+    if (isVercelRecord && proxied) {
+      console.log(`[${new Date().toISOString()}] createDnsRecord: Detected Vercel record, forcing proxied=false to prevent redirect loops`);
+    }
     
     const response = await cf.createDnsRecord({
       type,
       name,
       content,
       ttl: 1, // Auto TTL
-      proxied: proxied, // Explicitly set proxied value - for Vercel domains this should typically be false
+      proxied: shouldProxy, // Explicitly set proxied value - for Vercel domains this should ALWAYS be false
     }, effectiveZoneId);
     
-    console.log(`DNS record creation response:`, JSON.stringify(response));
+    console.log(`[${new Date().toISOString()}] createDnsRecord: DNS record creation response:`, JSON.stringify(response));
     
     if (!response.success) {
-      console.error('Cloudflare API returned an error:', response.errors || response);
+      console.error('[${new Date().toISOString()}] createDnsRecord: Cloudflare API returned an error:', response.errors || response);
     }
     
     return response;
   } catch (error) {
-    console.error('Error creating DNS record:', error);
+    console.error(`[${new Date().toISOString()}] createDnsRecord: Error creating DNS record:`, error);
     // Return mock success in case of error
     if (isDevelopment) {
       return { success: true };
@@ -441,6 +450,94 @@ export async function checkDomainActivationByName(domainName: string) {
     };
   } catch (error) {
     console.error(`Error checking domain activation by name ${domainName}:`, error);
+    throw error;
+  }
+}
+
+// Add a new function to check and fix DNS settings for Vercel domains
+export async function checkAndFixDnsSettings(domainName: string, zoneId?: string): Promise<any> {
+  try {
+    console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Checking DNS records for ${domainName}`);
+    
+    // Get the effective zone ID
+    const effectiveZoneId = getEffectiveZoneId(zoneId);
+    
+    // First, check root domain record (@)
+    const rootRecords = await getDnsRecords(domainName, effectiveZoneId);
+    let rootFixed = false;
+    
+    // Then check www subdomain
+    const wwwRecords = await getDnsRecords(`www.${domainName}`, effectiveZoneId);
+    let wwwFixed = false;
+    
+    // Check root domain records
+    for (const record of rootRecords) {
+      // If it's a Vercel record (CNAME to vercel-dns.com or A to 76.76.21.21) and it's proxied
+      if ((record.type === 'CNAME' && record.content.includes('vercel')) || 
+          (record.type === 'A' && record.content === '76.76.21.21')) {
+        
+        if (record.proxied === true) {
+          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Found proxied Vercel record for root domain, fixing...`);
+          
+          // Delete the record and recreate it with proxied=false
+          await deleteDnsRecord(record.id, effectiveZoneId);
+          
+          // Recreate with the same settings but proxied=false
+          await createDnsRecord(
+            domainName.split('.')[0], // This should be '@' for root
+            domainName,
+            record.type as any,
+            record.content,
+            effectiveZoneId,
+            false // Force proxied=false
+          );
+          
+          rootFixed = true;
+        } else {
+          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Root domain Vercel record is already correctly set to DNS-only`);
+        }
+      }
+    }
+    
+    // Check www subdomain records
+    for (const record of wwwRecords) {
+      // If it's a Vercel record and it's proxied
+      if ((record.type === 'CNAME' && record.content.includes('vercel')) || 
+          (record.type === 'A' && record.content === '76.76.21.21')) {
+        
+        if (record.proxied === true) {
+          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Found proxied Vercel record for www subdomain, fixing...`);
+          
+          // Delete the record and recreate it with proxied=false
+          await deleteDnsRecord(record.id, effectiveZoneId);
+          
+          // Recreate with the same settings but proxied=false
+          await createDnsRecord(
+            'www',
+            domainName,
+            record.type as any,
+            record.content,
+            effectiveZoneId,
+            false // Force proxied=false
+          );
+          
+          wwwFixed = true;
+        } else {
+          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: www subdomain Vercel record is already correctly set to DNS-only`);
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      rootDomainFixed: rootFixed,
+      wwwDomainFixed: wwwFixed,
+      message: rootFixed || wwwFixed 
+        ? `Fixed proxied DNS records for ${domainName}` 
+        : `DNS records for ${domainName} are already correctly configured`
+    };
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] checkAndFixDnsSettings: Error checking/fixing DNS settings:`, error);
     throw error;
   }
 }
