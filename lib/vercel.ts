@@ -629,6 +629,9 @@ export async function createVercelProject(domainName: string, framework: string 
       body: JSON.stringify({
         name: projectName, // Use direct domain name instead of standardized name
         framework,
+        buildCommand: null,
+        outputDirectory: "public",
+        nodeVersion: "18.x", // Explicitly set Node.js version to 18.x for new projects
         environmentVariables: [
           { 
             key: 'DOMAIN_NAME', 
@@ -636,7 +639,7 @@ export async function createVercelProject(domainName: string, framework: string 
             type: 'plain',
             target: ['production', 'preview', 'development'] 
           }
-        ]
+        ],
       })
     });
     
