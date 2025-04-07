@@ -1044,7 +1044,6 @@ export async function createDeployment(projectId: string, domainName: string): P
         buildCommand: null,
         outputDirectory: "public",
         rootDirectory: null,
-        directoryListing: false,
         nodeVersion: "18.x"
       },
       env: {
