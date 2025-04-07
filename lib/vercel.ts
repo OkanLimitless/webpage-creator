@@ -30,8 +30,8 @@ interface CreateProjectResponse extends VercelResponse {
   createdAt?: string;
 }
 
-interface DeploymentResponse extends VercelResponse {
-  id?: string;
+export interface DeploymentResponse extends VercelResponse {
+  id: string;
   url?: string;
   createdAt?: string;
   readyState?: 'READY' | 'ERROR' | 'BUILDING' | 'INITIALIZING' | 'QUEUED' | 'CANCELED';
@@ -535,7 +535,9 @@ export async function addDomainAndSubdomainToVercel(domain: string, subdomain: s
  * Create a new project in Vercel for a domain
  */
 export async function createVercelProject(domainName: string, framework: string = 'nextjs'): Promise<CreateProjectResponse> {
+  const startTime = Date.now();
   try {
+    console.log(`[${new Date().toISOString()}] createVercelProject: Starting project creation for ${domainName}...`);
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
     const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
@@ -543,47 +545,78 @@ export async function createVercelProject(domainName: string, framework: string 
       throw new Error('Vercel API token not set');
     }
     
-    // Generate a project name based on the domain
-    const projectName = `domain-${domainName.replace(/\./g, '-')}`;
+    // Generate a standardized project name based on the domain
+    const standardProjectName = `domain-${domainName.replace(/\./g, '-')}`;
+    console.log(`[${new Date().toISOString()}] createVercelProject: Using standardized project name: ${standardProjectName}`);
     
     // First, check if the domain is already attached to any project
-    console.log(`Checking if domain ${domainName} is already attached to a project...`);
+    console.log(`[${new Date().toISOString()}] createVercelProject: Checking if domain ${domainName} is already attached to a project...`);
     try {
       const existingProject = await findProjectByDomain(domainName);
       if (existingProject) {
-        console.log(`Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+        console.log(`[${new Date().toISOString()}] createVercelProject: Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+        
+        // If the existing project doesn't follow our standard naming, log a warning
+        if (existingProject.name !== standardProjectName) {
+          console.warn(`[${new Date().toISOString()}] createVercelProject: Project name mismatch - expected "${standardProjectName}" but found "${existingProject.name}"`);
+        }
+        
         return existingProject;
       }
     } catch (error) {
-      console.warn(`Error checking for existing projects with domain ${domainName}:`, error);
+      console.warn(`[${new Date().toISOString()}] createVercelProject: Error checking for existing projects with domain ${domainName}:`, error);
       // Continue with project creation
     }
     
-    // Second, check if a project with this name already exists
-    console.log(`Checking if project with name ${projectName} already exists...`);
+    // Second, check if a project with the standard name already exists
+    console.log(`[${new Date().toISOString()}] createVercelProject: Checking if project with name ${standardProjectName} already exists...`);
     try {
-      const existingProject = await findProjectByName(projectName);
+      const existingProject = await findProjectByName(standardProjectName);
       if (existingProject) {
-        console.log(`Project with name ${projectName} already exists (ID: ${existingProject.id})`);
+        console.log(`[${new Date().toISOString()}] createVercelProject: Project with name ${standardProjectName} already exists (ID: ${existingProject.id})`);
         
         // Ensure the domain is attached to this project
         try {
-          console.log(`Ensuring domain ${domainName} is attached to existing project ${existingProject.id}...`);
+          console.log(`[${new Date().toISOString()}] createVercelProject: Ensuring domain ${domainName} is attached to existing project ${existingProject.id}...`);
           await addDomainToProject(existingProject.id, domainName);
+          console.log(`[${new Date().toISOString()}] createVercelProject: Domain attachment confirmed for ${existingProject.id}`);
         } catch (domainError: any) {
-          console.warn(`Failed to attach domain to existing project: ${domainError.message}`);
+          console.warn(`[${new Date().toISOString()}] createVercelProject: Failed to attach domain to existing project: ${domainError.message}`);
           // Continue anyway, as we'll try again later
         }
         
         return existingProject;
       }
     } catch (error) {
-      console.warn(`Error checking for existing project with name ${projectName}:`, error);
+      console.warn(`[${new Date().toISOString()}] createVercelProject: Error checking for existing project with name ${standardProjectName}:`, error);
       // Continue with project creation
     }
     
-    // If we reach here, we need to create a new project
-    console.log(`Creating new project ${projectName} for domain ${domainName}...`);
+    // Third, check if a project with the direct domain name exists (Vercel might have created one)
+    console.log(`[${new Date().toISOString()}] createVercelProject: Checking if project with direct name ${domainName} exists...`);
+    try {
+      const directNameProject = await findProjectByName(domainName);
+      if (directNameProject) {
+        console.log(`[${new Date().toISOString()}] createVercelProject: Project with direct name ${domainName} exists (ID: ${directNameProject.id})`);
+        
+        // Ensure the domain is attached to this project
+        try {
+          console.log(`[${new Date().toISOString()}] createVercelProject: Ensuring domain ${domainName} is attached to direct-named project ${directNameProject.id}...`);
+          await addDomainToProject(directNameProject.id, domainName);
+          console.log(`[${new Date().toISOString()}] createVercelProject: Domain attachment confirmed for ${directNameProject.id}`);
+        } catch (domainError: any) {
+          console.warn(`[${new Date().toISOString()}] createVercelProject: Failed to attach domain to direct-named project: ${domainError.message}`);
+        }
+        
+        return directNameProject;
+      }
+    } catch (error) {
+      console.warn(`[${new Date().toISOString()}] createVercelProject: Error checking for direct-named project:`, error);
+      // Continue with project creation
+    }
+    
+    // If we reach here, we need to create a new project with our standard naming
+    console.log(`[${new Date().toISOString()}] createVercelProject: Creating new project ${standardProjectName} for domain ${domainName}...`);
     
     // Construct the API URL
     let apiUrl = 'https://api.vercel.com/v9/projects';
@@ -592,6 +625,7 @@ export async function createVercelProject(domainName: string, framework: string 
     }
     
     // Make the API request to create the project
+    console.log(`[${new Date().toISOString()}] createVercelProject: Making API request to create project...`);
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -599,7 +633,7 @@ export async function createVercelProject(domainName: string, framework: string 
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        name: projectName,
+        name: standardProjectName, // Always use our standard naming pattern
         framework,
         environmentVariables: [
           { 
@@ -617,14 +651,15 @@ export async function createVercelProject(domainName: string, framework: string 
     if (!response.ok) {
       // If project already exists with the same name, try to return that project
       if (data.error?.code === 'project_name_already_exists') {
-        console.log(`Project with name ${projectName} already exists during creation, trying to find it...`);
+        console.log(`[${new Date().toISOString()}] createVercelProject: Project with name ${standardProjectName} already exists during creation, trying to find it...`);
         try {
-          const existingProject = await findProjectByName(projectName);
+          const existingProject = await findProjectByName(standardProjectName);
           if (existingProject) {
+            console.log(`[${new Date().toISOString()}] createVercelProject: Found existing project: ${existingProject.id}`);
             return existingProject;
           }
         } catch (findError) {
-          console.warn(`Error finding existing project after creation failure:`, findError);
+          console.warn(`[${new Date().toISOString()}] createVercelProject: Error finding existing project after creation failure:`, findError);
         }
       }
       
@@ -632,18 +667,19 @@ export async function createVercelProject(domainName: string, framework: string 
     }
     
     // Project was successfully created, now add the domain to it
-    console.log(`Project created with ID ${data.id}, now adding domain ${domainName} to it`);
+    console.log(`[${new Date().toISOString()}] createVercelProject: Project created with ID ${data.id}, now adding domain ${domainName} to it`);
     try {
       await addDomainToProject(data.id!, domainName);
-      console.log(`Domain ${domainName} successfully added to project ${data.id}`);
+      console.log(`[${new Date().toISOString()}] createVercelProject: Domain ${domainName} successfully added to project ${data.id}`);
     } catch (domainError: any) {
-      console.warn(`Warning: Failed to add domain to project: ${domainError.message}`);
+      console.warn(`[${new Date().toISOString()}] createVercelProject: Warning: Failed to add domain to project: ${domainError.message}`);
       // Continue anyway as we have the project
     }
     
+    console.log(`[${new Date().toISOString()}] createVercelProject: Project creation complete in ${Date.now() - startTime}ms`);
     return data;
   } catch (error: any) {
-    console.error('Error creating Vercel project:', error);
+    console.error(`[${new Date().toISOString()}] createVercelProject: Error creating Vercel project (took ${Date.now() - startTime}ms):`, error);
     throw error;
   }
 }
@@ -1187,6 +1223,124 @@ async function removeDomainFromAllProjects(domainName: string, exceptProjectId?:
 }
 
 /**
+ * Utility function to find or create a project for a domain
+ * This centralizes the logic for project selection to avoid inconsistencies
+ */
+async function findOrCreateProjectForDomain(domainName: string): Promise<any> {
+  console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Finding appropriate project for domain ${domainName}...`);
+  const startTime = Date.now();
+  
+  // Generate the standard project name for consistency
+  const standardProjectName = `domain-${domainName.replace(/\./g, '-')}`;
+  
+  // Priority order for project selection:
+  // 1. Project that already has the domain attached
+  // 2. Project with the standard naming pattern
+  // 3. Project with direct domain name (which might have been created by Vercel)
+  // 4. Create a new project with standard naming
+  
+  let project = null;
+  
+  // 1. First check if domain is already attached to any project
+  try {
+    console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Checking if domain is attached to any project...`);
+    const existingProject = await findProjectByDomain(domainName);
+    if (existingProject) {
+      console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name})`);
+      
+      // If this project doesn't follow our naming convention, log a warning
+      if (existingProject.name !== standardProjectName) {
+        console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Project name mismatch - expected "${standardProjectName}" but found "${existingProject.name}"`);
+      }
+      
+      return existingProject;
+    }
+  } catch (error) {
+    console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error checking for existing projects with domain:`, error);
+  }
+  
+  // 2. Check for project with standard naming pattern
+  try {
+    console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Looking for project with standard naming ${standardProjectName}...`);
+    const standardProject = await findProjectByName(standardProjectName);
+    if (standardProject) {
+      console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Found project with standard naming: ${standardProject.id}`);
+      
+      // Ensure the domain is attached to this project
+      try {
+        console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Ensuring domain is attached to standard project...`);
+        await addDomainToProject(standardProject.id, domainName);
+        console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Domain attachment confirmed for standard project`);
+      } catch (domainError) {
+        console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Failed to attach domain to standard project:`, domainError);
+      }
+      
+      return standardProject;
+    }
+  } catch (error) {
+    console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error finding project by standard name:`, error);
+  }
+  
+  // 3. Check for project with direct domain name
+  try {
+    console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Looking for project with direct name ${domainName}...`);
+    const directNameProject = await findProjectByName(domainName);
+    if (directNameProject) {
+      console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Found project with direct name: ${directNameProject.id}`);
+      
+      // Ensure the domain is attached to this project
+      try {
+        console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Ensuring domain is attached to direct name project...`);
+        await addDomainToProject(directNameProject.id, domainName);
+        console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Domain attachment confirmed for direct name project`);
+      } catch (domainError) {
+        console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Failed to attach domain to direct name project:`, domainError);
+      }
+      
+      return directNameProject;
+    }
+  } catch (error) {
+    console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error finding project by direct name:`, error);
+  }
+  
+  // 4. If no project found, clean up any potential conflicts and create a new one
+  console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: No suitable project found, creating new one...`);
+  
+  // First clean up any existing domain associations
+  try {
+    console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Cleaning up domain from any projects...`);
+    await removeDomainFromAllProjects(domainName);
+  } catch (cleanupError) {
+    console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error during domain cleanup:`, cleanupError);
+  }
+  
+  // Create new project using the standard naming convention
+  try {
+    console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Creating new project with standard name ${standardProjectName}...`);
+    project = await createVercelProject(domainName);
+    console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Created new project: ${project.id}`);
+    
+    // Verify the domain is attached
+    try {
+      const domains = await getProjectDomains(project.id);
+      const hasDomain = domains.some(d => d.name.toLowerCase() === domainName.toLowerCase());
+      
+      if (!hasDomain) {
+        console.log(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Domain not attached to new project, attaching now...`);
+        await addDomainToProject(project.id, domainName);
+      }
+    } catch (verifyError) {
+      console.warn(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error verifying domain attachment:`, verifyError);
+    }
+    
+    return project;
+  } catch (createError) {
+    console.error(`[${new Date().toISOString()}] findOrCreateProjectForDomain: Error creating new project:`, createError);
+    throw createError;
+  }
+}
+
+/**
  * Main function to handle domain deployment
  */
 export async function deployDomain(domainName: string): Promise<{
@@ -1201,67 +1355,49 @@ export async function deployDomain(domainName: string): Promise<{
   console.log(`[${new Date().toISOString()}] Starting deployment process for domain: ${domainName}`);
   
   try {
-    // First, check if the domain is already attached to any project
-    let project = null;
-    console.log(`[${new Date().toISOString()}] Checking if domain ${domainName} is already attached to a project...`);
-    const findProjectStartTime = Date.now();
-    try {
-      const existingProject = await findProjectByDomain(domainName);
-      if (existingProject) {
-        console.log(`[${new Date().toISOString()}] Domain ${domainName} is already attached to project ${existingProject.id} (${existingProject.name}) - found in ${Date.now() - findProjectStartTime}ms`);
-        project = existingProject;
-      } else {
-        console.log(`[${new Date().toISOString()}] Domain ${domainName} is not attached to any project (took ${Date.now() - findProjectStartTime}ms)`);
-      }
-    } catch (error) {
-      console.warn(`[${new Date().toISOString()}] Error checking for existing projects with domain ${domainName} (took ${Date.now() - findProjectStartTime}ms):`, error);
-    }
+    // Use the centralized function to find or create a project for this domain
+    console.log(`[${new Date().toISOString()}] Finding/creating appropriate project for domain ${domainName}...`);
+    const project = await findOrCreateProjectForDomain(domainName);
     
-    // If we don't have a project yet, check for a project with the expected name pattern
-    if (!project) {
-      const projectName = `domain-${domainName.replace(/\./g, '-')}`;
-      console.log(`[${new Date().toISOString()}] Looking for project with name ${projectName}...`);
-      const findByNameStartTime = Date.now();
-      try {
-        const namedProject = await findProjectByName(projectName);
-        if (namedProject) {
-          console.log(`[${new Date().toISOString()}] Found project with matching name: ${namedProject.id} (${namedProject.name}) - found in ${Date.now() - findByNameStartTime}ms`);
-          project = namedProject;
-        } else {
-          console.log(`[${new Date().toISOString()}] No project found with name ${projectName} (took ${Date.now() - findByNameStartTime}ms)`);
-        }
-      } catch (error) {
-        console.warn(`[${new Date().toISOString()}] Error searching for project by name (took ${Date.now() - findByNameStartTime}ms):`, error);
-      }
-    }
-    
-    // If we still don't have a project, we'll need to create one
-    if (!project) {
-      // Clean up any existing domain associations to avoid conflicts
-      console.log(`[${new Date().toISOString()}] Cleaning up domain ${domainName} from any existing projects...`);
-      const cleanupStartTime = Date.now();
-      try {
-        const cleanupResult = await removeDomainFromAllProjects(domainName);
-        if (cleanupResult) {
-          console.log(`[${new Date().toISOString()}] Domain ${domainName} was found and removed from other projects (took ${Date.now() - cleanupStartTime}ms)`);
-        } else {
-          console.log(`[${new Date().toISOString()}] Domain ${domainName} was not found in any other projects or couldn't be removed (took ${Date.now() - cleanupStartTime}ms)`);
-        }
-      } catch (cleanupError: any) {
-        console.warn(`[${new Date().toISOString()}] Error during domain cleanup (continuing anyway - took ${Date.now() - cleanupStartTime}ms): ${cleanupError.message}`);
-      }
-      
-      // Create a new project for the domain
-      console.log(`[${new Date().toISOString()}] Creating dedicated project for domain ${domainName}...`);
-      const createProjectStartTime = Date.now();
-      project = await createVercelProject(domainName);
-      console.log(`[${new Date().toISOString()}] Project creation completed for ${domainName} (took ${Date.now() - createProjectStartTime}ms)`);
+    if (!project || !project.id) {
+      throw new Error(`Failed to find or create a valid project for domain ${domainName}`);
     }
     
     console.log(`[${new Date().toISOString()}] Using project with ID: ${project.id} (${project.name}) - total time so far: ${Date.now() - startTime}ms`);
     
-    // Ensure the domain is properly added to the project
-    console.log(`[${new Date().toISOString()}] Ensuring domain ${domainName} is added to project ${project.id}...`);
+    // Before proceeding, check if there are any other projects with the same domain or similar names
+    // that we should clean up to avoid duplicates
+    console.log(`[${new Date().toISOString()}] Checking for potential duplicate projects...`);
+    try {
+      const allProjects = await getAllProjects();
+      const standardProjectName = `domain-${domainName.replace(/\./g, '-')}`;
+      
+      // Find possible duplicates (excluding the selected project)
+      const possibleDuplicates = allProjects.filter(p => 
+        p.id !== project.id && 
+        (p.name === domainName || 
+         p.name === standardProjectName || 
+         p.name.includes(domainName.replace(/\./g, '-')))
+      );
+      
+      if (possibleDuplicates.length > 0) {
+        console.log(`[${new Date().toISOString()}] Found ${possibleDuplicates.length} potential duplicate projects. Will ensure domain is removed from them.`);
+        
+        // Remove the domain from all these projects to ensure it's only on our selected project
+        for (const dupProject of possibleDuplicates) {
+          console.log(`[${new Date().toISOString()}] Removing domain ${domainName} from potential duplicate project ${dupProject.id} (${dupProject.name})...`);
+          await removeDomainFromAllProjects(domainName, project.id);
+        }
+      } else {
+        console.log(`[${new Date().toISOString()}] No potential duplicate projects found.`);
+      }
+    } catch (error) {
+      console.warn(`[${new Date().toISOString()}] Error checking for duplicate projects: ${error}`);
+      // Continue with deployment process
+    }
+    
+    // Double-check that the domain is still properly attached to our selected project
+    console.log(`[${new Date().toISOString()}] Double-checking domain ${domainName} is attached to project ${project.id}...`);
     const addDomainStartTime = Date.now();
     try {
       const domainAddResult = await addDomainToVercel(domainName, project.id);
@@ -1285,7 +1421,12 @@ export async function deployDomain(domainName: string): Promise<{
     // Create a deployment for the project
     console.log(`[${new Date().toISOString()}] Creating deployment for project ${project.id}...`);
     const createDeploymentStartTime = Date.now();
-    const deployment = await createDeployment(project.id!, domainName);
+    const deployment = await createDeployment(project.id, domainName);
+    
+    if (!deployment || !deployment.id) {
+      throw new Error(`Failed to create deployment for project ${project.id}`);
+    }
+    
     console.log(`[${new Date().toISOString()}] Deployment created with ID: ${deployment.id} (took ${Date.now() - createDeploymentStartTime}ms)`);
     
     // Wait a bit longer for deployment to initialize
@@ -1326,6 +1467,22 @@ export async function deployDomain(domainName: string): Promise<{
       console.warn(`[${new Date().toISOString()}] Error during domain verification (continuing anyway - took ${Date.now() - verifyStartTime}ms): ${verifyError.message}`);
     }
     
+    // Double-check that the domain is still attached to the project after deployment
+    console.log(`[${new Date().toISOString()}] Double-checking domain is attached to project ${project.id}...`);
+    try {
+      const domains = await getProjectDomains(project.id);
+      const hasDomain = domains.some(d => d.name.toLowerCase() === domainName.toLowerCase());
+      
+      if (!hasDomain) {
+        console.warn(`[${new Date().toISOString()}] Domain ${domainName} is not attached to project ${project.id} after deployment. Attempting to re-attach...`);
+        await addDomainToVercel(domainName, project.id);
+      } else {
+        console.log(`[${new Date().toISOString()}] Confirmed domain ${domainName} is attached to project ${project.id}`);
+      }
+    } catch (error) {
+      console.warn(`[${new Date().toISOString()}] Error checking domain attachment after deployment: ${error}`);
+    }
+    
     // Generate URLs for both the Vercel deployment and the custom domain
     const vercelUrl = deployment.url ? `https://${deployment.url}` : undefined;
     const customDomain = `https://${domainName}`;
@@ -1334,12 +1491,12 @@ export async function deployDomain(domainName: string): Promise<{
     console.log(`[${new Date().toISOString()}] deployDomain function complete in ${totalTime}ms`);
     
     return {
-      projectId: project.id!,
-      deploymentId: deployment.id!,
+      projectId: project.id,
+      deploymentId: deployment.id,
       deploymentUrl: customDomain, // Primary URL to use
       customDomain: customDomain,  // Explicit custom domain URL
       vercelUrl: vercelUrl,        // Fallback Vercel URL
-      status: deploymentStatus?.readyState || deployment.readyState || 'INITIALIZING'
+      status: deploymentStatus?.readyState || deployment?.readyState || 'INITIALIZING'
     };
   } catch (error: any) {
     const totalTime = Date.now() - startTime;
