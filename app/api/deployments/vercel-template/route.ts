@@ -145,13 +145,9 @@ async function deployWordpressTemplate(
           skipInitialBuild: false,
           subfolder: 'examples/cms-wordpress', // Path to WordPress example in Next.js repo
           ref: 'canary', // Use the canary branch which contains the latest examples
-          envVars: [
-            {
-              key: 'WORDPRESS_API_URL',
-              value: wordpressApiUrl,
-              target: ['production', 'preview', 'development']
-            }
-          ]
+          environmentVariables: {
+            WORDPRESS_API_URL: wordpressApiUrl
+          }
         })
       });
       
@@ -419,13 +415,9 @@ export default async function handler(req, res) {
               outputDirectory: ".next",
               nodeVersion: "18.x"
             },
-            env: [
-              {
-                key: 'WORDPRESS_API_URL',
-                value: wordpressApiUrl,
-                target: ['production', 'preview', 'development']
-              }
-            ]
+            env: {
+              WORDPRESS_API_URL: wordpressApiUrl
+            }
           })
         });
         
