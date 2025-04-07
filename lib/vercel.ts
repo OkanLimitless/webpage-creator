@@ -1430,7 +1430,11 @@ export async function deployDomain(domainName: string): Promise<{
       throw new Error(`Failed to find or create a valid project for domain ${domainName}`);
     }
     
-    console.log(`[${new Date().toISOString()}] Using project with ID: ${project.id} (${project.name}) - total time so far: ${Date.now() - startTime}ms`);
+    // At this point we have guaranteed that project and project.id exist
+    const projectId = project.id; // Store for safe use throughout the function
+    const projectName = project.name;
+    
+    console.log(`[${new Date().toISOString()}] Using project with ID: ${projectId} (${projectName}) - total time so far: ${Date.now() - startTime}ms`);
     
     // Before proceeding, check if there are any other projects with the same domain or similar names
     // that we should clean up to avoid duplicates
@@ -1440,7 +1444,7 @@ export async function deployDomain(domainName: string): Promise<{
       
       // Find possible duplicates (excluding the selected project)
       const possibleDuplicates = allProjects.filter(p => 
-        p.id !== project.id && 
+        p.id !== projectId && 
         (p.name === domainName || p.name.includes(domainName.replace(/\./g, '-')))
       );
       
@@ -1491,11 +1495,19 @@ export async function deployDomain(domainName: string): Promise<{
       // Continue with deployment process
     }
     
+    // After the duplicate check, project might have changed, so we need to re-verify
+    if (!project || !project.id) {
+      throw new Error(`Project reference was lost during duplicate check for domain ${domainName}`);
+    }
+    
+    // Update our safe reference
+    const finalProjectId = project.id;
+    
     // Double-check that the domain is still properly attached to our selected project
-    console.log(`[${new Date().toISOString()}] Double-checking domain ${domainName} is attached to project ${project.id}...`);
+    console.log(`[${new Date().toISOString()}] Double-checking domain ${domainName} is attached to project ${finalProjectId}...`);
     const addDomainStartTime = Date.now();
     try {
-      const domainAddResult = await addDomainToVercel(domainName, project.id);
+      const domainAddResult = await addDomainToVercel(domainName, finalProjectId);
       
       // If domain is still in use by a different project
       if (!domainAddResult.success && 
@@ -1524,19 +1536,25 @@ export async function deployDomain(domainName: string): Promise<{
         }
       }
       
-      console.log(`[${new Date().toISOString()}] Domain ${domainName} successfully added/confirmed to project ${project.id} (took ${Date.now() - addDomainStartTime}ms)`);
+      console.log(`[${new Date().toISOString()}] Domain ${domainName} successfully added/confirmed to project ${finalProjectId} (took ${Date.now() - addDomainStartTime}ms)`);
     } catch (domainError: any) {
       console.error(`[${new Date().toISOString()}] Failed to add domain to project (took ${Date.now() - addDomainStartTime}ms): ${domainError.message}`);
       throw new Error(`Domain configuration failed: ${domainError.message}`);
     }
     
+    // Final check to make sure project is still valid after all the potential project switching
+    if (!project || !project.id) {
+      throw new Error(`Project reference was lost during domain verification for ${domainName}`);
+    }
+    
     // Create a deployment for the project
-    console.log(`[${new Date().toISOString()}] Creating deployment for project ${project.id}...`);
+    const finalDeployProjectId = project.id;
+    console.log(`[${new Date().toISOString()}] Creating deployment for project ${finalDeployProjectId}...`);
     const createDeploymentStartTime = Date.now();
-    const deployment = await createDeployment(project.id, domainName);
+    const deployment = await createDeployment(finalDeployProjectId, domainName);
     
     if (!deployment || !deployment.id) {
-      throw new Error(`Failed to create deployment for project ${project.id}`);
+      throw new Error(`Failed to create deployment for project ${finalDeployProjectId}`);
     }
     
     console.log(`[${new Date().toISOString()}] Deployment created with ID: ${deployment.id} (took ${Date.now() - createDeploymentStartTime}ms)`);
@@ -1572,24 +1590,24 @@ export async function deployDomain(domainName: string): Promise<{
     // Verify the domain to ensure it's properly configured
     const verifyStartTime = Date.now();
     try {
-      console.log(`[${new Date().toISOString()}] Verifying domain ${domainName} for project ${project.id}...`);
-      const verificationResult = await verifyDomainInVercel(domainName, project.id);
+      console.log(`[${new Date().toISOString()}] Verifying domain ${domainName} for project ${finalDeployProjectId}...`);
+      const verificationResult = await verifyDomainInVercel(domainName, finalDeployProjectId);
       console.log(`[${new Date().toISOString()}] Domain verification initiated (took ${Date.now() - verifyStartTime}ms): ${JSON.stringify(verificationResult)}`);
     } catch (verifyError: any) {
       console.warn(`[${new Date().toISOString()}] Error during domain verification (continuing anyway - took ${Date.now() - verifyStartTime}ms): ${verifyError.message}`);
     }
     
     // Double-check that the domain is still attached to the project after deployment
-    console.log(`[${new Date().toISOString()}] Double-checking domain is attached to project ${project.id}...`);
+    console.log(`[${new Date().toISOString()}] Double-checking domain is attached to project ${finalDeployProjectId}...`);
     try {
-      const domains = await getProjectDomains(project.id);
+      const domains = await getProjectDomains(finalDeployProjectId);
       const hasDomain = domains.some(d => d.name.toLowerCase() === domainName.toLowerCase());
       
       if (!hasDomain) {
-        console.warn(`[${new Date().toISOString()}] Domain ${domainName} is not attached to project ${project.id} after deployment. Attempting to re-attach...`);
-        await addDomainToVercel(domainName, project.id);
+        console.warn(`[${new Date().toISOString()}] Domain ${domainName} is not attached to project ${finalDeployProjectId} after deployment. Attempting to re-attach...`);
+        await addDomainToVercel(domainName, finalDeployProjectId);
       } else {
-        console.log(`[${new Date().toISOString()}] Confirmed domain ${domainName} is attached to project ${project.id}`);
+        console.log(`[${new Date().toISOString()}] Confirmed domain ${domainName} is attached to project ${finalDeployProjectId}`);
       }
     } catch (error) {
       console.warn(`[${new Date().toISOString()}] Error checking domain attachment after deployment: ${error}`);
@@ -1603,7 +1621,7 @@ export async function deployDomain(domainName: string): Promise<{
     console.log(`[${new Date().toISOString()}] deployDomain function complete in ${totalTime}ms`);
     
     return {
-      projectId: project.id,
+      projectId: finalDeployProjectId,
       deploymentId: deployment.id,
       deploymentUrl: customDomain, // Primary URL to use
       customDomain: customDomain,  // Explicit custom domain URL
