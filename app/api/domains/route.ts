@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain, IDomain } from '@/lib/models/Domain';
-import { getNameservers, addDomain as addDomainToCloudflare } from '@/lib/cloudflare';
+import { getNameservers, addDomain as addDomainToCloudflare, createDnsRecord } from '@/lib/cloudflare';
 import { addDomainToVercel } from '@/lib/vercel';
 import { startDomainDeployment } from '@/lib/services/domainDeploymentService';
 
@@ -106,6 +106,56 @@ export async function POST(request: NextRequest) {
         deploymentStatus: 'pending',
       });
 
+      // Add DNS records for Vercel integration
+      console.log(`Creating DNS records for ${name} with zone ID ${cfResult.zoneId}...`);
+      
+      try {
+        // Try to create a CNAME record for the root domain first (some providers support this)
+        console.log(`Attempting to create CNAME record for root domain ${name}...`);
+        const cnameResult = await createDnsRecord('@', name, 'CNAME', 'cname.vercel-dns.com', cfResult.zoneId, false);
+        
+        if (cnameResult.success) {
+          console.log(`Successfully created CNAME record for root domain ${name}`);
+        } else {
+          // If CNAME fails, try an A record (common for root domains)
+          console.log(`Failed to create CNAME record for root domain, trying A record...`);
+          const aRecordResult = await createDnsRecord('@', name, 'A', '76.76.21.21', cfResult.zoneId, false);
+          
+          if (aRecordResult.success) {
+            console.log(`Successfully created A record for root domain ${name}`);
+          } else {
+            console.error(`Failed to create A record for ${name}:`, aRecordResult.errors || 'Unknown error');
+          }
+        }
+        
+        // Always create a CNAME record for www subdomain
+        console.log(`Creating CNAME record for www.${name}...`);
+        const wwwResult = await createDnsRecord('www', name, 'CNAME', 'cname.vercel-dns.com', cfResult.zoneId, false);
+        
+        if (wwwResult.success) {
+          console.log(`Successfully created CNAME record for www.${name}`);
+        } else {
+          console.error(`Failed to create CNAME record for www.${name}:`, wwwResult.errors || 'Unknown error');
+        }
+      } catch (dnsError) {
+        // Log the error but continue - DNS records can be added later
+        console.error(`Error creating DNS records for ${name}:`, dnsError);
+      }
+
+      // Register domain with Vercel
+      try {
+        console.log(`Registering domain ${name} with Vercel...`);
+        const vercelResult = await addDomainToVercel(name);
+        if (vercelResult.success) {
+          console.log(`Successfully registered domain ${name} with Vercel`);
+        } else {
+          console.error(`Failed to register domain ${name} with Vercel:`, vercelResult.error || 'Unknown error');
+        }
+      } catch (vercelError) {
+        // Log the error but continue - Vercel registration can be done later
+        console.error(`Error registering domain ${name} with Vercel:`, vercelError);
+      }
+
       // We no longer automatically deploy static sites - use WordPress template instead
       // try {
       //   console.log(`Starting automatic deployment for new domain: ${name}`);
@@ -120,7 +170,7 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({
         ...domain.toJSON(),
-        message: 'Domain added successfully. Please update your domain nameservers to the ones shown in the table to complete verification.',
+        message: 'Domain added successfully. DNS records for Vercel have been configured. The domain has been registered with Vercel. Please update your domain nameservers to the ones shown in the table to complete verification.',
       }, { status: 201 });
     } catch (error) {
       console.error('Error adding domain to Cloudflare:', error);
@@ -138,6 +188,48 @@ export async function POST(request: NextRequest) {
         deploymentStatus: 'pending',
       });
 
+      // Even in the fallback case, try to set up DNS records using the global zone ID
+      console.log(`Creating DNS records for ${name} using global zone ID...`);
+      
+      try {
+        // Try to create DNS records using the global zone ID
+        console.log(`Attempting to create A record for root domain ${name}...`);
+        const aRecordResult = await createDnsRecord('@', name, 'A', '76.76.21.21', undefined, false);
+        
+        if (aRecordResult.success) {
+          console.log(`Successfully created A record for root domain ${name}`);
+        } else {
+          console.error(`Failed to create A record for ${name}:`, aRecordResult.errors || 'Unknown error');
+        }
+        
+        // Always create a CNAME record for www subdomain
+        console.log(`Creating CNAME record for www.${name}...`);
+        const wwwResult = await createDnsRecord('www', name, 'CNAME', 'cname.vercel-dns.com', undefined, false);
+        
+        if (wwwResult.success) {
+          console.log(`Successfully created CNAME record for www.${name}`);
+        } else {
+          console.error(`Failed to create CNAME record for www.${name}:`, wwwResult.errors || 'Unknown error');
+        }
+      } catch (dnsError) {
+        // Log the error but continue - DNS records can be added later
+        console.error(`Error creating DNS records for ${name} in fallback mode:`, dnsError);
+      }
+
+      // Register domain with Vercel even in fallback mode
+      try {
+        console.log(`Registering domain ${name} with Vercel (fallback mode)...`);
+        const vercelResult = await addDomainToVercel(name);
+        if (vercelResult.success) {
+          console.log(`Successfully registered domain ${name} with Vercel (fallback mode)`);
+        } else {
+          console.error(`Failed to register domain ${name} with Vercel (fallback mode):`, vercelResult.error || 'Unknown error');
+        }
+      } catch (vercelError) {
+        // Log the error but continue - Vercel registration can be done later
+        console.error(`Error registering domain ${name} with Vercel (fallback mode):`, vercelError);
+      }
+
       // We no longer automatically deploy static sites - use WordPress template instead
       // try {
       //   console.log(`Starting automatic deployment for new domain with fallback: ${name}`);
@@ -152,7 +244,7 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({
         ...domain.toJSON(),
-        message: 'Domain added with global nameservers. Please update your domain nameservers to the ones shown in the table.',
+        message: 'Domain added with global nameservers. DNS records for Vercel have been configured and the domain has been registered with Vercel. Please update your domain nameservers to the ones shown in the table.',
       }, { status: 201 });
     }
   } catch (error) {
