@@ -219,6 +219,9 @@ export async function getNameservers(): Promise<CloudflareNameserver[]> {
 // Add a domain to Cloudflare
 export async function addDomain(domainName: string) {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     console.log(`Adding domain ${domainName} to Cloudflare...`);
     const response = await cf.createZone(domainName);
     console.log('Zone creation response:', JSON.stringify(response));
@@ -285,6 +288,10 @@ export async function createDnsRecord(
   proxied: boolean = false // Default to false which is required for Vercel SSL to work properly
 ) {
   try {
+    // Trim whitespace from domain and subdomain
+    domain = domain.trim();
+    subdomain = subdomain.trim();
+    
     // For Cloudflare DNS API, we should use just the subdomain as name when it's in the correct zone
     const name = subdomain;
     const effectiveZoneId = getEffectiveZoneId(zoneId);
@@ -355,6 +362,9 @@ export async function deleteDnsRecord(recordId: string, zoneId?: string) {
 // Get DNS records for a domain or subdomain
 export async function getDnsRecords(nameOrFqdn: string, zoneId?: string) {
   try {
+    // Trim whitespace from domain name
+    nameOrFqdn = nameOrFqdn.trim();
+    
     const effectiveZoneId = getEffectiveZoneId(zoneId);
     
     // If the name contains dots, it might be a full domain name (subdomain.domain.com)
@@ -386,6 +396,9 @@ export async function getDnsRecords(nameOrFqdn: string, zoneId?: string) {
 // Get Cloudflare zone ID by domain name
 export async function getZoneIdByName(domainName: string): Promise<string | null> {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     console.log(`Getting zone ID for domain: ${domainName}`);
     
     // In development with missing credentials, return mock data
@@ -418,6 +431,9 @@ export async function getZoneIdByName(domainName: string): Promise<string | null
 // Check domain activation status by domain name
 export async function checkDomainActivationByName(domainName: string) {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     console.log(`Checking domain activation by name: ${domainName}`);
     
     // Get zone information directly
@@ -457,6 +473,9 @@ export async function checkDomainActivationByName(domainName: string) {
 // Add a new function to check and fix DNS settings for Vercel domains
 export async function checkAndFixDnsSettings(domainName: string, zoneId?: string): Promise<any> {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Checking DNS records for ${domainName}`);
     
     // Get the effective zone ID

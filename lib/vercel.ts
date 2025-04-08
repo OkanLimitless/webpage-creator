@@ -62,6 +62,9 @@ if (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID) {
 export async function addDomainToVercel(domainName: string, projectId?: string): Promise<any> {
   const startTime = Date.now();
   try {
+    // Trim whitespace from the domain name to prevent issues
+    domainName = domainName.trim();
+    
     const targetProjectId = projectId || VERCEL_PROJECT_ID;
     console.log(`[${new Date().toISOString()}] addDomainToVercel: Adding domain ${domainName} to Vercel project ${targetProjectId}...`);
     
@@ -184,6 +187,9 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
  */
 export async function verifyDomainInVercel(domainName: string, projectId?: string) {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     const targetProjectId = projectId || VERCEL_PROJECT_ID;
     console.log(`Verifying domain ${domainName} in Vercel project ${targetProjectId}...`);
     
@@ -238,6 +244,9 @@ export async function verifyDomainInVercel(domainName: string, projectId?: strin
  */
 export async function deleteDomainFromVercel(domainName: string) {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     console.log(`Deleting domain ${domainName} from Vercel project...`);
     
     // In development with missing credentials, return mock success
@@ -298,6 +307,9 @@ export async function deleteDomainFromVercel(domainName: string) {
  */
 export async function checkDomainInVercel(domainName: string) {
   try {
+    // Trim whitespace from domain name
+    domainName = domainName.trim();
+    
     console.log(`Checking if domain ${domainName} exists in Vercel project...`);
     
     // In development with missing credentials, return mock success
@@ -369,6 +381,10 @@ export async function checkDomainInVercel(domainName: string) {
  */
 export async function addDomainAndSubdomainToVercel(domain: string, subdomain: string) {
   try {
+    // Trim whitespace from domain and subdomain
+    domain = domain.trim();
+    subdomain = subdomain.trim();
+    
     console.log(`Adding domain ${domain} and subdomain ${subdomain}.${domain} to Vercel...`);
     
     // In development with missing credentials, return mock success
