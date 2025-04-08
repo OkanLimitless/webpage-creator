@@ -27,7 +27,7 @@ export default function WordpressTemplateButton({
         },
         body: JSON.stringify({
           domainId,
-          wordpressApiUrl: 'https://nowshipping.store/wp-json'
+          wordpressApiUrl: 'https://novoslabs.com/wp-json'
         }),
       });
 

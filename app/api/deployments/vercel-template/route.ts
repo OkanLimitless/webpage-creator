@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     
     const body = await request.json();
-    const { domainId, wordpressApiUrl = 'https://nowshipping.store/wp-json' } = body;
+    const { domainId, wordpressApiUrl = 'https://novoslabs.com/wp-json' } = body;
     
     if (!domainId) {
       return NextResponse.json(
@@ -127,24 +127,29 @@ async function deployWordpressTemplate(
       throw new Error('Vercel API token not set');
     }
     
-    // First, let's import the WordPress ISR blog template from GitHub
-    deployment.addLog(`Importing WordPress ISR blog template from GitHub...`, 'info');
+    // Skip GitHub import and directly use the template deployment
+    deployment.addLog(`Skipping GitHub import and proceeding with direct template deployment...`, 'info');
     await deployment.save();
     
-    // Flag to track if any method succeeded
+    // Flag to track if deployment succeeded
     let deploymentSucceeded = false;
     let lastError = null;
     
-    // First try the GitHub import
+    // Direct deployment method
     try {
-      // Construct the import API URL for Vercel
-      let importUrl = `https://api.vercel.com/v1/integrations/github/repos/vercel/next.js/imports`;
+      deployment.addLog(`Attempting direct template deployment...`, 'info');
+      await deployment.save();
+      
+      // Construct direct deployment URL
+      let deploymentUrl = `https://api.vercel.com/v13/deployments`;
       if (VERCEL_TEAM_ID) {
-        importUrl += `?teamId=${VERCEL_TEAM_ID}`;
+        deploymentUrl += `?teamId=${VERCEL_TEAM_ID}&projectId=${project.id}`;
+      } else {
+        deploymentUrl += `?projectId=${project.id}`;
       }
       
-      // Make the import request to fetch the ISR blog example
-      const importResponse = await fetch(importUrl, {
+      // Create minimal WordPress blog deployment - using a different approach
+      const deploymentResponse = await fetch(deploymentUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${VERCEL_TOKEN}`,
@@ -152,98 +157,42 @@ async function deployWordpressTemplate(
         },
         body: JSON.stringify({
           name: domainName,
-          project: project.id,
-          skipInitialBuild: false,
-          subfolder: 'examples/cms-wordpress', // Path to WordPress example in Next.js repo
-          ref: 'canary', // Use the canary branch which contains the latest examples
-          environmentVariables: {
-            WORDPRESS_API_URL: wordpressApiUrl
-          }
-        })
-      });
-      
-      const importData = await importResponse.json();
-      
-      if (!importResponse.ok) {
-        const errorMessage = importData.error?.message || 'Unknown error';
-        const errorCode = importData.error?.code || 'unknown_error';
-        
-        deployment.addLog(`GitHub import failed (code: ${errorCode}): ${errorMessage}`, 'warning');
-        deployment.addLog(`Will try direct deployment method next.`, 'info');
-        lastError = new Error(`GitHub import error (${errorCode}): ${errorMessage}`);
-      } else {
-        deployment.addLog(`WordPress template imported successfully`, 'info');
-        deploymentSucceeded = true;
-        // Set the deployment ID if available in the response
-        if (importData.id) {
-          deployment.deploymentId = importData.id;
-        }
-      }
-    } catch (importError: any) {
-      deployment.addLog(`Error during GitHub import: ${importError.message}`, 'warning');
-      deployment.addLog(`Will try direct deployment method next.`, 'info');
-      lastError = importError;
-    }
-    
-    // If GitHub import failed, try direct deployment
-    if (!deploymentSucceeded) {
-      try {
-        deployment.addLog(`Attempting direct template deployment...`, 'info');
-        await deployment.save();
-        
-        // Construct direct deployment URL
-        let deploymentUrl = `https://api.vercel.com/v13/deployments`;
-        if (VERCEL_TEAM_ID) {
-          deploymentUrl += `?teamId=${VERCEL_TEAM_ID}&projectId=${project.id}`;
-        } else {
-          deploymentUrl += `?projectId=${project.id}`;
-        }
-        
-        // Create minimal WordPress blog deployment - using a different approach
-        const deploymentResponse = await fetch(deploymentUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${VERCEL_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: domainName,
-            target: 'production',
-            framework: 'nextjs',
-            // Use a simple deployment with basic files
-            files: [
-              {
-                file: 'package.json',
-                data: JSON.stringify({
-                  name: `wordpress-blog-${domainName.replace(/\./g, '-')}`,
-                  version: '1.0.0',
-                  private: true,
-                  scripts: {
-                    dev: 'next dev',
-                    build: 'next build',
-                    start: 'next start'
-                  },
-                  dependencies: {
-                    next: "latest",
-                    react: "latest",
-                    "react-dom": "latest",
-                    "date-fns": "latest",
-                    "classnames": "latest"
-                  },
-                  engines: {
-                    "node": "18.x" 
-                  }
-                }),
-                encoding: 'utf-8'
-              },
-              {
-                file: '.env.local',
-                data: `WORDPRESS_API_URL=${wordpressApiUrl}`,
-                encoding: 'utf-8'
-              },
-              {
-                file: 'next.config.js',
-                data: `
+          target: 'production',
+          framework: 'nextjs',
+          // Use a simple deployment with basic files
+          files: [
+            {
+              file: 'package.json',
+              data: JSON.stringify({
+                name: `wordpress-blog-${domainName.replace(/\./g, '-')}`,
+                version: '1.0.0',
+                private: true,
+                scripts: {
+                  dev: 'next dev',
+                  build: 'next build',
+                  start: 'next start'
+                },
+                dependencies: {
+                  next: "latest",
+                  react: "latest",
+                  "react-dom": "latest",
+                  "date-fns": "latest",
+                  "classnames": "latest"
+                },
+                engines: {
+                  "node": "18.x" 
+                }
+              }),
+              encoding: 'utf-8'
+            },
+            {
+              file: '.env.local',
+              data: `WORDPRESS_API_URL=${wordpressApiUrl}`,
+              encoding: 'utf-8'
+            },
+            {
+              file: 'next.config.js',
+              data: `
 /** @type {import('next').NextConfig} */
 module.exports = {
   images: {
@@ -258,11 +207,11 @@ module.exports = {
   // Do not use standalone output to avoid build errors
   // output: 'standalone',
 }`,
-                encoding: 'utf-8'
-              },
-              {
-                file: 'lib/api.js',
-                data: `
+              encoding: 'utf-8'
+            },
+            {
+              file: 'lib/api.js',
+              data: `
 const API_URL = process.env.WORDPRESS_API_URL
 
 /**
@@ -286,11 +235,11 @@ export async function getRecentPosts() {
   }
 }
 `,
-                encoding: 'utf-8'
-              },
-              {
-                file: 'pages/index.js',
-                data: `
+              encoding: 'utf-8'
+            },
+            {
+              file: 'pages/index.js',
+              data: `
 import Head from 'next/head'
 import { useEffect, useState } from 'react'
 
@@ -669,11 +618,11 @@ export default function Home() {
   )
 }
 `,
-                encoding: 'utf-8'
-              },
-              {
-                file: 'pages/api/posts.js',
-                data: `
+              encoding: 'utf-8'
+            },
+            {
+              file: 'pages/api/posts.js',
+              data: `
 import { getRecentPosts } from '../../lib/api'
 
 export default async function handler(req, res) {
@@ -691,52 +640,51 @@ export default async function handler(req, res) {
   }
 }
 `,
-                encoding: 'utf-8'
-              }
-            ],
-            projectSettings: {
-              framework: "nextjs",
-              buildCommand: null,
-              outputDirectory: ".next"
-            },
-            env: {
-              WORDPRESS_API_URL: wordpressApiUrl
+              encoding: 'utf-8'
             }
-          })
-        });
-        
-        const deploymentData = await deploymentResponse.json();
-        
-        if (!deploymentResponse.ok) {
-          const errorMessage = deploymentData.error?.message || 'Unknown error';
-          const errorCode = deploymentData.error?.code || 'unknown_error';
-          
-          deployment.addLog(`Failed to create deployment (code: ${errorCode}): ${errorMessage}`, 'error');
-          deployment.addLog(`API Response: ${JSON.stringify(deploymentData)}`, 'error');
-          await deployment.save();
-          lastError = new Error(`Vercel API error (${errorCode}): ${errorMessage}`);
-        } else {
-          if (!deploymentData.id) {
-            deployment.addLog(`Deployment response missing ID: ${JSON.stringify(deploymentData)}`, 'error');
-            await deployment.save();
-            lastError = new Error('Deployment response missing ID');
-          } else {
-            deployment.deploymentId = deploymentData.id;
-            deployment.addLog(`Template deployment initiated successfully (ID: ${deploymentData.id})`, 'info');
-            await deployment.save();
-            deploymentSucceeded = true;
+          ],
+          projectSettings: {
+            framework: "nextjs",
+            buildCommand: null,
+            outputDirectory: ".next"
+          },
+          env: {
+            WORDPRESS_API_URL: wordpressApiUrl
           }
-        }
-      } catch (directDeployError: any) {
-        deployment.addLog(`Error during direct deployment: ${directDeployError.message}`, 'error');
+        })
+      });
+      
+      const deploymentData = await deploymentResponse.json();
+      
+      if (!deploymentResponse.ok) {
+        const errorMessage = deploymentData.error?.message || 'Unknown error';
+        const errorCode = deploymentData.error?.code || 'unknown_error';
+        
+        deployment.addLog(`Failed to create deployment (code: ${errorCode}): ${errorMessage}`, 'error');
+        deployment.addLog(`API Response: ${JSON.stringify(deploymentData)}`, 'error');
         await deployment.save();
-        lastError = directDeployError;
+        lastError = new Error(`Vercel API error (${errorCode}): ${errorMessage}`);
+      } else {
+        if (!deploymentData.id) {
+          deployment.addLog(`Deployment response missing ID: ${JSON.stringify(deploymentData)}`, 'error');
+          await deployment.save();
+          lastError = new Error('Deployment response missing ID');
+        } else {
+          deployment.deploymentId = deploymentData.id;
+          deployment.addLog(`Template deployment initiated successfully (ID: ${deploymentData.id})`, 'info');
+          await deployment.save();
+          deploymentSucceeded = true;
+        }
       }
+    } catch (directDeployError: any) {
+      deployment.addLog(`Error during direct deployment: ${directDeployError.message}`, 'error');
+      await deployment.save();
+      lastError = directDeployError;
     }
     
     // If all deployment methods failed, throw the last error
     if (!deploymentSucceeded) {
-      throw lastError || new Error('All deployment methods failed');
+      throw lastError || new Error('Deployment failed');
     }
     
     // Add the domain to the project
