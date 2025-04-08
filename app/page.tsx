@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import GenerateRootPageButton from './components/GenerateRootPageButton';
 import ViewRootPageButton from './components/ViewRootPageButton';
 
 // Domain type
@@ -540,24 +539,12 @@ export default function Home() {
                             >
                               Check
                             </button>
-                            <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                              onClick={() => updateZoneId(domain._id)}
+                            <Link 
+                              href="/admin/diagnostics" 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-blue-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                             >
-                              Update Zone ID
-                            </button>
-                            <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-cyan-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                              onClick={() => checkDomainFullConfig(domain._id)}
-                            >
-                              Full Config Check
-                            </button>
-                            <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-orange-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                              onClick={() => checkDomainFullConfig(domain._id, true)}
-                            >
-                              Repair Config
-                            </button>
+                              Advanced Options
+                            </Link>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -580,16 +567,8 @@ export default function Home() {
                               Delete
                             </button>
                             
-                            {domain.hasRootPage ? (
+                            {domain.hasRootPage && (
                               <ViewRootPageButton domainName={domain.name} />
-                            ) : (
-                              domain.verificationStatus === 'active' && (
-                                <GenerateRootPageButton 
-                                  domainId={domain._id} 
-                                  domainName={domain.name}
-                                  onSuccess={fetchDomains}
-                                />
-                              )
                             )}
                           </div>
                         </td>

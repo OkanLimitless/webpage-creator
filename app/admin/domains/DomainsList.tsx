@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import GenerateRootPageButton from './components/GenerateRootPageButton';
 
 interface Domain {
   _id: string;
@@ -147,16 +146,9 @@ export default function DomainsList() {
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  {!domain.hasRootPage && isVerified(domain.verificationStatus) && (
-                    <GenerateRootPageButton 
-                      domainId={domain._id}
-                      domainName={domain.name}
-                      onSuccess={fetchDomains}
-                    />
-                  )}
                   <Link 
                     href={`/admin/domains/${domain._id}`}
-                    className="text-indigo-600 hover:text-indigo-900 ml-2"
+                    className="text-indigo-600 hover:text-indigo-900"
                   >
                     Manage
                   </Link>
