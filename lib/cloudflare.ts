@@ -334,28 +334,26 @@ export async function createDnsRecord(
   }
 }
 
-// Delete a DNS record
+// Delete a DNS record by ID
 export async function deleteDnsRecord(recordId: string, zoneId?: string) {
   try {
     const effectiveZoneId = getEffectiveZoneId(zoneId);
-    console.log(`Deleting DNS record ${recordId} with zone ID: ${effectiveZoneId}`);
     
+    console.log(`[${new Date().toISOString()}] deleteDnsRecord: Deleting DNS record ${recordId} from zone ${effectiveZoneId}`);
+    
+    // Call Cloudflare API to delete the record
     const response = await cf.deleteDnsRecord(recordId, effectiveZoneId);
     
-    console.log(`DNS record deletion response:`, JSON.stringify(response));
-    
     if (!response.success) {
-      console.error('Cloudflare API returned an error:', response.errors || response);
+      console.error(`[${new Date().toISOString()}] deleteDnsRecord: Failed to delete DNS record:`, response.errors || 'Unknown error');
+      return { success: false, error: response.errors || 'Unknown error' };
     }
     
-    return response;
+    console.log(`[${new Date().toISOString()}] deleteDnsRecord: Successfully deleted DNS record ${recordId}`);
+    return { success: true };
   } catch (error) {
-    console.error('Error deleting DNS record:', error);
-    // Return mock success in case of error
-    if (isDevelopment) {
-      return { success: true };
-    }
-    throw error;
+    console.error(`[${new Date().toISOString()}] deleteDnsRecord: Error deleting DNS record:`, error);
+    return { success: false, error };
   }
 }
 
@@ -481,82 +479,53 @@ export async function checkAndFixDnsSettings(domainName: string, zoneId?: string
     // Get the effective zone ID
     const effectiveZoneId = getEffectiveZoneId(zoneId);
     
-    // First, check root domain record (@)
+    // First, check root domain records
     const rootRecords = await getDnsRecords(domainName, effectiveZoneId);
     let rootFixed = false;
+    
+    // Check A record for root domain (recommended by Vercel for apex domains)
+    const existingRootA = rootRecords.find((r: any) => r.type === 'A' && r.content === '76.76.21.21');
+    const existingRootCname = rootRecords.find((r: any) => r.type === 'CNAME');
+    
+    // If there's a conflicting CNAME record, we need to delete it to add an A record
+    if (existingRootCname && !existingRootA) {
+      console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Found conflicting CNAME record for root domain ${domainName}, removing it`);
+      await deleteDnsRecord(existingRootCname.id, effectiveZoneId);
+    }
+    
+    // If no A record exists for the root, create it
+    if (!existingRootA) {
+      console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Creating A record for root domain ${domainName}`);
+      await createDnsRecord('@', domainName, 'A', '76.76.21.21', effectiveZoneId);
+      rootFixed = true;
+    } else {
+      console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: A record already exists for root domain ${domainName}`);
+    }
     
     // Then check www subdomain
     const wwwRecords = await getDnsRecords(`www.${domainName}`, effectiveZoneId);
     let wwwFixed = false;
     
-    // Check root domain records
-    for (const record of rootRecords) {
-      // If it's a Vercel record (CNAME to vercel-dns.com or A to 76.76.21.21) and it's proxied
-      if ((record.type === 'CNAME' && record.content.includes('vercel')) || 
-          (record.type === 'A' && record.content === '76.76.21.21')) {
-        
-        if (record.proxied === true) {
-          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Found proxied Vercel record for root domain, fixing...`);
-          
-          // Delete the record and recreate it with proxied=false
-          await deleteDnsRecord(record.id, effectiveZoneId);
-          
-          // Recreate with the same settings but proxied=false
-          await createDnsRecord(
-            domainName.split('.')[0], // This should be '@' for root
-            domainName,
-            record.type as any,
-            record.content,
-            effectiveZoneId,
-            false // Force proxied=false
-          );
-          
-          rootFixed = true;
-        } else {
-          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Root domain Vercel record is already correctly set to DNS-only`);
-        }
-      }
-    }
+    // Check for CNAME for www subdomain (always recommended)
+    const existingWwwCname = wwwRecords.find((r: any) => r.type === 'CNAME' && r.content === 'cname.vercel-dns.com');
     
-    // Check www subdomain records
-    for (const record of wwwRecords) {
-      // If it's a Vercel record and it's proxied
-      if ((record.type === 'CNAME' && record.content.includes('vercel')) || 
-          (record.type === 'A' && record.content === '76.76.21.21')) {
-        
-        if (record.proxied === true) {
-          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Found proxied Vercel record for www subdomain, fixing...`);
-          
-          // Delete the record and recreate it with proxied=false
-          await deleteDnsRecord(record.id, effectiveZoneId);
-          
-          // Recreate with the same settings but proxied=false
-          await createDnsRecord(
-            'www',
-            domainName,
-            record.type as any,
-            record.content,
-            effectiveZoneId,
-            false // Force proxied=false
-          );
-          
-          wwwFixed = true;
-        } else {
-          console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: www subdomain Vercel record is already correctly set to DNS-only`);
-        }
-      }
+    // If no CNAME exists for www, create it
+    if (!existingWwwCname) {
+      console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: Creating CNAME record for www.${domainName}`);
+      await createDnsRecord('www', domainName, 'CNAME', 'cname.vercel-dns.com', effectiveZoneId);
+      wwwFixed = true;
+    } else {
+      console.log(`[${new Date().toISOString()}] checkAndFixDnsSettings: CNAME record already exists for www.${domainName}`);
     }
     
     return {
       success: true,
-      rootDomainFixed: rootFixed,
-      wwwDomainFixed: wwwFixed,
-      message: rootFixed || wwwFixed 
-        ? `Fixed proxied DNS records for ${domainName}` 
-        : `DNS records for ${domainName} are already correctly configured`
+      rootFixed,
+      wwwFixed,
+      message: rootFixed || wwwFixed ? 'DNS settings fixed' : 'DNS settings already correct'
     };
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] checkAndFixDnsSettings: Error checking/fixing DNS settings:`, error);
-    throw error;
+    console.error(`[${new Date().toISOString()}] checkAndFixDnsSettings: Error checking/fixing DNS settings for ${domainName}:`, error);
+    return { success: false, error };
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain, IDomain } from '@/lib/models/Domain';
-import { getNameservers, addDomain as addDomainToCloudflare, createDnsRecord, getZoneIdByName, checkDomainActivation, getDnsRecords } from '@/lib/cloudflare';
+import { getNameservers, addDomain as addDomainToCloudflare, createDnsRecord, getZoneIdByName, checkDomainActivation, getDnsRecords, deleteDnsRecord } from '@/lib/cloudflare';
 import { addDomainToVercel } from '@/lib/vercel';
 import { startDomainDeployment } from '@/lib/services/domainDeploymentService';
 
@@ -65,30 +65,55 @@ const createOrSkipDnsRecord = async (
 ) => {
   try {
     // Check if record already exists
-    const existingRecords = await getDnsRecords(`${subdomain === '@' ? domain : subdomain + '.' + domain}`, zoneId);
-    const matchingRecord = existingRecords.find((r: any) => 
-      r.type === type && 
-      (r.content === content || (type === 'A' && content === '76.76.21.21' && r.content === '76.76.21.21'))
-    );
+    const existingRecords = await getDnsRecords(subdomain === '@' ? domain : `${subdomain}.${domain}`, zoneId);
     
-    if (matchingRecord) {
-      console.log(`DNS record for ${subdomain}.${domain} of type ${type} already exists, skipping creation`);
-      return { success: true, existing: true, record: matchingRecord };
+    // If this is a root domain (@) and we're trying to add an A record
+    if (subdomain === '@' && type === 'A') {
+      // Look for any existing records that might conflict (like CNAME)
+      const existingCname = existingRecords.find((r: any) => r.type === 'CNAME');
+      const existingA = existingRecords.find((r: any) => r.type === 'A' && r.content === content);
+      
+      // If A record with same content already exists, skip creation
+      if (existingA) {
+        console.log(`A record already exists for ${domain} with content ${content}, skipping creation`);
+        return { success: true, message: 'Record already exists', record: existingA };
+      }
+      
+      // If there's a CNAME record for the root domain, we need to remove it
+      // as Cloudflare doesn't allow both CNAME and A records at the root
+      if (existingCname) {
+        console.log(`Found conflicting CNAME record for root domain ${domain}, removing it before adding A record`);
+        const deleteResult = await deleteDnsRecord(existingCname.id, zoneId);
+        if (!deleteResult.success) {
+          console.error(`Failed to delete conflicting CNAME record: ${JSON.stringify(deleteResult.error)}`);
+          return { success: false, error: `Failed to delete conflicting CNAME record` };
+        }
+      }
+      
+      // Now create the A record
+      return await createDnsRecord(subdomain, domain, type, content, zoneId);
+    } else {
+      // For other records (subdomains), check if a record of the same type exists
+      const existingRecord = existingRecords.find((r: any) => r.type === type);
+      
+      if (existingRecord) {
+        // If content is the same, just skip
+        if (existingRecord.content === content) {
+          console.log(`DNS record already exists for ${subdomain === '@' ? domain : `${subdomain}.${domain}`} with content ${content}, skipping creation`);
+          return { success: true, message: 'Record already exists', record: existingRecord };
+        } else {
+          // If content is different, consider updating it (optional improvement)
+          console.log(`DNS record exists but with different content, consider updating in the future`);
+          return { success: true, message: 'Record exists with different content', record: existingRecord };
+        }
+      }
+      
+      // Record doesn't exist, create it
+      return await createDnsRecord(subdomain, domain, type, content, zoneId);
     }
-    
-    // Record doesn't exist, create it
-    console.log(`Creating ${type} record for ${subdomain}.${domain} pointing to ${content}...`);
-    const result = await createDnsRecord(subdomain, domain, type, content, zoneId, false);
-    return result;
-  } catch (recordError: any) {
-    // Check for record already exists error (code 81053)
-    if (recordError.message && recordError.message.includes('81053')) {
-      console.log(`DNS record for ${subdomain}.${domain} already exists (code 81053), skipping creation`);
-      return { success: true, existing: true };
-    }
-    
-    console.error(`Error creating DNS record for ${subdomain}.${domain}:`, recordError);
-    return { success: false, error: recordError };
+  } catch (error) {
+    console.error(`Error in createOrSkipDnsRecord: ${error}`);
+    return { success: false, error };
   }
 };
 
@@ -205,30 +230,28 @@ export async function POST(request: NextRequest) {
       deploymentStatus: 'pending',
     });
 
-    // Add DNS records for Vercel integration
-    console.log(`Creating DNS records for ${name} with zone ID ${cloudflareZoneId || 'global'}...`);
-    
+    // Try to create DNS records for Vercel integration
     try {
-      // Try to create a CNAME record for the root domain first
-      const rootResult = await createOrSkipDnsRecord('@', name, 'CNAME', 'cname.vercel-dns.com', cloudflareZoneId);
+      console.log(`Creating DNS records for ${name} with zone ID ${cloudflareZoneId || 'global'}...`);
       
-      // If CNAME fails or doesn't exist yet, try an A record
-      if (!rootResult.success || !rootResult.existing) {
-        const aRecordResult = await createOrSkipDnsRecord('@', name, 'A', '76.76.21.21', cloudflareZoneId);
-        if (aRecordResult.success) {
-          console.log(`Successfully created or confirmed A record for root domain ${name}`);
-        }
+      // First create an A record for the root domain (Vercel recommendation for apex domains)
+      // which points to Vercel's servers
+      const aRecordResult = await createOrSkipDnsRecord('@', name, 'A', '76.76.21.21', cloudflareZoneId);
+      if (aRecordResult.success) {
+        console.log(`Successfully created or confirmed A record for root domain ${name}`);
       } else {
-        console.log(`Successfully confirmed CNAME record for root domain ${name}`);
+        console.error(`Failed to create A record for root domain:`, aRecordResult.error);
       }
       
-      // Always ensure www subdomain has a CNAME record
-      const wwwResult = await createOrSkipDnsRecord('www', name, 'CNAME', 'cname.vercel-dns.com', cloudflareZoneId);
-      if (wwwResult.success) {
+      // Then create a CNAME record for the www subdomain
+      const wwwRecordResult = await createOrSkipDnsRecord('www', name, 'CNAME', 'cname.vercel-dns.com', cloudflareZoneId);
+      if (wwwRecordResult.success) {
         console.log(`Successfully created or confirmed CNAME record for www.${name}`);
+      } else {
+        console.error(`Failed to create CNAME record for www subdomain:`, wwwRecordResult.error);
       }
     } catch (dnsError) {
-      // Log the error but continue - DNS records can be added later
+      // Log the error but continue - DNS records can be fixed later
       console.error(`Error creating DNS records for ${name}:`, dnsError);
     }
 
