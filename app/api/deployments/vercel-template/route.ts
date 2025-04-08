@@ -315,91 +315,354 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="container">
+    <div className="page-container">
       <Head>
         <title>${domainName} - WordPress Blog</title>
         <link rel="icon" href="/favicon.ico" />
+        <meta name="description" content="Latest news and updates from ${domainName}" />
       </Head>
 
-      <main>
-        <h1>
-          Welcome to ${domainName}
-        </h1>
-        
-        {loading ? (
-          <p>Loading posts...</p>
-        ) : posts.length > 0 ? (
-          <div className="posts">
-            {posts.map(post => (
-              <div key={post.id} className="post">
-                <h2 dangerouslySetInnerHTML={{ __html: post.title.rendered }} />
-                <div dangerouslySetInnerHTML={{ __html: post.excerpt.rendered }} />
-                <p className="date">{new Date(post.date).toLocaleDateString()}</p>
-                <a 
-                  href={post.link} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="read-more"
-                >
-                  Read More
-                </a>
-              </div>
-            ))}
+      {/* Header */}
+      <header className="header">
+        <div className="header-content">
+          <div className="logo">
+            <h2>${domainName}</h2>
           </div>
-        ) : (
-          <p>No posts found. Your WordPress content will appear here once configured.</p>
-        )}
+          <nav className="nav">
+            <ul>
+              <li><a href="#" className="active">Home</a></li>
+              <li><a href="#">About</a></li>
+              <li><a href="#">Blog</a></li>
+              <li><a href="#contact">Contact</a></li>
+            </ul>
+          </nav>
+        </div>
+      </header>
+
+      <main>
+        <div className="container">
+          <h1 className="page-title">
+            Welcome to our Blog
+          </h1>
+          
+          {loading ? (
+            <div className="loading">
+              <p>Loading posts...</p>
+            </div>
+          ) : posts.length > 0 ? (
+            <div className="posts">
+              {posts.map(post => (
+                <div key={post.id} className="post">
+                  <h2 dangerouslySetInnerHTML={{ __html: post.title.rendered }} />
+                  <div className="post-excerpt" dangerouslySetInnerHTML={{ __html: post.excerpt.rendered }} />
+                  <p className="date">{new Date(post.date).toLocaleDateString()}</p>
+                  <a 
+                    href={post.link} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="read-more"
+                  >
+                    Read More
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="no-posts">
+              <p>No posts found. Your WordPress content will appear here once configured.</p>
+            </div>
+          )}
+        </div>
       </main>
 
-      <style jsx>{\`
-        .container {
-          min-height: 100vh;
-          padding: 0 0.5rem;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
+      {/* Footer */}
+      <footer className="footer" id="contact">
+        <div className="footer-content">
+          <div className="footer-section">
+            <h3>About Us</h3>
+            <p>This blog provides the latest updates and information about our products and services.</p>
+          </div>
+          
+          <div className="footer-section">
+            <h3>Quick Links</h3>
+            <ul>
+              <li><a href="#">Home</a></li>
+              <li><a href="#">About</a></li>
+              <li><a href="#">Blog</a></li>
+              <li><a href="#">Sitemap</a></li>
+            </ul>
+          </div>
+          
+          <div className="footer-section">
+            <h3 id="contact">Contact Us</h3>
+            <p>Email: contact@${domainName}</p>
+            <p>Phone: +1 (555) 123-4567</p>
+          </div>
+        </div>
+        
+        <div className="footer-bottom">
+          <div className="container">
+            <p>&copy; {new Date().getFullYear()} ${domainName}. All rights reserved.</p>
+            <div className="footer-links">
+              <a href="#">Privacy Policy</a>
+              <a href="#">Terms of Service</a>
+              <a href="#">Cookie Policy</a>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      <style jsx global>{\`
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
         }
-        main {
-          padding: 5rem 0;
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          width: 100%;
-          max-width: 800px;
+        
+        html, body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+          line-height: 1.6;
+          color: #333;
+          background-color: #f8f9fa;
         }
-        h1 {
-          margin: 0 0 2rem;
-          line-height: 1.15;
-          font-size: 3rem;
-          text-align: center;
-        }
-        .posts {
-          width: 100%;
-        }
-        .post {
-          margin-bottom: 2rem;
-          padding: 1.5rem;
-          border: 1px solid #eaeaea;
-          border-radius: 10px;
-        }
-        .post h2 {
-          margin-top: 0;
-        }
-        .date {
-          color: #666;
-          font-size: 0.9rem;
-        }
-        .read-more {
-          display: inline-block;
-          margin-top: 1rem;
+        
+        a {
           color: #0070f3;
           text-decoration: none;
         }
-        .read-more:hover {
+        
+        a:hover {
           text-decoration: underline;
+        }
+        
+        ul {
+          list-style: none;
+        }
+        
+        .page-container {
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        /* Header styles */
+        .header {
+          background-color: #ffffff;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          position: sticky;
+          top: 0;
+          z-index: 100;
+        }
+        
+        .header-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 1rem 2rem;
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+        
+        .logo h2 {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #333;
+          margin: 0;
+        }
+        
+        .nav ul {
+          display: flex;
+          gap: 1.5rem;
+        }
+        
+        .nav a {
+          color: #555;
+          font-weight: 500;
+          transition: color 0.3s ease;
+        }
+        
+        .nav a:hover, .nav a.active {
+          color: #0070f3;
+          text-decoration: none;
+        }
+        
+        /* Main content styles */
+        main {
+          flex: 1;
+          padding: 2rem 0;
+        }
+        
+        .container {
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 0 1rem;
+        }
+        
+        .page-title {
+          margin-bottom: 2rem;
+          font-size: 2.5rem;
+          font-weight: 700;
+          color: #333;
+          text-align: center;
+        }
+        
+        .loading, .no-posts {
+          text-align: center;
+          padding: 2rem 0;
+          color: #666;
+        }
+        
+        .posts {
+          display: grid;
+          gap: 2rem;
+        }
+        
+        .post {
+          background-color: #ffffff;
+          border-radius: 8px;
+          padding: 1.5rem;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .post:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .post h2 {
+          margin-top: 0;
+          font-size: 1.5rem;
+          margin-bottom: 1rem;
+          color: #333;
+        }
+        
+        .post-excerpt {
+          color: #555;
+          margin-bottom: 1rem;
+        }
+        
+        .date {
+          color: #888;
+          font-size: 0.9rem;
+          margin-bottom: 1rem;
+        }
+        
+        .read-more {
+          display: inline-block;
+          padding: 0.5rem 1rem;
+          background-color: #0070f3;
+          color: white;
+          border-radius: 4px;
+          font-weight: 500;
+          transition: background-color 0.3s ease;
+        }
+        
+        .read-more:hover {
+          background-color: #0051b3;
+          text-decoration: none;
+        }
+        
+        /* Footer styles */
+        .footer {
+          background-color: #222;
+          color: #f8f9fa;
+          margin-top: auto;
+        }
+        
+        .footer-content {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 2rem;
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 3rem 1rem;
+        }
+        
+        .footer-section h3 {
+          color: #fff;
+          margin-bottom: 1rem;
+          font-size: 1.2rem;
+        }
+        
+        .footer-section p {
+          color: #aaa;
+          margin-bottom: 0.5rem;
+        }
+        
+        .footer-section ul {
+          margin-top: 0.5rem;
+        }
+        
+        .footer-section ul li {
+          margin-bottom: 0.5rem;
+        }
+        
+        .footer-section a {
+          color: #aaa;
+          transition: color 0.3s ease;
+        }
+        
+        .footer-section a:hover {
+          color: #fff;
+          text-decoration: none;
+        }
+        
+        .footer-bottom {
+          background-color: #111;
+          padding: 1.5rem 0;
+          text-align: center;
+        }
+        
+        .footer-bottom .container {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 1rem;
+        }
+        
+        .footer-bottom p {
+          color: #aaa;
+          font-size: 0.9rem;
+          margin: 0;
+        }
+        
+        .footer-links {
+          display: flex;
+          gap: 1.5rem;
+        }
+        
+        .footer-links a {
+          color: #aaa;
+          font-size: 0.9rem;
+          transition: color 0.3s ease;
+        }
+        
+        .footer-links a:hover {
+          color: #fff;
+          text-decoration: none;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+          .header-content {
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem;
+          }
+          
+          .nav ul {
+            gap: 1rem;
+          }
+          
+          .footer-bottom .container {
+            flex-direction: column;
+          }
+          
+          .page-title {
+            font-size: 2rem;
+          }
         }
       \`}</style>
     </div>
