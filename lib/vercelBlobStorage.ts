@@ -50,7 +50,7 @@ export function getBlobFilenameFromUrl(url: string): string | null {
 export async function uploadImageToVercelBlob(
   imageUrl: string, 
   filename: string, 
-  timeoutMs = 15000,
+  timeoutMs = 30000,
   contentType = 'image/png'
 ): Promise<string | null> {
   try {

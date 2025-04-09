@@ -4,6 +4,9 @@ import { takeScreenshots } from '@/lib/screenshot';
 // Mark this route as dynamic to prevent static optimization issues
 export const dynamic = 'force-dynamic';
 
+// Set a longer timeout (30 seconds) for this API route
+export const maxDuration = 30;
+
 // POST /api/screenshots - Take screenshots of a URL
 export async function POST(request: NextRequest) {
   try {

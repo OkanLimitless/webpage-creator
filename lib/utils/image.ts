@@ -1,9 +1,9 @@
 /**
  * Fetches an image from a URL and returns it as binary data
  * @param url URL of the image to fetch
- * @param timeoutMs Timeout in milliseconds (default: 15000 = 15 seconds)
+ * @param timeoutMs Timeout in milliseconds (default: 30000 = 30 seconds)
  */
-export async function getImageAsBinary(url: string, timeoutMs = 15000): Promise<Buffer | null> {
+export async function getImageAsBinary(url: string, timeoutMs = 30000): Promise<Buffer | null> {
   try {
     // Create an abort controller for implementing timeout
     const controller = new AbortController();

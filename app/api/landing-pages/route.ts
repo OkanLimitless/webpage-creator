@@ -34,6 +34,9 @@ const mockLandingPages = [
 // Mark this route as dynamic to prevent static optimization issues
 export const dynamic = 'force-dynamic';
 
+// Set a longer timeout (30 seconds) for this API route
+export const maxDuration = 30;
+
 // GET /api/landing-pages - Get all landing pages
 export async function GET() {
   try {

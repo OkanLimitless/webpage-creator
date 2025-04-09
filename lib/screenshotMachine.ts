@@ -55,7 +55,7 @@ export function generateScreenshotUrl(options: {
     device = 'desktop',
     format = 'webp',
     cacheLimit = '0', // No cache, always fresh screenshots
-    delay = '3000', // Increased delay to 3 seconds for better reliability
+    delay = '5000', // Increased delay to 5 seconds for better reliability
     zoom = '100',
   } = options;
   
@@ -162,7 +162,7 @@ export async function takeScreenshots(url: string, id: string) {
     const desktopBlobUrl = await uploadImageToVercelBlob(
       desktopScreenshotUrl, 
       desktopFilename,
-      25000, // 25 second timeout for desktop
+      30000, // 30 second timeout for desktop
       'image/webp' // Set content type to WebP
     );
     
@@ -171,7 +171,7 @@ export async function takeScreenshots(url: string, id: string) {
     const mobileBlobUrl = await uploadImageToVercelBlob(
       mobileScreenshotUrl,
       mobileFilename,
-      20000, // 20 second timeout for mobile
+      30000, // 30 second timeout for mobile
       'image/webp' // Set content type to WebP
     );
     
