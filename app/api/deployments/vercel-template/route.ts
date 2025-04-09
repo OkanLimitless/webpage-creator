@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain } from '@/lib/models/Domain';
 import { DomainDeployment } from '@/lib/models/DomainDeployment';
-import { createVercelProject, addDomainToVercel } from '@/lib/vercel';
+import { createVercelProject, addDomainToVercel, getProjectDomains } from '@/lib/vercel';
 import fetch from 'node-fetch';
 
 // Mark this route as dynamic to prevent static optimization
@@ -94,26 +94,67 @@ async function deployWordpressTemplate(
     deployment.addLog(`Creating Vercel project for ${domainName}...`, 'info');
     await deployment.save();
     
-    // Create the Vercel project with timeout protection
+    // First check if a project already exists for this domain
     let project: any = null;
+    let existingProject = false;
+    
     try {
-      // Race between the project creation and a 60-second timeout
+      // Create the Vercel project with timeout protection
       project = await Promise.race([
         createVercelProject(domainName, 'nextjs'),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Project creation timed out after 60s')), 60000))
       ]);
+      
+      if (project.alreadyExists) {
+        existingProject = true;
+        deployment.addLog(`Found existing Vercel project (ID: ${project.id})`, 'info');
+      } else {
+        deployment.addLog(`Vercel project created successfully (ID: ${project.id})`, 'info');
+      }
       
       if (!project || !project.id) {
         throw new Error('Failed to create Vercel project');
       }
       
       deployment.vercelProjectId = project.id;
-      deployment.addLog(`Vercel project created successfully (ID: ${project.id})`, 'info');
       await deployment.save();
     } catch (projectError: any) {
       deployment.addLog(`Error creating Vercel project: ${projectError.message}`, 'error');
       await deployment.save();
       throw projectError;
+    }
+    
+    // If we found an existing project that already has the domain, we can skip deployment
+    if (existingProject) {
+      try {
+        const domains = await getProjectDomains(project.id);
+        const hasDomain = domains.some((d: any) => d.name.toLowerCase() === domainName.toLowerCase());
+        
+        if (hasDomain) {
+          deployment.addLog(`Domain ${domainName} is already configured for this project. Skipping deployment.`, 'info');
+          
+          // Mark as deployed without running a new deployment
+          deployment.status = 'deployed';
+          deployment.completedAt = new Date();
+          deployment.addLog(`Deployment completed - using existing project configuration.`, 'info');
+          await deployment.save();
+          
+          // Update the domain record
+          const domain = await Domain.findById(domainId);
+          if (domain) {
+            domain.deploymentStatus = 'deployed';
+            domain.lastDeployedAt = new Date();
+            domain.deploymentUrl = `https://${domainName}`;
+            domain.vercelProjectId = project.id;
+            await domain.save();
+          }
+          
+          return; // Exit early, no need to create a new deployment
+        }
+      } catch (domainCheckError) {
+        // If domain check fails, continue with normal deployment
+        deployment.addLog(`Error checking domains: ${domainCheckError}`, 'warning');
+      }
     }
     
     // 2. Deploy the WordPress ISR blog template through Vercel API
@@ -691,50 +732,79 @@ export default async function handler(req, res) {
     try {
       deployment.addLog(`Adding domain ${domainName} to Vercel project...`, 'info');
       
-      // Add rate limiting to prevent too many requests
-      const maxAttempts = 3;
-      let attemptCount = 0;
+      // Initialize domainAdded variable
       let domainAdded = false;
-      let lastError = null;
+      let lastError: any = null;
+      const maxAttempts = 3; // Define maxAttempts here in the outer scope
       
-      while (attemptCount < maxAttempts && !domainAdded) {
-        attemptCount++;
+      // First check if domain is already attached to the project
+      deployment.addLog(`Checking if domain is already attached to project ${project.id}...`, 'info');
+      try {
+        const domains = await getProjectDomains(project.id);
+        const hasDomain = domains.some((d: any) => d.name.toLowerCase() === domainName.toLowerCase());
         
-        deployment.addLog(`Domain addition attempt #${attemptCount}/${maxAttempts}`, 'info');
+        if (hasDomain) {
+          deployment.addLog(`Domain ${domainName} is already attached to project ${project.id}`, 'info');
+          domainAdded = true;
+          // Skip the domain addition attempts if already attached
+        }
+      } catch (domainCheckError: any) {
+        deployment.addLog(`Error checking domains: ${domainCheckError.message}`, 'warning');
+        // Continue with normal domain addition process if check fails
+      }
+      
+      // Only try to add the domain if it's not already attached
+      if (!domainAdded) {
+        // Add rate limiting to prevent too many requests
+        let attemptCount = 0;
         
-        try {
-          const domainResult = await addDomainToVercel(domainName, project.id);
+        while (attemptCount < maxAttempts && !domainAdded) {
+          attemptCount++;
           
-          if (domainResult.success) {
-            deployment.addLog(`Domain ${domainName} added successfully on attempt #${attemptCount}`, 'info');
-            domainAdded = true;
-          } else {
-            // Check if domain is already in use by this project (which is actually a success case)
-            if (domainResult.alreadyConfigured && domainResult.vercelDomain) {
-              deployment.addLog(`Domain ${domainName} is already configured for this project`, 'info');
-              domainAdded = true;
-              break;
-            }
+          deployment.addLog(`Domain addition attempt #${attemptCount}/${maxAttempts}`, 'info');
+          
+          try {
+            const domainResult = await addDomainToVercel(domainName, project.id);
             
-            lastError = domainResult.error || domainResult.message || 'Unknown error';
-            deployment.addLog(`Failed to add domain on attempt #${attemptCount}: ${JSON.stringify(lastError)}`, 'warning');
+            if (domainResult.success) {
+              deployment.addLog(`Domain ${domainName} added successfully on attempt #${attemptCount}`, 'info');
+              domainAdded = true;
+              break; // Exit the loop immediately on success
+            } else {
+              // Check if domain is already in use by this project (which is actually a success case)
+              if (domainResult.alreadyConfigured && domainResult.vercelDomain) {
+                deployment.addLog(`Domain ${domainName} is already configured for this project`, 'info');
+                domainAdded = true;
+                break; // Exit the loop immediately
+              }
+              
+              lastError = domainResult.error || domainResult.message || 'Unknown error';
+              deployment.addLog(`Failed to add domain on attempt #${attemptCount}: ${JSON.stringify(lastError)}`, 'warning');
+              
+              // If we have more attempts to make, wait before trying again
+              if (attemptCount < maxAttempts) {
+                const delaySeconds = 3 * attemptCount; // Increasing delay between attempts
+                deployment.addLog(`Waiting ${delaySeconds} seconds before retry...`, 'info');
+                await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+              }
+            }
+          } catch (attemptError: any) {
+            lastError = attemptError.message || 'Unknown error';
+            deployment.addLog(`Error during domain addition attempt #${attemptCount}: ${lastError}`, 'error');
+            
+            // Check if error indicates the domain is already added
+            if (lastError.includes('already in use') || lastError.includes('already configured')) {
+              deployment.addLog('Error indicates domain is already added to a project, treating as success', 'info');
+              domainAdded = true;
+              break; // Exit the loop immediately
+            }
             
             // If we have more attempts to make, wait before trying again
             if (attemptCount < maxAttempts) {
-              const delaySeconds = 3 * attemptCount; // Increasing delay between attempts
+              const delaySeconds = 3 * attemptCount;
               deployment.addLog(`Waiting ${delaySeconds} seconds before retry...`, 'info');
               await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
             }
-          }
-        } catch (attemptError: any) {
-          lastError = attemptError.message || 'Unknown error';
-          deployment.addLog(`Error during domain addition attempt #${attemptCount}: ${lastError}`, 'error');
-          
-          // If we have more attempts to make, wait before trying again
-          if (attemptCount < maxAttempts) {
-            const delaySeconds = 3 * attemptCount;
-            deployment.addLog(`Waiting ${delaySeconds} seconds before retry...`, 'info');
-            await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
           }
         }
       }

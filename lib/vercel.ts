@@ -765,11 +765,17 @@ export async function createVercelProject(domainName: string, framework: string 
       if (directProject && directProject.id) {
         console.log(`[${new Date().toISOString()}] createVercelProject: Found existing project with name ${projectName} (ID: ${directProject.id})`);
         
+        // Add alreadyExists flag to indicate this is an existing project
+        directProject.alreadyExists = true;
+        
         // Ensure the domain is attached to this project
         try {
           await addDomainToProject(directProject.id, domainName);
         } catch (domainError: any) {
-          console.warn(`[${new Date().toISOString()}] createVercelProject: Failed to attach domain to direct project: ${domainError.message}`);
+          // Only log the error if it's not about the domain already being in use
+          if (!domainError.message.includes('already in use')) {
+            console.warn(`[${new Date().toISOString()}] createVercelProject: Failed to attach domain to direct project: ${domainError.message}`);
+          }
         }
         
         return directProject;
@@ -822,6 +828,10 @@ export async function createVercelProject(domainName: string, framework: string 
           const existingProject = await findProjectByName(projectName);
           if (existingProject && existingProject.id) {
             console.log(`[${new Date().toISOString()}] createVercelProject: Found existing project: ${existingProject.id}`);
+            
+            // Add alreadyExists flag to indicate this is an existing project
+            existingProject.alreadyExists = true;
+            
             return existingProject;
           }
         } catch (findError) {
@@ -2093,6 +2103,30 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Using project: ${project.name} (${project.id})`);
     
+    // Check if the domain is already attached to this project before creating a deployment
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Checking if domain is already attached to project...`);
+    try {
+      const domains = await getProjectDomains(project.id);
+      const hasDomain = domains.some(d => d.name.toLowerCase() === domainName.toLowerCase());
+      
+      if (hasDomain) {
+        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Domain ${domainName} is already attached to project ${project.id}, skipping deployment`);
+        
+        // If domain is already attached, return success without deployment
+        return {
+          success: true,
+          domain: domainName,
+          projectId: project.id,
+          url: `https://${domainName}`,
+          deploymentStatus: 'READY',
+          message: `Domain ${domainName} is already deployed and attached to project ${project.id}`
+        };
+      }
+    } catch (domainCheckError) {
+      console.warn(`[${new Date().toISOString()}] deployDomainToVercel: Error checking domains, continuing with deployment: ${domainCheckError}`);
+      // Continue with deployment even if domain check fails
+    }
+    
     // Step 2: Create a deployment for the project
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Creating deployment for project...`);
     let deployment: any = null;
@@ -2112,7 +2146,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
       throw new Error(errorDetail);
     }
     
-    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment created with ID ${deployment.id}, waiting for it to be ready...`);
+    console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment created with ID ${deployment.id}, waiting for initial status...`);
     
     // Define deployment status at the top level for use throughout the function
     let deploymentStatus = deployment;
@@ -2122,9 +2156,9 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     let deploymentCompletionTimeout: any = null;
     const deploymentPromise = new Promise<void>(async (resolve, reject) => {
       try {
-        // Step 3: Wait for deployment to be ready
+        // Step 3: Wait for deployment to be ready - REDUCED MAX ATTEMPTS FROM 30 TO 5
         let attempts = 0;
-        let maxAttempts = 30; // 5 minutes (10s intervals)
+        let maxAttempts = 5; // Reduced from 30 to 5 (50 seconds total)
         
         while (!ready && attempts < maxAttempts) {
           attempts++;
@@ -2139,6 +2173,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
             if (deploymentStatus.readyState === 'READY' || deploymentStatus.state === 'READY') {
               ready = true;
               console.log(`[${new Date().toISOString()}] deployDomainToVercel: Deployment is ready!`);
+              break; // Exit loop immediately when ready
             } else if (deploymentStatus.readyState === 'ERROR' || deploymentStatus.state === 'ERROR') {
               console.error(`[${new Date().toISOString()}] deployDomainToVercel: Deployment failed:`, JSON.stringify(deploymentStatus));
               throw new Error(`Deployment failed with status: ${deploymentStatus.readyState || deploymentStatus.state}`);
@@ -2152,9 +2187,9 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
           }
         }
         
-        // Continue with the domain setup even if the deployment isn't ready yet
+        // Continue with the domain setup even if we didn't confirm the deployment is ready
         if (!ready) {
-          console.warn(`[${new Date().toISOString()}] deployDomainToVercel: Deployment did not become ready in the allocated time (${maxAttempts * 10}s), but continuing with domain setup anyway`);
+          console.warn(`[${new Date().toISOString()}] deployDomainToVercel: Deployment still processing after ${maxAttempts} attempts, continuing with domain setup anyway`);
         }
         
         resolve();
@@ -2163,11 +2198,11 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
       }
     });
     
-    // Set a timeout for the entire deployment process (8 minutes)
+    // Set a timeout for the entire deployment process (3 minutes - reduced from 8)
     const timeoutPromise = new Promise<void>((_, reject) => {
       deploymentCompletionTimeout = setTimeout(() => {
-        reject(new Error('Deployment status check timed out after 8 minutes'));
-      }, 8 * 60 * 1000);
+        reject(new Error('Deployment status check timed out after 3 minutes'));
+      }, 3 * 60 * 1000);
     });
     
     // Wait for either the deployment process to complete or timeout
@@ -2181,7 +2216,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
       }
     }
     
-    // STEP 4: Only now add the domain to the project (AFTER creating the deployment)
+    // STEP 4: Add the domain to the project after deployment creation
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Ensuring domain ${domainName} is attached to project...`);
     const domainResult = await addDomainToVercel(domainName, project.id);
     
