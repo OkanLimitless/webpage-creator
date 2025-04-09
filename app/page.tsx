@@ -38,6 +38,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // State
   const [activeTab, setActiveTab] = useState<'domains' | 'landingPages'>('domains');
@@ -75,52 +76,46 @@ export default function Home() {
   }, []);
   
   // Handle login
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
     
-    // Get password hash from environment variable
-    // If not set, default to empty (which will prevent login)
-    const correctPasswordHash = process.env.NEXT_PUBLIC_PASSWORD_HASH || '';
-    
-    // If password hash is not set, show an error
-    if (!correctPasswordHash) {
-      setLoginError('Authentication is not configured properly. Please contact the administrator.');
-      return;
-    }
-    
-    // Simple hash function using crypto subtle API
-    const hashPassword = async (password: string): Promise<string> => {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(password);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      return hashHex;
-    };
-    
-    // Check password hash
-    hashPassword(password).then(hashedInput => {
-      if (hashedInput === correctPasswordHash) {
-        // Create expiration date (7 days from now)
-        const expirationDate = new Date();
-        expirationDate.setDate(expirationDate.getDate() + 7);
-        
-        // Set cookie
-        document.cookie = `auth_token=authenticated; expires=${expirationDate.toUTCString()}; path=/; SameSite=Strict;`;
-        
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
         setIsAuthenticated(true);
-        setLoginError('');
+        setPassword('');
       } else {
-        setLoginError('Incorrect password. Please try again.');
+        setLoginError(data.error || 'Login failed. Please try again.');
       }
-    });
+    } catch (error) {
+      console.error('Login error:', error);
+      setLoginError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
   
   // Handle logout
-  const handleLogout = () => {
-    // Delete auth cookie by setting expiration in the past
-    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+      });
+      setIsAuthenticated(false);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
   
   // Close dropdown when clicking outside
@@ -474,7 +469,7 @@ export default function Home() {
     }
   };
   
-  // If not authenticated, show login form
+  // Login form component
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -508,9 +503,10 @@ export default function Home() {
             
             <button
               type="submit"
-              className="w-full py-3 px-4 bg-primary hover:bg-primary-dark text-white font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+              disabled={isLoggingIn}
+              className={`w-full py-3 px-4 ${isLoggingIn ? 'bg-primary-light/50' : 'bg-primary hover:bg-primary-dark'} text-white font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200`}
             >
-              Login
+              {isLoggingIn ? 'Logging in...' : 'Login'}
             </button>
           </form>
         </div>
