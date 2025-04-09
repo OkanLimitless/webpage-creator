@@ -85,6 +85,65 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
       };
     }
     
+    // First, check if this domain is already used by any project
+    try {
+      // Get all projects
+      const projects = await getAllProjects();
+      
+      // For each project, check if it has the domain
+      for (const project of projects) {
+        try {
+          const domains = await getProjectDomains(project.id);
+          const matchingDomain = domains.find((d: any) => d.name === domainName);
+          
+          if (matchingDomain) {
+            console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} already exists in project ${project.id}`);
+            
+            // If it's the same project we're targeting, return success
+            if (project.id === targetProjectId) {
+              console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain already exists in the target project, treating as success`);
+              return {
+                success: true,
+                domainName,
+                alreadyConfigured: true,
+                vercelDomain: matchingDomain,
+                message: `Domain ${domainName} is already registered with the target project`,
+                configurationDnsRecords: [
+                  {
+                    name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+                    type: 'CNAME',
+                    value: 'cname.vercel-dns.com'
+                  }
+                ]
+              };
+            }
+            
+            // If domain is in a different project, first try to remove it from that project
+            console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain exists in a different project (${project.id}), attempting to remove it`);
+            
+            try {
+              await removeDomainFromProject(project.id, domainName);
+              console.log(`[${new Date().toISOString()}] addDomainToVercel: Successfully removed domain from project ${project.id}`);
+              
+              // Short delay to allow deletion to propagate
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (removeError) {
+              console.warn(`[${new Date().toISOString()}] addDomainToVercel: Failed to remove domain from other project:`, removeError);
+              // Continue anyway and try to add, in case the error is temporary
+            }
+            
+            break; // Only need to check the first project with the domain
+          }
+        } catch (projectError) {
+          console.warn(`[${new Date().toISOString()}] addDomainToVercel: Error checking project ${project.id}:`, projectError);
+          // Continue to next project
+        }
+      }
+    } catch (checkError) {
+      console.warn(`[${new Date().toISOString()}] addDomainToVercel: Error checking existing projects:`, checkError);
+      // Continue anyway and try to add the domain directly
+    }
+    
     // Prepare API endpoint
     let url = `https://api.vercel.com/v9/projects/${targetProjectId}/domains`;
     
@@ -130,7 +189,63 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
             message: `Domain ${domainName} is already registered with this project`
           };
         } else {
-          // Domain is in use by a different project
+          // Try one more time to remove the domain from the other project and add it to ours
+          try {
+            console.log(`[${new Date().toISOString()}] addDomainToVercel: Final attempt to remove domain from project ${data.error.projectId}`);
+            const removed = await removeDomainFromProject(data.error.projectId, domainName);
+            
+            if (removed) {
+              // Wait a bit for the delete to propagate
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              
+              // Try to add the domain again
+              console.log(`[${new Date().toISOString()}] addDomainToVercel: Retrying domain addition after removal`);
+              const retryResponse = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${VERCEL_TOKEN}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: domainName })
+              });
+              
+              const retryData = await retryResponse.json();
+              
+              if (retryResponse.ok) {
+                console.log(`[${new Date().toISOString()}] addDomainToVercel: Successfully added domain on retry`);
+                
+                // Get the verification records if available
+                let configurationRecords: Array<{name: string; type: string; value: string;}> = [];
+                if (retryData.verification && Array.isArray(retryData.verification)) {
+                  configurationRecords = retryData.verification.map((record: any) => ({
+                    name: record.domain.split('.')[0] === domainName ? '@' : record.domain.split('.')[0],
+                    type: record.type,
+                    value: record.value
+                  }));
+                }
+                
+                return {
+                  success: true,
+                  domainName,
+                  vercelDomain: retryData,
+                  configurationDnsRecords: configurationRecords.length > 0 ? configurationRecords : [
+                    {
+                      name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+                      type: 'CNAME',
+                      value: 'cname.vercel-dns.com'
+                    }
+                  ],
+                  message: 'Domain added to Vercel successfully on retry.'
+                };
+              } else {
+                console.log(`[${new Date().toISOString()}] addDomainToVercel: Retry failed:`, retryData);
+              }
+            }
+          } catch (finalError) {
+            console.error(`[${new Date().toISOString()}] addDomainToVercel: Final attempt to remove domain failed:`, finalError);
+          }
+          
+          // If we get here, all attempts failed
           console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already in use by project ${data.error.projectId}, cannot add to project ${targetProjectId} (took ${Date.now() - startTime}ms)`);
           return {
             success: false,
@@ -677,7 +792,7 @@ export async function createVercelProject(domainName: string, framework: string 
       },
       body: JSON.stringify({
         name: projectName, // Use direct domain name instead of standardized name
-        framework,
+        framework: framework || 'nextjs', // Changed from potentially defaulting to 'other' to always use 'nextjs' if not specified
         buildCommand: null,
         outputDirectory: "public",
         environmentVariables: [
@@ -1096,7 +1211,7 @@ export async function createDeployment(projectId: string, domainName: string): P
         }
       ],
       projectSettings: {
-        framework: "other", // Use 'other' as a supported framework type
+        framework: "nextjs", // Changed from "other" to "nextjs" which is an allowed value
         devCommand: null,
         buildCommand: null,
         outputDirectory: "public",
@@ -1412,6 +1527,10 @@ async function removeDomainFromProject(projectId: string, domainName: string): P
     
     if (!VERCEL_TOKEN) {
       throw new Error('Vercel API token not set');
+    }
+    
+    if (!projectId) {
+      throw new Error('Project ID is required to remove domain');
     }
     
     // Construct the API URL
@@ -1952,7 +2071,7 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     let project: any = null;
     try {
       project = await Promise.race([
-        createVercelProject(domainName, 'other'),
+        createVercelProject(domainName, 'nextjs'), // Changed from 'other' to 'nextjs'
         new Promise((_, reject) => setTimeout(() => reject(new Error('Project creation timed out after 60s')), 60000))
       ]);
     } catch (projectError: any) {
