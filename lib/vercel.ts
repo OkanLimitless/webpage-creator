@@ -192,53 +192,59 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
           // Try one more time to remove the domain from the other project and add it to ours
           try {
             console.log(`[${new Date().toISOString()}] addDomainToVercel: Final attempt to remove domain from project ${data.error.projectId}`);
-            const removed = await removeDomainFromProject(data.error.projectId, domainName);
             
-            if (removed) {
-              // Wait a bit for the delete to propagate
-              await new Promise(resolve => setTimeout(resolve, 3000));
+            // Skip removal if projectId is undefined
+            if (!data.error.projectId) {
+              console.warn(`[${new Date().toISOString()}] addDomainToVercel: Cannot remove domain - projectId is undefined in the error response`);
+            } else {
+              const removed = await removeDomainFromProject(data.error.projectId, domainName);
               
-              // Try to add the domain again
-              console.log(`[${new Date().toISOString()}] addDomainToVercel: Retrying domain addition after removal`);
-              const retryResponse = await fetch(url, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${VERCEL_TOKEN}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ name: domainName })
-              });
-              
-              const retryData = await retryResponse.json();
-              
-              if (retryResponse.ok) {
-                console.log(`[${new Date().toISOString()}] addDomainToVercel: Successfully added domain on retry`);
+              if (removed) {
+                // Wait a bit for the delete to propagate
+                await new Promise(resolve => setTimeout(resolve, 3000));
                 
-                // Get the verification records if available
-                let configurationRecords: Array<{name: string; type: string; value: string;}> = [];
-                if (retryData.verification && Array.isArray(retryData.verification)) {
-                  configurationRecords = retryData.verification.map((record: any) => ({
-                    name: record.domain.split('.')[0] === domainName ? '@' : record.domain.split('.')[0],
-                    type: record.type,
-                    value: record.value
-                  }));
+                // Try to add the domain again
+                console.log(`[${new Date().toISOString()}] addDomainToVercel: Retrying domain addition after removal`);
+                const retryResponse = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${VERCEL_TOKEN}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ name: domainName })
+                });
+                
+                const retryData = await retryResponse.json();
+                
+                if (retryResponse.ok) {
+                  console.log(`[${new Date().toISOString()}] addDomainToVercel: Successfully added domain on retry`);
+                  
+                  // Get the verification records if available
+                  let configurationRecords: Array<{name: string; type: string; value: string;}> = [];
+                  if (retryData.verification && Array.isArray(retryData.verification)) {
+                    configurationRecords = retryData.verification.map((record: any) => ({
+                      name: record.domain.split('.')[0] === domainName ? '@' : record.domain.split('.')[0],
+                      type: record.type,
+                      value: record.value
+                    }));
+                  }
+                  
+                  return {
+                    success: true,
+                    domainName,
+                    vercelDomain: retryData,
+                    configurationDnsRecords: configurationRecords.length > 0 ? configurationRecords : [
+                      {
+                        name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+                        type: 'CNAME',
+                        value: 'cname.vercel-dns.com'
+                      }
+                    ],
+                    message: 'Domain added to Vercel successfully on retry.'
+                  };
+                } else {
+                  console.log(`[${new Date().toISOString()}] addDomainToVercel: Retry failed:`, retryData);
                 }
-                
-                return {
-                  success: true,
-                  domainName,
-                  vercelDomain: retryData,
-                  configurationDnsRecords: configurationRecords.length > 0 ? configurationRecords : [
-                    {
-                      name: domainName.includes('.') ? domainName.split('.')[0] : '@',
-                      type: 'CNAME',
-                      value: 'cname.vercel-dns.com'
-                    }
-                  ],
-                  message: 'Domain added to Vercel successfully on retry.'
-                };
-              } else {
-                console.log(`[${new Date().toISOString()}] addDomainToVercel: Retry failed:`, retryData);
               }
             }
           } catch (finalError) {
@@ -246,13 +252,13 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
           }
           
           // If we get here, all attempts failed
-          console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already in use by project ${data.error.projectId}, cannot add to project ${targetProjectId} (took ${Date.now() - startTime}ms)`);
+          console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already in use by project ${data.error.projectId || 'unknown'}, cannot add to project ${targetProjectId} (took ${Date.now() - startTime}ms)`);
           return {
             success: false,
             domainName,
             error: {
               code: 'domain_already_in_use_by_different_project',
-              message: `Domain ${domainName} is already in use by another project (${data.error.projectId})`,
+              message: `Domain ${domainName} is already in use by another project (${data.error.projectId || 'unknown'})`,
               projectId: data.error.projectId
             },
             configurationDnsRecords: []
