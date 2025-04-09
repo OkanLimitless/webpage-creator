@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import ViewRootPageButton from './components/ViewRootPageButton';
 
 // Domain type
 interface Domain {
@@ -15,8 +14,7 @@ interface Domain {
   cloudflareZoneId?: string;
   verificationStatus: string;
   verificationKey?: string;
-  hasRootPage?: boolean;
-  rootPageId?: string;
+  landingPageCount?: number;
 }
 
 // Landing page type
@@ -83,31 +81,7 @@ export default function Home() {
       
       // Ensure we always have an array, even if the API returns something unexpected
       const domainsList = Array.isArray(data) ? data : [];
-      
-      // Check if each domain has a root page
-      const domainsWithRootPageStatus = await Promise.all(
-        domainsList.map(async (domain) => {
-          try {
-            const rootPageResponse = await fetch(`/api/domains/${domain._id}/has-root-page`);
-            const rootPageData = await rootPageResponse.json();
-            
-            return {
-              ...domain,
-              hasRootPage: rootPageData.hasRootPage,
-              rootPageId: rootPageData.rootPageId
-            };
-          } catch (error) {
-            console.error(`Error checking root page for domain ${domain.name}:`, error);
-            return {
-              ...domain,
-              hasRootPage: false,
-              rootPageId: null
-            };
-          }
-        })
-      );
-      
-      setDomains(domainsWithRootPageStatus);
+      setDomains(domainsList);
     } catch (error) {
       console.error('Error fetching domains:', error);
       // Set an empty array on error
@@ -491,7 +465,7 @@ export default function Home() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Nameservers</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Verification</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Root Page</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Landing Pages</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -548,13 +522,13 @@ export default function Home() {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {domain.hasRootPage ? (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-900 text-green-300">
-                              Active
+                          {(domain.landingPageCount || 0) > 0 ? (
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-900 text-blue-300">
+                              {domain.landingPageCount || 0}
                             </span>
                           ) : (
                             <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-300">
-                              Not Created
+                              0
                             </span>
                           )}
                         </td>
@@ -566,10 +540,6 @@ export default function Home() {
                             >
                               Delete
                             </button>
-                            
-                            {domain.hasRootPage && (
-                              <ViewRootPageButton domainName={domain.name} />
-                            )}
                           </div>
                         </td>
                       </tr>

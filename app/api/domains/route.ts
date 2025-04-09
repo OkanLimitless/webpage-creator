@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain, IDomain } from '@/lib/models/Domain';
+import { LandingPage } from '@/lib/models/LandingPage';
 import { getNameservers, addDomain as addDomainToCloudflare, createDnsRecord, getZoneIdByName, checkDomainActivation, getDnsRecords, deleteDnsRecord } from '@/lib/cloudflare';
 import { addDomainToVercel } from '@/lib/vercel';
 import { startDomainDeployment } from '@/lib/services/domainDeploymentService';
@@ -18,6 +19,7 @@ const mockDomains = [
     verificationStatus: 'pending',
     verificationKey: 'mock-verification-key',
     isActive: true,
+    landingPageCount: 3,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -37,8 +39,34 @@ export async function GET() {
       return NextResponse.json(mockDomains);
     }
     
+    // Get all domains
     const domains = await Domain.find().sort({ createdAt: -1 });
-    return NextResponse.json(domains);
+    
+    // Get landing page counts for each domain
+    const domainIds = domains.map(domain => domain._id);
+    
+    // Use aggregation to count landing pages for each domain
+    const landingPageCounts = await LandingPage.aggregate([
+      { $match: { domainId: { $in: domainIds } } },
+      { $group: { _id: '$domainId', count: { $sum: 1 } } }
+    ]);
+    
+    // Create a map of domain IDs to counts
+    const countMap = landingPageCounts.reduce((map, item) => {
+      map[item._id.toString()] = item.count;
+      return map;
+    }, {} as Record<string, number>);
+    
+    // Add landing page counts to domains
+    const domainsWithCounts = domains.map(domain => {
+      const domainObj = domain.toObject();
+      return {
+        ...domainObj,
+        landingPageCount: countMap[domainObj._id.toString()] || 0
+      };
+    });
+    
+    return NextResponse.json(domainsWithCounts);
   } catch (error) {
     console.error('Error fetching domains:', error);
     
