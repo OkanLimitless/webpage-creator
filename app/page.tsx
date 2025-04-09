@@ -78,10 +78,15 @@ export default function Home() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // IMPORTANT: Change this hash to match your password
-    // This is a SHA-256 hash of "password"
-    // You can generate a new hash for your password at https://emn178.github.io/online-tools/sha256.html
-    const correctPasswordHash = '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8';
+    // Get password hash from environment variable
+    // If not set, default to empty (which will prevent login)
+    const correctPasswordHash = process.env.NEXT_PUBLIC_PASSWORD_HASH || '';
+    
+    // If password hash is not set, show an error
+    if (!correctPasswordHash) {
+      setLoginError('Authentication is not configured properly. Please contact the administrator.');
+      return;
+    }
     
     // Simple hash function using crypto subtle API
     const hashPassword = async (password: string): Promise<string> => {
