@@ -44,6 +44,7 @@ export default function Home() {
   const [landingPageName, setLandingPageName] = useState('');
   const [selectedDomainId, setSelectedDomainId] = useState('');
   const [subdomain, setSubdomain] = useState('');
+  const [affiliateUrl, setAffiliateUrl] = useState('');
   const [originalUrl, setOriginalUrl] = useState('');
   
   // Loading state
@@ -145,7 +146,7 @@ export default function Home() {
   const addLandingPage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!landingPageName || !selectedDomainId || !subdomain || !originalUrl) {
+    if (!landingPageName || !selectedDomainId || !subdomain || !affiliateUrl || !originalUrl) {
       alert('Please fill in all fields');
       return;
     }
@@ -162,7 +163,7 @@ export default function Home() {
           name: landingPageName,
           domainId: selectedDomainId,
           subdomain,
-          affiliateUrl: originalUrl,
+          affiliateUrl,
           originalUrl,
         }),
       });
@@ -172,6 +173,7 @@ export default function Home() {
         setLandingPageName('');
         setSelectedDomainId('');
         setSubdomain('');
+        setAffiliateUrl('');
         setOriginalUrl('');
         // Add new landing page to state
         setLandingPages(prev => [...prev, data]);
@@ -646,6 +648,14 @@ export default function Home() {
                 placeholder="Subdomain"
                 value={subdomain}
                 onChange={(e) => setSubdomain(e.target.value)}
+              />
+              
+              <input
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                type="text"
+                placeholder="Affiliate URL"
+                value={affiliateUrl}
+                onChange={(e) => setAffiliateUrl(e.target.value)}
               />
               
               <input
