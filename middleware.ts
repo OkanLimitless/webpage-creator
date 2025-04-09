@@ -230,6 +230,23 @@ export function middleware(request: NextRequest) {
     console.log('----------- MIDDLEWARE ERROR END -----------');
     return NextResponse.next();
   }
+
+  // Check for authentication for main application (except on subdomain requests)
+  // We'll check if the request is NOT for a subdomain page before requiring auth
+  const isSubdomainHostname = hasValidSubdomain(hostname);
+  
+  // Only check auth for regular routes and admin routes
+  if (!isSubdomainHostname) {
+    // Check for authentication token in cookies
+    const authCookie = request.cookies.get('auth_token');
+    
+    // If there's no auth token and this isn't the root path, redirect to root for login
+    if (!authCookie && pathname !== '/') {
+      console.log('[Middleware] Unauthenticated request to protected route, redirecting to login');
+      console.log('----------- MIDDLEWARE END -----------');
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+  }
 }
 
 // Get the base domain without subdomain

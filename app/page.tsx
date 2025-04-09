@@ -34,6 +34,11 @@ interface LandingPage {
 }
 
 export default function Home() {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  
   // State
   const [activeTab, setActiveTab] = useState<'domains' | 'landingPages'>('domains');
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -54,6 +59,65 @@ export default function Home() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
+  // Check authentication on page load
+  useEffect(() => {
+    const getCookie = (name: string): string | null => {
+      const cookieValue = document.cookie
+        .split('; ')
+        .find(row => row.startsWith(`${name}=`));
+      return cookieValue ? cookieValue.split('=')[1] : null;
+    };
+    
+    const authToken = getCookie('auth_token');
+    if (authToken === 'authenticated') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+  
+  // Handle login
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // IMPORTANT: Change this hash to match your password
+    // This is a SHA-256 hash of "password"
+    // You can generate a new hash for your password at https://emn178.github.io/online-tools/sha256.html
+    const correctPasswordHash = '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8';
+    
+    // Simple hash function using crypto subtle API
+    const hashPassword = async (password: string): Promise<string> => {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return hashHex;
+    };
+    
+    // Check password hash
+    hashPassword(password).then(hashedInput => {
+      if (hashedInput === correctPasswordHash) {
+        // Create expiration date (7 days from now)
+        const expirationDate = new Date();
+        expirationDate.setDate(expirationDate.getDate() + 7);
+        
+        // Set cookie
+        document.cookie = `auth_token=authenticated; expires=${expirationDate.toUTCString()}; path=/; SameSite=Strict;`;
+        
+        setIsAuthenticated(true);
+        setLoginError('');
+      } else {
+        setLoginError('Incorrect password. Please try again.');
+      }
+    });
+  };
+  
+  // Handle logout
+  const handleLogout = () => {
+    // Delete auth cookie by setting expiration in the past
+    document.cookie = 'auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    setIsAuthenticated(false);
+  };
+  
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -70,9 +134,11 @@ export default function Home() {
   
   // Fetch domains and landing pages
   useEffect(() => {
-    fetchDomains();
-    fetchLandingPages();
-  }, []);
+    if (isAuthenticated) {
+      fetchDomains();
+      fetchLandingPages();
+    }
+  }, [isAuthenticated]);
   
   // Fetch domains
   const fetchDomains = async () => {
@@ -403,6 +469,50 @@ export default function Home() {
     }
   };
   
+  // If not authenticated, show login form
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-dark-card p-8 rounded-lg shadow-lg border border-dark-accent w-full max-w-md">
+          <h1 className="text-2xl font-bold text-white mb-6 flex items-center justify-center">
+            <svg className="w-7 h-7 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
+            </svg>
+            Webpage Creator
+          </h1>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-400 mb-1">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                placeholder="Enter password"
+                required
+              />
+            </div>
+            
+            {loginError && (
+              <p className="text-red-400 text-sm">{loginError}</p>
+            )}
+            
+            <button
+              type="submit"
+              className="w-full py-3 px-4 bg-primary hover:bg-primary-dark text-white font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+            >
+              Login
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 font-sans">
       <header className="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
@@ -412,12 +522,20 @@ export default function Home() {
           </svg>
           Webpage Creator
         </h1>
-        <a 
-          href="/admin/domains" 
-          className="px-3 py-2 rounded-md text-white text-sm font-medium bg-primary hover:bg-primary-dark transition-colors duration-200"
-        >
-          Advanced Admin
-        </a>
+        <div className="flex space-x-2">
+          <button
+            onClick={handleLogout}
+            className="px-3 py-2 rounded-md text-white text-sm font-medium bg-gray-700 hover:bg-gray-600 transition-colors duration-200"
+          >
+            Logout
+          </button>
+          <a 
+            href="/admin/domains" 
+            className="px-3 py-2 rounded-md text-white text-sm font-medium bg-primary hover:bg-primary-dark transition-colors duration-200"
+          >
+            Advanced Admin
+          </a>
+        </div>
       </header>
       
       <div className="flex mb-6 border-b border-gray-700">
