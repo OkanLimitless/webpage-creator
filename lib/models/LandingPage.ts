@@ -9,6 +9,7 @@ export interface ILandingPage {
   desktopScreenshotUrl: string;
   mobileScreenshotUrl: string;
   isActive: boolean;
+  googleAdsAccountId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +53,10 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    googleAdsAccountId: {
+      type: String,
+      trim: true,
     },
   },
   { timestamps: true }

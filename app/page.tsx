@@ -28,6 +28,7 @@ interface LandingPage {
   desktopScreenshotUrl: string;
   mobileScreenshotUrl: string;
   isActive: boolean;
+  googleAdsAccountId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,7 +44,6 @@ export default function Home() {
   const [landingPageName, setLandingPageName] = useState('');
   const [selectedDomainId, setSelectedDomainId] = useState('');
   const [subdomain, setSubdomain] = useState('');
-  const [affiliateUrl, setAffiliateUrl] = useState('');
   const [originalUrl, setOriginalUrl] = useState('');
   
   // Loading state
@@ -145,7 +145,7 @@ export default function Home() {
   const addLandingPage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!landingPageName || !selectedDomainId || !subdomain || !affiliateUrl || !originalUrl) {
+    if (!landingPageName || !selectedDomainId || !subdomain || !originalUrl) {
       alert('Please fill in all fields');
       return;
     }
@@ -162,7 +162,7 @@ export default function Home() {
           name: landingPageName,
           domainId: selectedDomainId,
           subdomain,
-          affiliateUrl,
+          affiliateUrl: originalUrl,
           originalUrl,
         }),
       });
@@ -172,7 +172,6 @@ export default function Home() {
         setLandingPageName('');
         setSelectedDomainId('');
         setSubdomain('');
-        setAffiliateUrl('');
         setOriginalUrl('');
         // Add new landing page to state
         setLandingPages(prev => [...prev, data]);
@@ -374,6 +373,32 @@ export default function Home() {
   const getDomainNameById = (id: string): string => {
     const domain = domains.find(d => d._id === id);
     return domain ? domain.name : 'Select a domain';
+  };
+  
+  // Add this function to update Google Ads account ID
+  const updateGoogleAdsAccountId = async (id: string, accountId: string) => {
+    try {
+      const response = await fetch(`/api/landing-pages/${id}/update-google-ads-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ googleAdsAccountId: accountId }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message);
+        // Refresh landing pages list to update status
+        fetchLandingPages();
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to update Google Ads account'}`);
+      }
+    } catch (error) {
+      console.error('Error updating Google Ads account:', error);
+      alert('An error occurred while updating Google Ads account');
+    }
   };
   
   return (
@@ -626,14 +651,6 @@ export default function Home() {
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="text"
-                placeholder="Affiliate URL"
-                value={affiliateUrl}
-                onChange={(e) => setAffiliateUrl(e.target.value)}
-              />
-              
-              <input
-                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
-                type="text"
                 placeholder="Original URL"
                 value={originalUrl}
                 onChange={(e) => setOriginalUrl(e.target.value)}
@@ -669,8 +686,8 @@ export default function Home() {
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">URL</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Affiliate URL</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Google Ads Account ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -683,11 +700,6 @@ export default function Home() {
                             {getLandingPageUrl(page)}
                           </a>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-primary-light hover:text-primary transition-colors duration-150">
-                          <a href={page.affiliateUrl} target="_blank" rel="noopener noreferrer">
-                            Affiliate Link
-                          </a>
-                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             page.isActive 
@@ -697,6 +709,29 @@ export default function Home() {
                             {page.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="text"
+                              placeholder="Enter Account ID"
+                              value={page.googleAdsAccountId || ''}
+                              onChange={(e) => {
+                                // Update the landing page in state with the new value
+                                const updatedPages = landingPages.map(p => 
+                                  p._id === page._id ? { ...p, googleAdsAccountId: e.target.value } : p
+                                );
+                                setLandingPages(updatedPages);
+                              }}
+                              className="p-1 text-sm bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-1 focus:ring-primary text-white placeholder-gray-500 w-40"
+                            />
+                            <button
+                              onClick={() => updateGoogleAdsAccountId(page._id, page.googleAdsAccountId || '')}
+                              className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             <button 
@@ -704,18 +739,6 @@ export default function Home() {
                               onClick={() => deleteLandingPage(page._id)}
                             >
                               Delete
-                            </button>
-                            <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-gray-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                              onClick={() => checkLandingPageConfig(page._id)}
-                            >
-                              Check Config
-                            </button>
-                            <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                              onClick={() => checkLandingPageConfig(page._id, true)}
-                            >
-                              Repair
                             </button>
                           </div>
                         </td>
