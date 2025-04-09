@@ -690,65 +690,95 @@ export default async function handler(req, res) {
     // Add the domain to the project
     try {
       deployment.addLog(`Adding domain ${domainName} to Vercel project...`, 'info');
-      const domainResult = await addDomainToVercel(domainName, project.id);
       
-      if (!domainResult.success) {
-        deployment.addLog(`Warning: Failed initial attempt to add domain to project: ${JSON.stringify(domainResult.error || domainResult.message)}`, 'warning');
+      // Add rate limiting to prevent too many requests
+      const maxAttempts = 3;
+      let attemptCount = 0;
+      let domainAdded = false;
+      let lastError = null;
+      
+      while (attemptCount < maxAttempts && !domainAdded) {
+        attemptCount++;
         
-        // Wait for 5 seconds and retry
-        deployment.addLog('Waiting 5 seconds before retry...', 'info');
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        deployment.addLog(`Domain addition attempt #${attemptCount}/${maxAttempts}`, 'info');
         
-        // Retry adding the domain
-        deployment.addLog('Retrying domain addition...', 'info');
-        const retryResult = await addDomainToVercel(domainName, project.id);
-        
-        if (!retryResult.success) {
-          deployment.addLog(`Warning: Failed to add domain after retry: ${JSON.stringify(retryResult.error || retryResult.message)}`, 'warning');
-        } else {
-          deployment.addLog(`Domain ${domainName} added to project after retry`, 'info');
+        try {
+          const domainResult = await addDomainToVercel(domainName, project.id);
+          
+          if (domainResult.success) {
+            deployment.addLog(`Domain ${domainName} added successfully on attempt #${attemptCount}`, 'info');
+            domainAdded = true;
+          } else {
+            // Check if domain is already in use by this project (which is actually a success case)
+            if (domainResult.alreadyConfigured && domainResult.vercelDomain) {
+              deployment.addLog(`Domain ${domainName} is already configured for this project`, 'info');
+              domainAdded = true;
+              break;
+            }
+            
+            lastError = domainResult.error || domainResult.message || 'Unknown error';
+            deployment.addLog(`Failed to add domain on attempt #${attemptCount}: ${JSON.stringify(lastError)}`, 'warning');
+            
+            // If we have more attempts to make, wait before trying again
+            if (attemptCount < maxAttempts) {
+              const delaySeconds = 3 * attemptCount; // Increasing delay between attempts
+              deployment.addLog(`Waiting ${delaySeconds} seconds before retry...`, 'info');
+              await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+            }
+          }
+        } catch (attemptError: any) {
+          lastError = attemptError.message || 'Unknown error';
+          deployment.addLog(`Error during domain addition attempt #${attemptCount}: ${lastError}`, 'error');
+          
+          // If we have more attempts to make, wait before trying again
+          if (attemptCount < maxAttempts) {
+            const delaySeconds = 3 * attemptCount;
+            deployment.addLog(`Waiting ${delaySeconds} seconds before retry...`, 'info');
+            await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+          }
         }
-      } else {
-        deployment.addLog(`Domain ${domainName} added to project successfully on first attempt`, 'info');
       }
       
-      // Additional verification to ensure domain is properly added
-      // Delay for DNS propagation
-      deployment.addLog('Waiting for domain configuration to propagate...', 'info');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // If we couldn't add the domain after all attempts, but the deployment succeeded, log a warning
+      if (!domainAdded) {
+        deployment.addLog(`Could not add domain ${domainName} to Vercel project after ${maxAttempts} attempts. Last error: ${lastError}`, 'warning');
+        deployment.addLog(`The WordPress site was deployed successfully, but you may need to manually add the domain in Vercel`, 'warning');
+      }
       
-      // Explicitly verify domain if needed
-      try {
-        const verifyDomainInVercel = require('@/lib/vercel').verifyDomainInVercel;
-        const verifyResult = await verifyDomainInVercel(domainName, project.id);
-        
-        if (verifyResult.success) {
-          deployment.addLog(`Domain verification triggered: ${verifyResult.message}`, 'info');
-        } else {
-          deployment.addLog(`Warning: Domain verification issue: ${verifyResult.message}`, 'warning');
-        }
-      } catch (verifyError: any) {
-        deployment.addLog(`Warning: Could not verify domain: ${verifyError.message}`, 'warning');
+      // Regardless of whether domain addition succeeded, proceed with deploying the site
+      deployment.status = 'deployed';
+      deployment.completedAt = new Date();
+      deployment.addLog(`Deployment triggered successfully. Vercel will now build and deploy your site.`, 'info');
+      await deployment.save();
+      
+      // Update the domain record
+      const domain = await Domain.findById(domainId);
+      if (domain) {
+        domain.deploymentStatus = 'deployed';
+        domain.lastDeployedAt = new Date();
+        domain.deploymentUrl = `https://${domainName}`;
+        domain.vercelProjectId = project.id;
+        await domain.save();
       }
     } catch (domainError: any) {
-      deployment.addLog(`Error adding domain to project: ${domainError.message}`, 'error');
-      // We will continue even if domain addition fails
-    }
-    
-    // Update deployment record
-    deployment.status = 'deployed';
-    deployment.completedAt = new Date();
-    deployment.addLog(`Deployment triggered successfully. Vercel will now build and deploy your site.`, 'info');
-    await deployment.save();
-    
-    // Update the domain record
-    const domain = await Domain.findById(domainId);
-    if (domain) {
-      domain.deploymentStatus = 'deployed';
-      domain.lastDeployedAt = new Date();
-      domain.deploymentUrl = `https://${domainName}`;
-      domain.vercelProjectId = project.id;
-      await domain.save();
+      deployment.addLog(`Error in domain addition process: ${domainError.message}`, 'error');
+      
+      // Even if domain addition fails completely, mark the deployment as complete
+      // since the project and deployment were created successfully
+      deployment.status = 'deployed';
+      deployment.completedAt = new Date();
+      deployment.addLog(`Deployment completed with domain issues. You may need to manually add the domain in Vercel.`, 'warning');
+      await deployment.save();
+      
+      // Update the domain record
+      const domain = await Domain.findById(domainId);
+      if (domain) {
+        domain.deploymentStatus = 'deployed';
+        domain.lastDeployedAt = new Date();
+        domain.deploymentUrl = `https://${domainName}`;
+        domain.vercelProjectId = project.id;
+        await domain.save();
+      }
     }
     
   } catch (error: any) {

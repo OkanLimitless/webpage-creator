@@ -239,64 +239,136 @@ export async function verifyDomainInVercel(domainName: string, projectId?: strin
 
 /**
  * Delete a domain from Vercel project
- * @param domainName The domain name to delete
- * @returns Response from Vercel API
  */
-export async function deleteDomainFromVercel(domainName: string) {
+export async function deleteDomainFromVercel(domain: string): Promise<any> {
   try {
-    // Trim whitespace from domain name
-    domainName = domainName.trim();
+    console.log(`Deleting domain ${domain} from Vercel`);
     
-    console.log(`Deleting domain ${domainName} from Vercel project...`);
+    const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+    const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID;
     
-    // In development with missing credentials, return mock success
-    if (isDevelopment && (!process.env.VERCEL_TOKEN || !process.env.VERCEL_PROJECT_ID)) {
-      console.log('Using mock Vercel domain deletion in development mode');
-      return {
-        success: true,
-        domainName,
-        message: 'Domain deleted from Vercel (mock)'
-      };
+    if (!VERCEL_TOKEN) {
+      console.error('Vercel API token not set');
+      return { success: false, error: 'Vercel API token not set' };
     }
     
-    // Prepare API endpoint
-    let url = `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/domains/${domainName}`;
-    
-    // Add team ID if available
+    // First, find if the domain exists in any projects
+    let projectsUrl = 'https://api.vercel.com/v9/projects';
     if (VERCEL_TEAM_ID) {
-      url += `?teamId=${VERCEL_TEAM_ID}`;
+      projectsUrl += `?teamId=${VERCEL_TEAM_ID}`;
     }
     
-    // Make API request
-    const response = await fetch(url, {
-      method: 'DELETE',
+    console.log(`Getting projects from Vercel API: ${projectsUrl}`);
+    
+    const projectsResponse = await fetch(projectsUrl, {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${VERCEL_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
     
-    if (response.status === 204) {
-      // Success, no content
-      return {
-        success: true,
-        domainName,
-        message: 'Domain deleted from Vercel successfully'
-      };
+    if (!projectsResponse.ok) {
+      const errorData = await projectsResponse.text();
+      console.error(`Failed to get Vercel projects. Status: ${projectsResponse.status}, Response: ${errorData}`);
+      return { success: false, error: `Failed to get Vercel projects: ${projectsResponse.status}` };
     }
     
-    const data = await response.json();
-    console.log(`Vercel domain deletion response:`, JSON.stringify(data));
+    const projectsData = await projectsResponse.json();
+    const { projects } = projectsData;
     
-    return {
-      success: false,
-      domainName,
-      error: data,
-      message: `Failed to delete domain from Vercel: ${JSON.stringify(data)}`
-    };
+    if (!projects || projects.length === 0) {
+      console.warn('No projects found in Vercel account');
+      return { success: false, error: 'No projects found in Vercel account' };
+    }
+    
+    // For each project, check if it has the domain
+    let domainFound = false;
+    let deletionSuccess = false;
+    
+    for (const project of projects) {
+      try {
+        // Get domains for the project
+        let domainsUrl = `https://api.vercel.com/v9/projects/${project.id}/domains`;
+        if (VERCEL_TEAM_ID) {
+          domainsUrl += `?teamId=${VERCEL_TEAM_ID}`;
+        }
+        
+        console.log(`Checking domains for project ${project.id} (${project.name}): ${domainsUrl}`);
+        
+        const domainsResponse = await fetch(domainsUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${VERCEL_TOKEN}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!domainsResponse.ok) {
+          console.warn(`Failed to get domains for project ${project.id}. Status: ${domainsResponse.status}`);
+          continue;
+        }
+        
+        const domainsData = await domainsResponse.json();
+        const { domains } = domainsData;
+        
+        if (!domains || domains.length === 0) {
+          console.log(`No domains found for project ${project.id}`);
+          continue;
+        }
+        
+        // Check if any of the domains match the one we're looking for
+        const matchingDomain = domains.find((d: any) => d.name === domain);
+        
+        if (matchingDomain) {
+          domainFound = true;
+          console.log(`Found domain ${domain} in project ${project.id}`);
+          
+          // Delete the domain
+          let deleteDomainUrl = `https://api.vercel.com/v9/projects/${project.id}/domains/${matchingDomain.name}`;
+          if (VERCEL_TEAM_ID) {
+            deleteDomainUrl += `?teamId=${VERCEL_TEAM_ID}`;
+          }
+          
+          console.log(`Deleting domain from Vercel: ${deleteDomainUrl}`);
+          
+          const deleteResponse = await fetch(deleteDomainUrl, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${VERCEL_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (deleteResponse.ok) {
+            console.log(`Successfully deleted domain ${domain} from project ${project.id}`);
+            deletionSuccess = true;
+            break;
+          } else {
+            const deleteErrorData = await deleteResponse.text();
+            console.error(`Failed to delete domain ${domain} from project ${project.id}. Status: ${deleteResponse.status}, Response: ${deleteErrorData}`);
+          }
+        }
+      } catch (projectError) {
+        console.error(`Error checking project ${project.id} for domain ${domain}:`, projectError);
+      }
+    }
+    
+    if (!domainFound) {
+      console.warn(`Domain ${domain} not found in any Vercel projects`);
+      return { success: false, error: 'Domain not found in any Vercel projects' };
+    }
+    
+    if (!deletionSuccess) {
+      console.error(`Failed to delete domain ${domain} from Vercel`);
+      return { success: false, error: 'Failed to delete domain from Vercel' };
+    }
+    
+    console.log(`Domain ${domain} successfully deleted from Vercel`);
+    return { success: true };
   } catch (error) {
-    console.error(`Error deleting domain ${domainName} from Vercel:`, error);
-    throw error;
+    console.error(`Error deleting domain ${domain} from Vercel:`, error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
