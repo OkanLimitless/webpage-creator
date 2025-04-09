@@ -688,11 +688,51 @@ export default async function handler(req, res) {
     }
     
     // Add the domain to the project
-    const domainResult = await addDomainToVercel(domainName, project.id);
-    if (!domainResult.success) {
-      deployment.addLog(`Warning: Failed to add domain to project: ${JSON.stringify(domainResult.error)}`, 'warning');
-    } else {
-      deployment.addLog(`Domain ${domainName} added to project`, 'info');
+    try {
+      deployment.addLog(`Adding domain ${domainName} to Vercel project...`, 'info');
+      const domainResult = await addDomainToVercel(domainName, project.id);
+      
+      if (!domainResult.success) {
+        deployment.addLog(`Warning: Failed initial attempt to add domain to project: ${JSON.stringify(domainResult.error || domainResult.message)}`, 'warning');
+        
+        // Wait for 5 seconds and retry
+        deployment.addLog('Waiting 5 seconds before retry...', 'info');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Retry adding the domain
+        deployment.addLog('Retrying domain addition...', 'info');
+        const retryResult = await addDomainToVercel(domainName, project.id);
+        
+        if (!retryResult.success) {
+          deployment.addLog(`Warning: Failed to add domain after retry: ${JSON.stringify(retryResult.error || retryResult.message)}`, 'warning');
+        } else {
+          deployment.addLog(`Domain ${domainName} added to project after retry`, 'info');
+        }
+      } else {
+        deployment.addLog(`Domain ${domainName} added to project successfully on first attempt`, 'info');
+      }
+      
+      // Additional verification to ensure domain is properly added
+      // Delay for DNS propagation
+      deployment.addLog('Waiting for domain configuration to propagate...', 'info');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Explicitly verify domain if needed
+      try {
+        const verifyDomainInVercel = require('@/lib/vercel').verifyDomainInVercel;
+        const verifyResult = await verifyDomainInVercel(domainName, project.id);
+        
+        if (verifyResult.success) {
+          deployment.addLog(`Domain verification triggered: ${verifyResult.message}`, 'info');
+        } else {
+          deployment.addLog(`Warning: Domain verification issue: ${verifyResult.message}`, 'warning');
+        }
+      } catch (verifyError: any) {
+        deployment.addLog(`Warning: Could not verify domain: ${verifyError.message}`, 'warning');
+      }
+    } catch (domainError: any) {
+      deployment.addLog(`Error adding domain to project: ${domainError.message}`, 'error');
+      // We will continue even if domain addition fails
     }
     
     // Update deployment record

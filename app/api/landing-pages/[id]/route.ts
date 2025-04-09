@@ -4,6 +4,7 @@ import { LandingPage } from '@/lib/models/LandingPage';
 import { Domain } from '@/lib/models/Domain';
 import { getDnsRecords, deleteDnsRecord } from '@/lib/cloudflare';
 import { deleteFromVercelBlob } from '@/lib/vercelBlobStorage';
+import { deleteDomainFromVercel } from '@/lib/vercel';
 
 interface Params {
   params: {
@@ -53,6 +54,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     // Track deletion operations and their results
     const deletionResults = {
       dnsRecordsDeleted: false,
+      vercelDomainDeleted: false,
       screenshotsDeleted: false,
       landingPageDeleted: false,
     };
@@ -64,6 +66,26 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         { error: 'Domain not found' },
         { status: 404 }
       );
+    }
+    
+    // Create the full subdomain URL
+    const fullyQualifiedDomain = `${landingPage.subdomain}.${domain.name}`;
+    console.log(`Deleting landing page with subdomain: ${fullyQualifiedDomain}`);
+    
+    // Delete subdomain from Vercel
+    try {
+      console.log(`Removing subdomain ${fullyQualifiedDomain} from Vercel`);
+      const vercelResult = await deleteDomainFromVercel(fullyQualifiedDomain);
+      
+      if (vercelResult.success) {
+        console.log(`Successfully removed subdomain ${fullyQualifiedDomain} from Vercel`);
+        deletionResults.vercelDomainDeleted = true;
+      } else {
+        console.warn(`Warning: Failed to remove subdomain from Vercel: ${JSON.stringify(vercelResult.error || vercelResult.message)}`);
+      }
+    } catch (vercelError) {
+      console.error('Error removing subdomain from Vercel:', vercelError);
+      // Continue with deletion even if Vercel deletion fails
     }
     
     // Verify domain has a zone ID
