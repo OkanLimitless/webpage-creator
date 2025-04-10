@@ -53,24 +53,45 @@ export default function DomainDeployment({ domain }: DomainDeploymentProps) {
   const fetchDeploymentStatus = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/domains/${domain._id}/deploy`);
-      const data = await response.json();
+      const response = await fetch(`/api/domains/${domain._id}/deployment-status`);
       
-      if (response.ok) {
-        setDeploymentStatus(data.status || 'not_deployed');
-        setDeploymentUrl(data.deploymentUrl);
-        setLastDeployed(data.lastDeployedAt);
-        setLogs(data.logs || []);
-        
-        // If deployment is no longer in progress, stop polling
-        if (data.status !== 'deploying') {
-          setIsDeploying(false);
+      if (!response.ok) {
+        const errorData = await response.json();
+        // Check if error is about domain already being in use, which we can treat as non-critical
+        if (errorData.error && (
+            errorData.error.includes('already in use') || 
+            errorData.error.includes('domain_already_in_use')
+          )) {
+          console.log('Domain is already in use, this may be expected if deployed before');
+          // Instead of showing error, just get current status
+          setDeploymentStatus(domain.deploymentStatus || 'deployed');
+          setDeploymentUrl(domain.deploymentUrl);
+          setLastDeployed(domain.lastDeployedAt);
+        } else {
+          console.error('Error fetching deployment status:', errorData.error);
         }
-      } else {
-        console.error('Error fetching deployment status:', data.error);
+        setIsLoading(false);
+        return;
+      }
+      
+      const data = await response.json();
+      setDeploymentStatus(data.status || domain.deploymentStatus || 'not_deployed');
+      setDeploymentUrl(data.deploymentUrl || domain.deploymentUrl);
+      setLastDeployed(data.lastDeployedAt || domain.lastDeployedAt);
+      
+      // If there are logs, update them
+      if (data.logs && Array.isArray(data.logs)) {
+        setLogs(data.logs);
+      }
+      
+      // If deployment is no longer in progress, stop polling
+      if (data.status !== 'deploying') {
+        setIsDeploying(false);
       }
     } catch (error) {
       console.error('Error fetching deployment status:', error);
+      // On error, don't change status - keep using the domain's status
+      setDeploymentStatus(domain.deploymentStatus || 'not_deployed');
     } finally {
       setIsLoading(false);
     }
@@ -90,8 +111,19 @@ export default function DomainDeployment({ domain }: DomainDeploymentProps) {
         setDeploymentStatus('deploying');
         fetchDeploymentStatus();
       } else {
-        toast.error(`Failed to start deployment: ${data.error}`);
-        setIsDeploying(false);
+        // Check if error indicates domain is already in use by a project
+        if (data.error && (
+            data.error.includes('already in use') || 
+            data.error.includes('domain_already_in_use')
+          )) {
+          // This is not really an error if the domain is already in use by this project
+          toast.success('Deployment started. Domain is already in use by a project, which may be expected.');
+          setDeploymentStatus('deploying');
+          fetchDeploymentStatus();
+        } else {
+          toast.error(`Failed to start deployment: ${data.error}`);
+          setIsDeploying(false);
+        }
       }
     } catch (error: any) {
       toast.error(`Error: ${error.message}`);

@@ -171,6 +171,37 @@ export async function addDomainToVercel(domainName: string, projectId?: string):
     // Handle domain_already_in_use error as a success case if it's the same project
     if (!response.ok) {
       if (data.error && data.error.code === 'domain_already_in_use') {
+        // First, check if the domain is already attached to the target project
+        try {
+          // Get the domains for the target project
+          const projectDomains = await getProjectDomains(targetProjectId);
+          const isDomainAttachedToTargetProject = projectDomains.some((d: any) => 
+            d.name.toLowerCase() === domainName.toLowerCase()
+          );
+          
+          // If domain is already attached to the target project, return success
+          if (isDomainAttachedToTargetProject) {
+            console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already attached to target project ${targetProjectId}, treating as success`);
+            return {
+              success: true,
+              domainName,
+              alreadyConfigured: true,
+              vercelDomain: projectDomains.find((d: any) => d.name.toLowerCase() === domainName.toLowerCase()),
+              configurationDnsRecords: [
+                {
+                  name: domainName.includes('.') ? domainName.split('.')[0] : '@',
+                  type: 'CNAME',
+                  value: 'cname.vercel-dns.com'
+                }
+              ],
+              message: `Domain ${domainName} is already registered with the target project`
+            };
+          }
+        } catch (checkError) {
+          console.warn(`[${new Date().toISOString()}] addDomainToVercel: Error checking if domain is already attached to target project: ${checkError}`);
+          // Continue with normal error handling
+        }
+        
         // Check if domain is already in use by the target project
         if (data.error.projectId === targetProjectId) {
           console.log(`[${new Date().toISOString()}] addDomainToVercel: Domain ${domainName} is already in use by this project (${targetProjectId}), treating as a success case (took ${Date.now() - startTime}ms)`);
@@ -768,12 +799,31 @@ export async function createVercelProject(domainName: string, framework: string 
         // Add alreadyExists flag to indicate this is an existing project
         directProject.alreadyExists = true;
         
-        // Ensure the domain is attached to this project
+        // Check if the domain is already attached to this project
+        try {
+          const domains = await getProjectDomains(directProject.id);
+          const hasDomain = domains.some((d: any) => d.name.toLowerCase() === domainName.toLowerCase());
+          
+          if (hasDomain) {
+            console.log(`[${new Date().toISOString()}] createVercelProject: Domain ${domainName} is already attached to project ${directProject.id}`);
+            directProject.domainAlreadyAttached = true;
+            return directProject;
+          }
+        } catch (domainCheckError) {
+          console.warn(`[${new Date().toISOString()}] createVercelProject: Error checking if domain is already attached: ${domainCheckError}`);
+        }
+        
+        // If domain is not attached, try to attach it
         try {
           await addDomainToProject(directProject.id, domainName);
+          console.log(`[${new Date().toISOString()}] createVercelProject: Domain ${domainName} successfully added to project ${directProject.id}`);
         } catch (domainError: any) {
-          // Only log the error if it's not about the domain already being in use
-          if (!domainError.message.includes('already in use')) {
+          // Check if the error is just that the domain is already attached to this same project
+          if (domainError.message.includes('already in use')) {
+            console.log(`[${new Date().toISOString()}] createVercelProject: Domain ${domainName} is already in use by a project. This may be the same project.`);
+            // Mark the domain as already attached to avoid further attempts
+            directProject.domainAlreadyAttached = true;
+          } else {
             console.warn(`[${new Date().toISOString()}] createVercelProject: Failed to attach domain to direct project: ${domainError.message}`);
           }
         }
@@ -979,6 +1029,24 @@ async function addDomainToProject(projectId: string, domainName: string): Promis
       throw new Error('Vercel API token not set');
     }
     
+    // First check if the domain is already attached to this project
+    try {
+      const domains = await getProjectDomains(projectId);
+      const domainExists = domains.some((d: any) => d.name.toLowerCase() === domainName.toLowerCase());
+      
+      if (domainExists) {
+        console.log(`[${new Date().toISOString()}] addDomainToProject: Domain ${domainName} is already attached to project ${projectId}`);
+        return {
+          name: domainName,
+          verified: true,
+          alreadyExists: true
+        };
+      }
+    } catch (checkError) {
+      console.warn(`[${new Date().toISOString()}] addDomainToProject: Error checking existing domains: ${checkError}`);
+      // Continue with normal flow
+    }
+    
     // Construct the API URL
     let apiUrl = `https://api.vercel.com/v9/projects/${projectId}/domains`;
     if (VERCEL_TEAM_ID) {
@@ -998,6 +1066,14 @@ async function addDomainToProject(projectId: string, domainName: string): Promis
     const data: AddDomainResponse = await response.json();
     
     if (!response.ok && data.error?.code !== 'domain_already_exists') {
+      // If the error is that the domain is already in use by this project, treat as success
+      if (data.error?.code === 'domain_already_in_use' && data.error.projectId === projectId) {
+        return {
+          name: domainName,
+          verified: true,
+          alreadyExists: true
+        };
+      }
       throw new Error(`Failed to add domain to project: ${data.error?.message || 'Unknown error'}`);
     }
     
@@ -2105,29 +2181,22 @@ export async function deployDomainToVercel(domainName: string): Promise<any> {
     
     // Check if the domain is already attached to this project before creating a deployment
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Checking if domain is already attached to project...`);
+    let domainAlreadyAttached = false;
     try {
       const domains = await getProjectDomains(project.id);
       const hasDomain = domains.some(d => d.name.toLowerCase() === domainName.toLowerCase());
       
       if (hasDomain) {
-        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Domain ${domainName} is already attached to project ${project.id}, skipping deployment`);
-        
-        // If domain is already attached, return success without deployment
-        return {
-          success: true,
-          domain: domainName,
-          projectId: project.id,
-          url: `https://${domainName}`,
-          deploymentStatus: 'READY',
-          message: `Domain ${domainName} is already deployed and attached to project ${project.id}`
-        };
+        console.log(`[${new Date().toISOString()}] deployDomainToVercel: Domain ${domainName} is already attached to project ${project.id}`);
+        domainAlreadyAttached = true;
+        // Continue with deployment even though domain is already attached
       }
     } catch (domainCheckError) {
       console.warn(`[${new Date().toISOString()}] deployDomainToVercel: Error checking domains, continuing with deployment: ${domainCheckError}`);
       // Continue with deployment even if domain check fails
     }
     
-    // Step 2: Create a deployment for the project
+    // Step 2: Create a deployment for the project (even if domain is already attached)
     console.log(`[${new Date().toISOString()}] deployDomainToVercel: Creating deployment for project...`);
     let deployment: any = null;
     try {

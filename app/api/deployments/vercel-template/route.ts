@@ -97,6 +97,7 @@ async function deployWordpressTemplate(
     // First check if a project already exists for this domain
     let project: any = null;
     let existingProject = false;
+    let domainAdded = false;
     
     try {
       // Create the Vercel project with timeout protection
@@ -124,32 +125,16 @@ async function deployWordpressTemplate(
       throw projectError;
     }
     
-    // If we found an existing project that already has the domain, we can skip deployment
+    // If we found an existing project that already has the domain, we should continue with deployment
     if (existingProject) {
       try {
         const domains = await getProjectDomains(project.id);
         const hasDomain = domains.some((d: any) => d.name.toLowerCase() === domainName.toLowerCase());
         
         if (hasDomain) {
-          deployment.addLog(`Domain ${domainName} is already configured for this project. Skipping deployment.`, 'info');
-          
-          // Mark as deployed without running a new deployment
-          deployment.status = 'deployed';
-          deployment.completedAt = new Date();
-          deployment.addLog(`Deployment completed - using existing project configuration.`, 'info');
-          await deployment.save();
-          
-          // Update the domain record
-          const domain = await Domain.findById(domainId);
-          if (domain) {
-            domain.deploymentStatus = 'deployed';
-            domain.lastDeployedAt = new Date();
-            domain.deploymentUrl = `https://${domainName}`;
-            domain.vercelProjectId = project.id;
-            await domain.save();
-          }
-          
-          return; // Exit early, no need to create a new deployment
+          deployment.addLog(`Domain ${domainName} is already configured for this project. Continuing with deployment.`, 'info');
+          // Mark domain as already added to avoid attempts to add it again
+          domainAdded = true;
         }
       } catch (domainCheckError) {
         // If domain check fails, continue with normal deployment
@@ -746,7 +731,6 @@ export default async function handler(req, res) {
         if (hasDomain) {
           deployment.addLog(`Domain ${domainName} is already attached to project ${project.id}`, 'info');
           domainAdded = true;
-          // Skip the domain addition attempts if already attached
         }
       } catch (domainCheckError: any) {
         deployment.addLog(`Error checking domains: ${domainCheckError.message}`, 'warning');
@@ -755,6 +739,7 @@ export default async function handler(req, res) {
       
       // Only try to add the domain if it's not already attached
       if (!domainAdded) {
+        deployment.addLog(`Domain not attached yet, attempting to add domain...`, 'info');
         // Add rate limiting to prevent too many requests
         let attemptCount = 0;
         
@@ -780,6 +765,14 @@ export default async function handler(req, res) {
               
               lastError = domainResult.error || domainResult.message || 'Unknown error';
               deployment.addLog(`Failed to add domain on attempt #${attemptCount}: ${JSON.stringify(lastError)}`, 'warning');
+              
+              // If the error indicates the domain is already attached to this project, count as success
+              if (typeof lastError === 'object' && lastError.code === 'domain_already_in_use' && 
+                  lastError.projectId === project.id) {
+                deployment.addLog(`Domain is already in use by this project, treating as success`, 'info');
+                domainAdded = true;
+                break;
+              }
               
               // If we have more attempts to make, wait before trying again
               if (attemptCount < maxAttempts) {
@@ -809,16 +802,21 @@ export default async function handler(req, res) {
         }
       }
       
-      // If we couldn't add the domain after all attempts, but the deployment succeeded, log a warning
-      if (!domainAdded) {
-        deployment.addLog(`Could not add domain ${domainName} to Vercel project after ${maxAttempts} attempts. Last error: ${lastError}`, 'warning');
-        deployment.addLog(`The WordPress site was deployed successfully, but you may need to manually add the domain in Vercel`, 'warning');
-      }
-      
       // Regardless of whether domain addition succeeded, proceed with deploying the site
+      // Note: domainAdded will be true if:
+      // 1. Domain was already attached
+      // 2. Domain was successfully attached during this process
+      // 3. Domain attachment error indicates it's already in use by this project
       deployment.status = 'deployed';
       deployment.completedAt = new Date();
-      deployment.addLog(`Deployment triggered successfully. Vercel will now build and deploy your site.`, 'info');
+      
+      // Use appropriate log message based on domain status
+      if (domainAdded) {
+        deployment.addLog(`Deployment triggered successfully with domain ${domainName}. Vercel will now build and deploy your site.`, 'info');
+      } else {
+        deployment.addLog(`Deployment triggered, but there were issues with domain attachment. The WordPress site should still work, but you may need to manually configure the domain in Vercel.`, 'warning');
+      }
+      
       await deployment.save();
       
       // Update the domain record
