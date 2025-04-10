@@ -120,12 +120,12 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Add both the domain and subdomain to Vercel first
-    console.log(`Adding domain ${domain.name} and subdomain ${subdomain}.${domain.name} to Vercel`);
+    // Add the subdomain to Vercel (skipping the root domain)
+    console.log(`Adding subdomain ${subdomain}.${domain.name} to Vercel (skipping root domain)`);
     let vercelResult;
     try {
-      vercelResult = await addDomainAndSubdomainToVercel(domain.name, subdomain);
-      console.log(`Domain and subdomain added to Vercel: ${domain.name} and ${subdomain}.${domain.name}`);
+      vercelResult = await addDomainAndSubdomainToVercel(domain.name, subdomain, false);
+      console.log(`Subdomain added to Vercel: ${subdomain}.${domain.name}`);
     } catch (error: any) {
       // Try to extract a more helpful error message
       let errorMessage = 'Unknown error';
@@ -147,9 +147,9 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      console.error(`Error adding domain/subdomain to Vercel: ${domain.name}/${subdomain}`, error);
+      console.error(`Error adding subdomain to Vercel: ${domain.name}/${subdomain}`, error);
       return NextResponse.json(
-        { error: `Failed to add domain to Vercel: ${errorMessage}` },
+        { error: `Failed to add subdomain to Vercel: ${errorMessage}` },
         { status: 500 }
       );
     }
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
     // Return comprehensive information about the setup
     return NextResponse.json({
       ...landingPage.toJSON(),
-      vercelStatus: vercelResult ? 'both_added' : 'failed',
+      vercelStatus: vercelResult ? 'subdomain_added' : 'failed',
       fullDomain: `${subdomain}.${domain.name}`,
       dnsConfiguration: {
         target: vercelDnsTarget,
