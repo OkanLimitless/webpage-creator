@@ -12,6 +12,8 @@ export interface IDomain {
   deploymentStatus: 'pending' | 'deploying' | 'deployed' | 'failed' | 'not_deployed';
   deploymentUrl?: string;
   lastDeployedAt?: Date;
+  // Ban tracking
+  banCount?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +64,11 @@ const DomainSchema = new mongoose.Schema<IDomain>(
     },
     lastDeployedAt: {
       type: Date,
+    },
+    // Ban tracking
+    banCount: {
+      type: Number,
+      default: 0,
     },
   },
   { timestamps: true }
