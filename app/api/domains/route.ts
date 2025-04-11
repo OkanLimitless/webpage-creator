@@ -283,19 +283,10 @@ export async function POST(request: NextRequest) {
       console.error(`Error creating DNS records for ${name}:`, dnsError);
     }
 
-    // Register domain with Vercel - ensure trimmed domain name
-    try {
-      console.log(`Registering domain ${name} with Vercel...`);
-      const vercelResult = await addDomainToVercel(name.trim());
-      if (vercelResult.success) {
-        console.log(`Successfully registered domain ${name} with Vercel`);
-      } else {
-        console.error(`Failed to register domain ${name} with Vercel:`, vercelResult.error || 'Unknown error');
-      }
-    } catch (vercelError) {
-      // Log the error but continue - Vercel registration can be done later
-      console.error(`Error registering domain ${name} with Vercel:`, vercelError);
-    }
+    // The domain is no longer automatically registered with Vercel when created
+    // It will be registered with Vercel only when deployed or when a landing page is created
+    // This prevents the domain from being unnecessarily added to Vercel projects
+    console.log(`Domain ${name} created without adding to Vercel - will be added during deployment.`);
 
     // We no longer automatically deploy static sites - use WordPress template instead
     // try {
@@ -311,7 +302,7 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({
       ...domain.toJSON(),
-      message: 'Domain added successfully. DNS records for Vercel have been configured. The domain has been registered with Vercel. Please update your domain nameservers to the ones shown in the table to complete verification.',
+      message: 'Domain added successfully. DNS records have been configured. Please update your domain nameservers to the ones shown in the table to complete verification.',
     }, { status: 201 });
   } catch (error) {
     console.error('Error creating domain:', error);
