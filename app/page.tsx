@@ -443,6 +443,19 @@ export default function Home() {
     return domain ? domain.name : 'Select a domain';
   };
   
+  // Function to get eligible domains for landing pages
+  // Only show domains that:
+  // 1. Are active (verified with Cloudflare)
+  // 2. Have less than 3 landing pages deployed
+  const getEligibleDomains = (): Domain[] => {
+    return domains.filter(domain => 
+      // Active domains have verification status "active"
+      domain.verificationStatus === 'active' &&
+      // Less than 3 landing pages
+      (domain.landingPageCount || 0) < 3
+    );
+  };
+  
   // Add this function to update Google Ads account ID
   const updateGoogleAdsAccountId = async (id: string, accountId: string) => {
     try {
@@ -707,6 +720,9 @@ export default function Home() {
               </svg>
               Create Landing Page
             </h2>
+            <p className="text-gray-400 text-sm mb-4">
+              Note: You can only create landing pages on domains that are verified (status: active) and have less than 3 landing pages already deployed.
+            </p>
             <form onSubmit={addLandingPage} className="space-y-4">
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
@@ -722,7 +738,7 @@ export default function Home() {
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                 >
                   <span className={selectedDomainId ? 'text-white' : 'text-gray-500'}>
-                    {selectedDomainId ? getDomainNameById(selectedDomainId) : 'Select a domain'}
+                    {selectedDomainId ? getDomainNameById(selectedDomainId) : 'Select a domain (verified domains with <3 landing pages)'}
                   </span>
                   <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -741,22 +757,28 @@ export default function Home() {
                       Select a domain
                     </div>
                     
-                    {domains.map((domain) => (
-                      <div 
-                        key={domain._id} 
-                        className={`p-3 hover:bg-dark-light cursor-pointer ${
-                          selectedDomainId === domain._id 
-                            ? 'bg-primary/20 text-primary-light font-medium' 
-                            : 'text-white'
-                        }`}
-                        onClick={() => {
-                          setSelectedDomainId(domain._id);
-                          setDropdownOpen(false);
-                        }}
-                      >
-                        {domain.name}
+                    {getEligibleDomains().length > 0 ? (
+                      getEligibleDomains().map((domain) => (
+                        <div 
+                          key={domain._id} 
+                          className={`p-3 hover:bg-dark-light cursor-pointer ${
+                            selectedDomainId === domain._id 
+                              ? 'bg-primary/20 text-primary-light font-medium' 
+                              : 'text-white'
+                          }`}
+                          onClick={() => {
+                            setSelectedDomainId(domain._id);
+                            setDropdownOpen(false);
+                          }}
+                        >
+                          {domain.name} <span className="text-xs text-gray-400">({domain.landingPageCount || 0}/3 landing pages)</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 text-gray-400">
+                        No eligible domains available. Domains must be verified and have less than 3 landing pages.
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
