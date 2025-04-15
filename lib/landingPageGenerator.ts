@@ -299,24 +299,35 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   </footer>
 
   <script>
-    // Store in localStorage if the user has already verified
+    // Use sessionStorage instead of localStorage to only remember verification for current tab session
     const storeKey = '${siteName.toLowerCase()}_verified';
-    const alreadyVerified = localStorage.getItem(storeKey) === "true";
+    const sessionKey = '${siteName.toLowerCase()}_current_session';
+    const currentSession = Date.now().toString();
     const affiliateUrl = '${affiliateUrl}';
     
-    // If already verified, redirect immediately to the affiliate link
-    if (alreadyVerified) {
+    // Store a unique session ID and compare it to detect new visits even in the same session
+    const savedSession = sessionStorage.getItem(sessionKey);
+    const lastVerifiedTime = parseInt(sessionStorage.getItem(storeKey) || '0', 10);
+    
+    // Check if this is a new session or if the verification is very old (more than 15 minutes)
+    const isRecentVerification = lastVerifiedTime > 0 && (Date.now() - lastVerifiedTime) < 15 * 60 * 1000;
+    
+    // If recently verified in this browser tab session, redirect
+    if (isRecentVerification) {
       window.location.href = affiliateUrl;
+    } else {
+      // Otherwise, reset the verification status for this new session
+      sessionStorage.removeItem(storeKey);
     }
     
     // Fallback: Auto-redirect after 30 seconds
     const autoRedirectTimeout = setTimeout(() => {
       console.log("Auto-redirecting due to timeout");
       try {
-        localStorage.setItem(storeKey, "true");
+        sessionStorage.setItem(storeKey, Date.now().toString());
         window.location.href = affiliateUrl;
       } catch (e) {
-        // In case localStorage fails
+        // In case sessionStorage fails
         window.location.href = affiliateUrl;
       }
     }, 30000); // 30 seconds
@@ -368,7 +379,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
             clearTimeout(autoRedirectTimeout);
             
             // Skip reCAPTCHA and redirect directly
-            localStorage.setItem(storeKey, "true");
+            sessionStorage.setItem(storeKey, Date.now().toString());
             
             // Set a backup timeout to ensure redirection happens
             const redirectTimeout = setTimeout(() => {
@@ -441,7 +452,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     
     function onRecaptchaSuccess(token) {
       // Store verification status and redirect
-      localStorage.setItem(storeKey, "true");
+      sessionStorage.setItem(storeKey, Date.now().toString());
       window.location.href = affiliateUrl;
     }
     
@@ -464,7 +475,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     function tryFallbackRedirect() {
       console.log("Using fallback redirect method");
       try {
-        localStorage.setItem(storeKey, "true");
+        sessionStorage.setItem(storeKey, Date.now().toString());
         window.location.replace(affiliateUrl);
       } catch (e) {
         // Last resort - open in new tab
