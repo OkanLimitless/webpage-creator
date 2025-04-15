@@ -53,8 +53,22 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <link rel="icon" type="image/png" href="${faviconPng}">
   <link rel="shortcut icon" href="${faviconIco}" type="image/x-icon">
   
-  <!-- Google reCAPTCHA -->
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <!-- Google reCAPTCHA (load conditionally) -->
+  <script>
+    // Only load reCAPTCHA if needed
+    function loadRecaptcha() {
+      const script = document.createElement('script');
+      script.src = "https://www.google.com/recaptcha/api.js";
+      script.async = true;
+      script.defer = true;
+      script.onerror = function() {
+        console.log("Failed to load reCAPTCHA, will use direct redirect instead");
+      };
+      document.head.appendChild(script);
+    }
+    // Don't load immediately, only if needed
+    // loadRecaptcha();
+  </script>
   
   <!-- Microsoft Clarity for analytics -->
   <script type="text/javascript">
@@ -273,12 +287,10 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     </div>
   </div>
   
-  <form id="recaptcha-form" action="?" method="POST" style="display:none;">
-    <button id="recaptcha-button" class="g-recaptcha"
-      data-sitekey="6LfPYQ0rAAAAAAsuAHtqCQrBJBAe0nRPptpZw4tx"
-      data-callback="onRecaptchaSuccess"
-      data-size="invisible">
-    </button>
+  <!-- Hidden form for accessibility -->
+  <form id="recaptcha-form" action="${affiliateUrl}" method="GET" style="display:none;">
+    <input type="hidden" name="verified" value="true">
+    <button type="submit">Continue</button>
   </form>
 
   <footer>
@@ -290,17 +302,31 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     // Store in localStorage if the user has already verified
     const storeKey = '${siteName.toLowerCase()}_verified';
     const alreadyVerified = localStorage.getItem(storeKey) === "true";
+    const affiliateUrl = '${affiliateUrl}';
     
     // If already verified, redirect immediately to the affiliate link
     if (alreadyVerified) {
-      window.location.href = '${affiliateUrl}';
+      window.location.href = affiliateUrl;
     }
+    
+    // Fallback: Auto-redirect after 30 seconds
+    const autoRedirectTimeout = setTimeout(() => {
+      console.log("Auto-redirecting due to timeout");
+      try {
+        localStorage.setItem(storeKey, "true");
+        window.location.href = affiliateUrl;
+      } catch (e) {
+        // In case localStorage fails
+        window.location.href = affiliateUrl;
+      }
+    }, 30000); // 30 seconds
     
     const progressFill = document.getElementById("progressFill");
     const progressText = document.getElementById("progressText");
     const progressButton = document.getElementById("progressButton");
     const verifiedMsg = document.getElementById("verifiedMessage");
     const pressArea = document.getElementById("pressArea");
+    const recaptchaForm = document.getElementById("recaptcha-form");
     
     let interval;
     let progressValue = 0;
@@ -308,6 +334,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     const updateRate = 50;
     let loadingInterval;
     let failCount = 0;
+    let redirectAttempted = false;
     
     const startHold = () => {
       resetProgress();
@@ -331,12 +358,35 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
           animateLoadingText();
           verifiedMsg.innerHTML = "✅ 100% Verified";
           verifiedMsg.classList.add("success");
+          
+          // Handle redirection
           setTimeout(() => {
-            // If recaptcha is loaded, execute it, otherwise direct redirect
-            if (typeof grecaptcha !== 'undefined') {
-              grecaptcha.execute();
-            } else {
-              onRecaptchaSuccess();
+            if (redirectAttempted) return; // Prevent multiple redirects
+            redirectAttempted = true;
+            
+            // Clear the auto-redirect timeout since user has completed verification
+            clearTimeout(autoRedirectTimeout);
+            
+            // Skip reCAPTCHA and redirect directly
+            localStorage.setItem(storeKey, "true");
+            
+            // Set a backup timeout to ensure redirection happens
+            const redirectTimeout = setTimeout(() => {
+              window.location.href = affiliateUrl;
+            }, 1000);
+            
+            // Try reCAPTCHA if available
+            try {
+              if (typeof grecaptcha !== 'undefined' && grecaptcha.execute) {
+                grecaptcha.execute();
+              } else {
+                // If reCAPTCHA isn't available, redirect now
+                window.location.href = affiliateUrl;
+              }
+            } catch (e) {
+              console.error("reCAPTCHA error:", e);
+              // Fall back to direct redirect
+              window.location.href = affiliateUrl;
             }
           }, 1000);
         }
@@ -392,7 +442,34 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     function onRecaptchaSuccess(token) {
       // Store verification status and redirect
       localStorage.setItem(storeKey, "true");
-      window.location.href = '${affiliateUrl}';
+      window.location.href = affiliateUrl;
+    }
+    
+    // Handle possible redirection errors
+    window.addEventListener('error', function(event) {
+      if (redirectAttempted && !window.location.href.includes(affiliateUrl)) {
+        tryFallbackRedirect();
+      }
+    });
+    
+    // Check if redirection has happened after load
+    window.onload = function() {
+      // If verification was successful but we're still on this page after 3 seconds
+      if (redirectAttempted) {
+        setTimeout(tryFallbackRedirect, 3000);
+      }
+    };
+    
+    // Helper for fallback redirection
+    function tryFallbackRedirect() {
+      console.log("Using fallback redirect method");
+      try {
+        localStorage.setItem(storeKey, "true");
+        window.location.replace(affiliateUrl);
+      } catch (e) {
+        // Last resort - open in new tab
+        window.open(affiliateUrl, '_blank');
+      }
     }
   </script>
 </body>
