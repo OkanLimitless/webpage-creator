@@ -2,13 +2,8 @@
  * Utility to extract favicons from original websites
  */
 
-// We need to install the cheerio package with: npm install cheerio
-// For development only, use type any until proper types are installed
-// @ts-ignore - Ignore missing cheerio module for now
-import * as cheerio from 'cheerio';
-
 /**
- * Find a favicon from a website URL
+ * Find a favicon from a website URL using regex instead of cheerio
  * @param originalUrl The original URL to extract favicon from
  * @returns The favicon URL or null if not found
  */
@@ -35,52 +30,43 @@ export async function extractFavicon(originalUrl: string): Promise<string | null
     
     const html = await response.text();
     
-    // Parse the HTML
-    // @ts-ignore - Ignore cheerio typing issues
-    const $ = cheerio.load(html);
-    
-    // Look for favicon in different locations
+    // Look for favicon in different locations using regex
     // 1. Look for link tags with rel="icon" or rel="shortcut icon"
-    const iconLinks = $('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], link[rel^="icon"]');
+    const iconRegex = /<link[^>]*rel=["'](icon|shortcut icon|apple-touch-icon)[^>]*href=["']([^"']+)["'][^>]*>/gi;
     
-    if (iconLinks.length > 0) {
-      // Find the best quality favicon
-      let bestIcon: string | null = null;
-      let bestSize = 0;
+    let bestIcon: string | null = null;
+    let bestSize = 0;
+    
+    // Use exec() in a loop instead of matchAll for better compatibility
+    let match;
+    while ((match = iconRegex.exec(html)) !== null) {
+      const href = match[2];
+      if (!href) continue;
       
-      // @ts-ignore - Ignore typing issues with cheerio
-      iconLinks.each((_, element: any) => {
-        const href = $(element).attr('href');
-        if (!href) return;
-        
-        // Check if sizes attribute exists
-        const sizes = $(element).attr('sizes');
-        if (sizes) {
-          const sizeMatch = sizes.match(/(\d+)x(\d+)/);
-          if (sizeMatch) {
-            const size = parseInt(sizeMatch[1]);
-            if (size > bestSize) {
-              bestSize = size;
-              bestIcon = href;
-            }
-          }
-        } else if (!bestIcon) {
-          // If no sizes, use the first one found
+      // Look for size information
+      const sizeMatch = match[0].match(/sizes=["'](\d+)x(\d+)["']/i);
+      if (sizeMatch) {
+        const size = parseInt(sizeMatch[1], 10);
+        if (size > bestSize) {
+          bestSize = size;
           bestIcon = href;
         }
-      });
-      
-      if (bestIcon) {
-        // Convert relative URL to absolute URL if needed
-        if (bestIcon.startsWith('/')) {
-          bestIcon = `${baseUrl}${bestIcon}`;
-        } else if (!bestIcon.startsWith('http')) {
-          bestIcon = `${baseUrl}/${bestIcon}`;
-        }
-        
-        console.log(`Found favicon: ${bestIcon}`);
-        return bestIcon;
+      } else if (!bestIcon) {
+        // If no sizes, use the first one found
+        bestIcon = href;
       }
+    }
+    
+    if (bestIcon) {
+      // Convert relative URL to absolute URL if needed
+      if (bestIcon.startsWith('/')) {
+        bestIcon = `${baseUrl}${bestIcon}`;
+      } else if (!bestIcon.startsWith('http')) {
+        bestIcon = `${baseUrl}/${bestIcon}`;
+      }
+      
+      console.log(`Found favicon: ${bestIcon}`);
+      return bestIcon;
     }
     
     // 2. If no icon found in link tags, try the default location

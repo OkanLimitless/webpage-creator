@@ -21,6 +21,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     faviconUrl = await extractFavicon(originalUrl);
   } catch (error) {
     console.error("Error extracting favicon:", error);
+    // Continue with default favicon
   }
   
   // Use default favicon if extraction failed
