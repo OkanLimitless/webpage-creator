@@ -25,7 +25,9 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
     
-    const html = generateLandingPageHtml(landingPage);
+    // Get the HTML for the landing page
+    console.log(`Generating HTML for landing page ${params.id}`);
+    const html = await generateLandingPageHtml(landingPage);
     
     return new NextResponse(html, {
       headers: {

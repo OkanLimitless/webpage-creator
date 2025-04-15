@@ -90,7 +90,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     
     // Generate the HTML
     console.log('Generating landing page HTML');
-    const html = generateLandingPageHtml(landingPage);
+    const html = await generateLandingPageHtml(landingPage);
     
     console.log('----------- SUBDOMAIN ROUTE HANDLER END -----------');
     
