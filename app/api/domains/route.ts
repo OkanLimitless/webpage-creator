@@ -19,7 +19,7 @@ const mockDomains = [
     verificationStatus: 'pending',
     verificationKey: 'mock-verification-key',
     isActive: true,
-    landingPageCount: 3,
+    landingPageCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },

@@ -472,13 +472,13 @@ export default function Home() {
   // Function to get eligible domains for landing pages
   // Only show domains that:
   // 1. Are active (verified with Cloudflare)
-  // 2. Have less than 3 landing pages deployed
+  // 2. Have no landing pages deployed
   const getEligibleDomains = (): Domain[] => {
     return domains.filter(domain => 
       // Active domains have verification status "active"
       domain.verificationStatus === 'active' &&
-      // Less than 3 landing pages
-      (domain.landingPageCount || 0) < 3
+      // No landing pages at all
+      (domain.landingPageCount || 0) === 0
     );
   };
   
@@ -650,8 +650,6 @@ export default function Home() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Nameservers</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Verification</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Landing Pages</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Ban Count</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -707,28 +705,6 @@ export default function Home() {
                             </Link>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {(domain.landingPageCount || 0) > 0 ? (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-900 text-blue-300">
-                              {domain.landingPageCount || 0}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-300">
-                              0
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {(domain.banCount || 0) > 0 ? (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-900 text-red-300">
-                              {domain.banCount || 0}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-300">
-                              0
-                            </span>
-                          )}
-                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             <button 
@@ -759,7 +735,7 @@ export default function Home() {
               Create Landing Page
             </h2>
             <p className="text-gray-400 text-sm mb-4">
-              Note: You can only create landing pages on domains that are verified (status: active) and have less than 3 landing pages already deployed.
+              Note: You can only create landing pages on domains that are verified (status: active) and have no landing pages already deployed.
             </p>
             <form onSubmit={addLandingPage} className="space-y-4">
               <input
@@ -776,7 +752,7 @@ export default function Home() {
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                 >
                   <span className={selectedDomainId ? 'text-white' : 'text-gray-500'}>
-                    {selectedDomainId ? getDomainNameById(selectedDomainId) : 'Select a domain (verified domains with <3 landing pages)'}
+                    {selectedDomainId ? getDomainNameById(selectedDomainId) : 'Select a domain (verified domains with no landing pages)'}
                   </span>
                   <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -809,12 +785,12 @@ export default function Home() {
                             setDropdownOpen(false);
                           }}
                         >
-                          {domain.name} <span className="text-xs text-gray-400">({domain.landingPageCount || 0}/3 landing pages)</span>
+                          {domain.name}
                         </div>
                       ))
                     ) : (
                       <div className="p-3 text-gray-400">
-                        No eligible domains available. Domains must be verified and have less than 3 landing pages.
+                        No eligible domains available. Domains must be verified and have no landing pages.
                       </div>
                     )}
                   </div>
