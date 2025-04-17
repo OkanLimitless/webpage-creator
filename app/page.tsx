@@ -55,6 +55,15 @@ export default function Home() {
   const [affiliateUrl, setAffiliateUrl] = useState('');
   const [originalUrl, setOriginalUrl] = useState('');
   
+  // Bulk domain import state
+  const [bulkDomains, setBulkDomains] = useState('');
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkResults, setBulkResults] = useState<{success: string[], failed: {domain: string, reason: string}[]}>({
+    success: [],
+    failed: []
+  });
+  const [bulkLoading, setBulkLoading] = useState(false);
+  
   // Loading state
   const [loading, setLoading] = useState(false);
   
@@ -207,6 +216,62 @@ export default function Home() {
       alert('An error occurred while adding the domain');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // Add bulk domains
+  const addBulkDomains = async () => {
+    if (!bulkDomains.trim()) {
+      alert('Please enter at least one domain');
+      return;
+    }
+    
+    // Split the domains by newline and remove empty lines
+    const domainsList = bulkDomains
+      .split('\n')
+      .map(d => d.trim())
+      .filter(d => d.length > 0);
+    
+    if (domainsList.length === 0) {
+      alert('Please enter at least one domain');
+      return;
+    }
+    
+    setBulkLoading(true);
+    setBulkResults({ success: [], failed: [] });
+    
+    try {
+      const response = await fetch('/api/domains/bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domains: domainsList }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setBulkResults(data.results);
+        
+        // Add successful domains to the domains state
+        if (data.results.success.length > 0) {
+          // Fetch all domains again to ensure we have the latest data
+          fetchDomains();
+        }
+        
+        // Clear the input if all domains were successfully added
+        if (data.results.failed.length === 0) {
+          setBulkDomains('');
+        }
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to add domains'}`);
+      }
+    } catch (error) {
+      console.error('Error adding bulk domains:', error);
+      alert('An error occurred while adding the domains');
+    } finally {
+      setBulkLoading(false);
     }
   };
   
@@ -618,19 +683,99 @@ export default function Home() {
                 value={domainName}
                 onChange={(e) => setDomainName(e.target.value)}
               />
-              <button 
-                className={`px-4 py-2 rounded-md text-white font-medium ${
-                  loading 
-                    ? 'bg-primary-light/50 cursor-not-allowed' 
-                    : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
-                }`}
-                type="submit"
-                disabled={loading}
-              >
-                {loading ? 'Adding...' : 'Add Domain'}
-              </button>
+              <div className="flex space-x-2">
+                <button 
+                  className={`px-4 py-2 rounded-md text-white font-medium ${
+                    loading 
+                      ? 'bg-primary-light/50 cursor-not-allowed' 
+                      : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
+                  }`}
+                  type="submit"
+                  disabled={loading}
+                >
+                  {loading ? 'Adding...' : 'Add Domain'}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setIsBulkModalOpen(true)}
+                  className="px-4 py-2 rounded-md text-white font-medium bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+                >
+                  Bulk Import
+                </button>
+              </div>
             </form>
           </div>
+          
+          {/* Bulk Import Modal */}
+          {isBulkModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+              <div className="bg-dark-card p-6 rounded-lg shadow-lg border border-dark-accent w-full max-w-md">
+                <h3 className="text-lg font-semibold mb-4 text-white">Bulk Import Domains</h3>
+                <p className="text-gray-400 text-sm mb-4">
+                  Enter one domain per line (e.g., example.com)
+                </p>
+                <textarea
+                  className="w-full p-3 h-40 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 mb-4"
+                  placeholder="domain1.com&#10;domain2.com&#10;domain3.com"
+                  value={bulkDomains}
+                  onChange={(e) => setBulkDomains(e.target.value)}
+                ></textarea>
+                
+                {/* Results display */}
+                {(bulkResults.success.length > 0 || bulkResults.failed.length > 0) && (
+                  <div className="mb-4">
+                    <h4 className="text-white font-medium mb-2">Results:</h4>
+                    {bulkResults.success.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-green-400 text-sm">{bulkResults.success.length} domains added successfully:</p>
+                        <ul className="text-gray-300 text-xs ml-4 list-disc">
+                          {bulkResults.success.map((domain, index) => (
+                            <li key={index}>{domain}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {bulkResults.failed.length > 0 && (
+                      <div>
+                        <p className="text-red-400 text-sm">{bulkResults.failed.length} domains failed:</p>
+                        <ul className="text-gray-300 text-xs ml-4 list-disc">
+                          {bulkResults.failed.map((item, index) => (
+                            <li key={index}>{item.domain}: {item.reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <div className="flex justify-end space-x-2">
+                  <button
+                    onClick={() => {
+                      setIsBulkModalOpen(false);
+                      setBulkResults({ success: [], failed: [] });
+                      if (bulkResults.success.length > 0) {
+                        setBulkDomains('');
+                      }
+                    }}
+                    className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={addBulkDomains}
+                    disabled={bulkLoading}
+                    className={`px-4 py-2 rounded-md text-white font-medium ${
+                      bulkLoading 
+                        ? 'bg-primary-light/50 cursor-not-allowed' 
+                        : 'bg-primary hover:bg-primary-dark transition-colors duration-200'
+                    }`}
+                  >
+                    {bulkLoading ? 'Importing...' : 'Import Domains'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
             <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
