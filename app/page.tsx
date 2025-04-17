@@ -853,7 +853,6 @@ export default function Home() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">URL</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Google Ads Account ID</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Ban Count</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -898,22 +897,6 @@ export default function Home() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {page.banCount !== undefined ? (
-                            <div className="flex items-center">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                page.banCount > 0 
-                                  ? 'bg-red-900 text-red-300' 
-                                  : 'bg-gray-800 text-gray-300'
-                              }`}>
-                                {page.banCount || 0}
-                              </span>
-                              <span className="ml-2 text-xs text-gray-400">times banned</span>
-                            </div>
-                          ) : (
-                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-300">0</span>
-                          )}
-                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             <button 
@@ -921,15 +904,6 @@ export default function Home() {
                               onClick={() => deleteLandingPage(page._id)}
                             >
                               Delete
-                            </button>
-                            <button
-                              onClick={() => incrementBanCount(page._id)}
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                            >
-                              <svg className="w-3.5 h-3.5 mr-1" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                              </svg>
-                              Banned
                             </button>
                           </div>
                         </td>
