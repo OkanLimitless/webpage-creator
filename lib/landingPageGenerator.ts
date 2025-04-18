@@ -83,23 +83,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <title>${htmlTitle}</title>
   ${faviconTags}
   
-  <!-- Google reCAPTCHA (load conditionally) -->
-  <script>
-    // Only load reCAPTCHA if needed
-    function loadRecaptcha() {
-      const script = document.createElement('script');
-      script.src = "https://www.google.com/recaptcha/api.js";
-      script.async = true;
-      script.defer = true;
-      script.onerror = function() {
-        console.log("Failed to load reCAPTCHA, will use direct redirect instead");
-      };
-      document.head.appendChild(script);
-    }
-    // Don't load immediately, only if needed
-    // loadRecaptcha();
-  </script>
-  
   <!-- Microsoft Clarity for analytics -->
   <script type="text/javascript">
     (function(c,l,a,r,i,t,y){
@@ -316,12 +299,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       </p>
     </div>
   </div>
-  
-  <!-- Hidden form for accessibility -->
-  <form id="recaptcha-form" action="${affiliateUrl}" method="GET" style="display:none;">
-    <input type="hidden" name="verified" value="true">
-    <button type="submit">Continue</button>
-  </form>
 
   <footer>
     <a href="/privacy-policy.html" target="_blank">Privacy Policy</a> |
@@ -367,7 +344,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     const progressButton = document.getElementById("progressButton");
     const verifiedMsg = document.getElementById("verifiedMessage");
     const pressArea = document.getElementById("pressArea");
-    const recaptchaForm = document.getElementById("recaptcha-form");
     
     let interval;
     let progressValue = 0;
@@ -408,7 +384,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
             // Clear the auto-redirect timeout since user has completed verification
             clearTimeout(autoRedirectTimeout);
             
-            // Skip reCAPTCHA and redirect directly
+            // Direct redirect
             sessionStorage.setItem(storeKey, Date.now().toString());
             
             // Set a backup timeout to ensure redirection happens
@@ -416,19 +392,8 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
               window.location.href = affiliateUrl;
             }, 1000);
             
-            // Try reCAPTCHA if available
-            try {
-              if (typeof grecaptcha !== 'undefined' && grecaptcha.execute) {
-                grecaptcha.execute();
-              } else {
-                // If reCAPTCHA isn't available, redirect now
-                window.location.href = affiliateUrl;
-              }
-            } catch (e) {
-              console.error("reCAPTCHA error:", e);
-              // Fall back to direct redirect
-              window.location.href = affiliateUrl;
-            }
+            // Direct redirect
+            window.location.href = affiliateUrl;
           }, 1000);
         }
       }, updateRate);
@@ -479,12 +444,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       startHold();
     });
     pressArea.addEventListener("touchend", resetProgress);
-    
-    function onRecaptchaSuccess(token) {
-      // Store verification status and redirect
-      sessionStorage.setItem(storeKey, Date.now().toString());
-      window.location.href = affiliateUrl;
-    }
     
     // Handle possible redirection errors
     window.addEventListener('error', function(event) {
