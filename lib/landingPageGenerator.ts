@@ -1,19 +1,31 @@
 import { ILandingPage } from './models/LandingPage';
 import { extractFavicon } from './faviconExtractor';
+import { extractPageTitle } from './pageInfoExtractor';
 
 export async function generateLandingPageHtml(landingPage: ILandingPage): Promise<string> {
   const { affiliateUrl, desktopScreenshotUrl, mobileScreenshotUrl, name, originalUrl, subdomain } = landingPage;
   
-  // Extract domain name from the originalUrl for better SEO
-  let siteName = name;
-  try {
-    const originalUrlObj = new URL(originalUrl);
-    siteName = originalUrlObj.hostname.replace('www.', '').split('.')[0];
-    // Capitalize first letter 
+  // Use the provided name or a default
+  let siteName = name || "This Site";
+  // Ensure the first letter is capitalized
+  if (siteName && siteName.length > 0) {
     siteName = siteName.charAt(0).toUpperCase() + siteName.slice(1);
-  } catch (e) {
-    console.error("Error parsing original URL:", e);
   }
+  
+  // Try to extract the page title from the original URL
+  let pageTitle = null;
+  try {
+    pageTitle = await extractPageTitle(originalUrl);
+    // Remove any common separators and trailing text like " - Brand" or " | Site Name"
+    if (pageTitle) {
+      pageTitle = pageTitle.split(/\s*[|\-–—]\s*/)[0].trim();
+    }
+  } catch (error) {
+    console.error("Error extracting page title:", error);
+  }
+  
+  // Use the extracted title for the HTML title tag, or fall back to siteName
+  const htmlTitle = pageTitle || `${siteName} - Official Website`;
   
   // Try to extract the favicon from the original site
   let faviconUrl = null;
@@ -38,16 +50,16 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="index, follow">
-  <meta name="description" content="${siteName} - Official website with special offers and promotions">
-  <meta name="keywords" content="${siteName}, official site, special offer, discount">
+  <meta name="description" content="${pageTitle || siteName} - Official website with special offers and promotions">
+  <meta name="keywords" content="${pageTitle || siteName}, official site, special offer, discount">
   <meta name="author" content="${siteName}">
   
-  <meta property="og:title" content="${siteName} - Official Website" />
-  <meta property="og:description" content="View special offers and promotions from ${siteName}. Confirm you're human to proceed." />
+  <meta property="og:title" content="${pageTitle || siteName} - Official Website" />
+  <meta property="og:description" content="View special offers and promotions from ${pageTitle || siteName}. Confirm you're human to proceed." />
   <meta property="og:image" content="${desktopScreenshotUrl}" />
   <meta property="og:type" content="website" />
   
-  <title>${siteName} - Official Website</title>
+  <title>${htmlTitle}</title>
   
   <!-- Favicon from original site or default fallback -->
   <link rel="icon" type="image/png" href="${faviconPng}">
@@ -300,8 +312,8 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
 
   <script>
     // Use sessionStorage instead of localStorage to only remember verification for current tab session
-    const storeKey = '${siteName.toLowerCase()}_verified';
-    const sessionKey = '${siteName.toLowerCase()}_current_session';
+    const storeKey = '${siteName.toLowerCase().replace(/\W+/g, "_")}_verified';
+    const sessionKey = '${siteName.toLowerCase().replace(/\W+/g, "_")}_current_session';
     const currentSession = Date.now().toString();
     const affiliateUrl = '${affiliateUrl}';
     
