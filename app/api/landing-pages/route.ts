@@ -75,12 +75,29 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     
     const body = await request.json();
-    const { name, domainId, subdomain, affiliateUrl, originalUrl } = body;
+    const { 
+      name, 
+      domainId, 
+      subdomain, 
+      affiliateUrl, 
+      originalUrl,
+      manualScreenshots,
+      desktopScreenshotUrl,
+      mobileScreenshotUrl
+    } = body;
     
     // Validate required fields
     if (!name || !domainId || !subdomain || !affiliateUrl || !originalUrl) {
       return NextResponse.json(
         { error: 'All fields are required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate manual screenshots if provided
+    if (manualScreenshots && (!desktopScreenshotUrl || !mobileScreenshotUrl)) {
+      return NextResponse.json(
+        { error: 'Both desktop and mobile screenshots are required when using manual mode' },
         { status: 400 }
       );
     }
@@ -171,8 +188,20 @@ export async function POST(request: NextRequest) {
     // Generate a temporary ID for the landing page (for screenshots)
     const tempId = new mongoose.Types.ObjectId().toString();
     
-    // Take screenshots of the original URL
-    const screenshotResult = await takeScreenshots(originalUrl, tempId);
+    // Either use the provided manual screenshots or take new ones automatically
+    let screenshotResult: { desktopUrl: string; mobileUrl: string };
+    
+    if (manualScreenshots && desktopScreenshotUrl && mobileScreenshotUrl) {
+      console.log('Using manually uploaded screenshots');
+      screenshotResult = {
+        desktopUrl: desktopScreenshotUrl,
+        mobileUrl: mobileScreenshotUrl
+      };
+    } else {
+      // Take screenshots of the original URL
+      console.log('Taking automated screenshots');
+      screenshotResult = await takeScreenshots(originalUrl, tempId);
+    }
     
     // Create the landing page
     const landingPage = await LandingPage.create({

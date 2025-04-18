@@ -71,6 +71,18 @@ export default function Home() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
+  // New state variables for manual screenshots
+  const [useManualScreenshots, setUseManualScreenshots] = useState(false);
+  const [desktopScreenshotFile, setDesktopScreenshotFile] = useState<File | null>(null);
+  const [mobileScreenshotFile, setMobileScreenshotFile] = useState<File | null>(null);
+  const [desktopScreenshotUrl, setDesktopScreenshotUrl] = useState<string | null>(null);
+  const [mobileScreenshotUrl, setMobileScreenshotUrl] = useState<string | null>(null);
+  const [uploadingScreenshots, setUploadingScreenshots] = useState(false);
+  
+  // Preview URLs for the selected files
+  const [desktopPreviewUrl, setDesktopPreviewUrl] = useState<string | null>(null);
+  const [mobilePreviewUrl, setMobilePreviewUrl] = useState<string | null>(null);
+  
   // Check authentication on page load
   useEffect(() => {
     const getCookie = (name: string): string | null => {
@@ -284,9 +296,34 @@ export default function Home() {
       return;
     }
     
+    // Check if manual screenshots are required but not provided
+    if (useManualScreenshots && (!desktopScreenshotFile || !mobileScreenshotFile)) {
+      alert('Please upload both desktop and mobile screenshots');
+      return;
+    }
+    
     setLoading(true);
     
     try {
+      // First, upload screenshots if using manual mode
+      let screenshotUrls: { desktopUrl: string | null; mobileUrl: string | null } = { 
+        desktopUrl: null, 
+        mobileUrl: null 
+      };
+      
+      if (useManualScreenshots) {
+        setUploadingScreenshots(true);
+        screenshotUrls = await uploadScreenshots();
+        setUploadingScreenshots(false);
+        
+        // Verify both screenshots were uploaded
+        if (!screenshotUrls.desktopUrl || !screenshotUrls.mobileUrl) {
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // Then create the landing page with the screenshot URLs
       const response = await fetch('/api/landing-pages', {
         method: 'POST',
         headers: {
@@ -298,6 +335,9 @@ export default function Home() {
           subdomain,
           affiliateUrl,
           originalUrl,
+          manualScreenshots: useManualScreenshots,
+          desktopScreenshotUrl: screenshotUrls.desktopUrl,
+          mobileScreenshotUrl: screenshotUrls.mobileUrl,
         }),
       });
       
@@ -308,6 +348,16 @@ export default function Home() {
         setSubdomain('');
         setAffiliateUrl('');
         setOriginalUrl('');
+        
+        // Reset screenshot state
+        setUseManualScreenshots(false);
+        setDesktopScreenshotFile(null);
+        setMobileScreenshotFile(null);
+        setDesktopScreenshotUrl(null);
+        setMobileScreenshotUrl(null);
+        setDesktopPreviewUrl(null);
+        setMobilePreviewUrl(null);
+        
         // Add new landing page to state
         setLandingPages(prev => [...prev, data]);
         alert('Landing page created successfully. It will be available in a few minutes.');
@@ -644,6 +694,105 @@ export default function Home() {
       alert('An error occurred while updating Google Ads account');
     }
   };
+  
+  // Handle file selection for desktop screenshot
+  const handleDesktopScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setDesktopScreenshotFile(file);
+    
+    // Create a preview URL
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setDesktopPreviewUrl(url);
+    } else {
+      setDesktopPreviewUrl(null);
+    }
+  };
+  
+  // Handle file selection for mobile screenshot
+  const handleMobileScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setMobileScreenshotFile(file);
+    
+    // Create a preview URL
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setMobilePreviewUrl(url);
+    } else {
+      setMobilePreviewUrl(null);
+    }
+  };
+  
+  // Upload a screenshot file to the server
+  const uploadScreenshot = async (file: File, type: 'desktop' | 'mobile'): Promise<string | null> => {
+    if (!file) return null;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+    
+    try {
+      const response = await fetch('/api/upload-screenshot', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.url;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload screenshot');
+      }
+    } catch (error) {
+      console.error(`Error uploading ${type} screenshot:`, error);
+      alert(`Failed to upload ${type} screenshot. Please try again.`);
+      return null;
+    }
+  };
+  
+  // Upload both screenshots if manual mode is enabled
+  const uploadScreenshots = async (): Promise<{
+    desktopUrl: string | null;
+    mobileUrl: string | null;
+  }> => {
+    if (!useManualScreenshots) {
+      return { desktopUrl: null, mobileUrl: null };
+    }
+    
+    if (!desktopScreenshotFile || !mobileScreenshotFile) {
+      alert('Please select both desktop and mobile screenshots');
+      return { desktopUrl: null, mobileUrl: null };
+    }
+    
+    setUploadingScreenshots(true);
+    
+    try {
+      // Upload both files in parallel
+      const [desktopUrl, mobileUrl] = await Promise.all([
+        uploadScreenshot(desktopScreenshotFile, 'desktop'),
+        uploadScreenshot(mobileScreenshotFile, 'mobile')
+      ]);
+      
+      setDesktopScreenshotUrl(desktopUrl);
+      setMobileScreenshotUrl(mobileUrl);
+      
+      return { desktopUrl, mobileUrl };
+    } catch (error) {
+      console.error('Error uploading screenshots:', error);
+      return { desktopUrl: null, mobileUrl: null };
+    } finally {
+      setUploadingScreenshots(false);
+    }
+  };
+  
+  // Clean up object URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      if (desktopPreviewUrl) URL.revokeObjectURL(desktopPreviewUrl);
+      if (mobilePreviewUrl) URL.revokeObjectURL(mobilePreviewUrl);
+    };
+  }, [desktopPreviewUrl, mobilePreviewUrl]);
   
   // Login form component
   if (!isAuthenticated) {
@@ -1172,16 +1321,109 @@ export default function Home() {
                 onChange={(e) => setOriginalUrl(e.target.value)}
               />
               
+              {/* Manual Screenshots Toggle */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="manualScreenshots"
+                  checked={useManualScreenshots}
+                  onChange={(e) => setUseManualScreenshots(e.target.checked)}
+                  className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                />
+                <label htmlFor="manualScreenshots" className="text-gray-300 text-sm">
+                  Manually upload screenshots (for sites that don't work with automatic capture)
+                </label>
+              </div>
+              
+              {/* Manual Screenshot Upload Fields */}
+              {useManualScreenshots && (
+                <div className="space-y-4 p-4 border border-dark-accent rounded-md bg-dark-light">
+                  <h3 className="text-white text-sm font-medium">Upload Screenshots</h3>
+                  
+                  {/* Desktop Screenshot */}
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Desktop Screenshot (16:9 ratio recommended)</label>
+                    <div className="flex flex-col space-y-2">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleDesktopScreenshotChange}
+                        className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark"
+                      />
+                      {desktopPreviewUrl && (
+                        <div className="mt-2 relative">
+                          <img 
+                            src={desktopPreviewUrl} 
+                            alt="Desktop Preview" 
+                            className="max-h-40 rounded-md border border-dark-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDesktopScreenshotFile(null);
+                              setDesktopPreviewUrl(null);
+                            }}
+                            className="absolute top-1 right-1 bg-red-600 rounded-full text-white text-xs p-1"
+                          >
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path>
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Mobile Screenshot */}
+                  <div>
+                    <label className="block text-gray-400 text-xs mb-1">Mobile Screenshot (9:16 ratio recommended)</label>
+                    <div className="flex flex-col space-y-2">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleMobileScreenshotChange}
+                        className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark"
+                      />
+                      {mobilePreviewUrl && (
+                        <div className="mt-2 relative">
+                          <img 
+                            src={mobilePreviewUrl} 
+                            alt="Mobile Preview" 
+                            className="max-h-40 rounded-md border border-dark-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMobileScreenshotFile(null);
+                              setMobilePreviewUrl(null);
+                            }}
+                            className="absolute top-1 right-1 bg-red-600 rounded-full text-white text-xs p-1"
+                          >
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path>
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <button 
                 className={`px-4 py-2 rounded-md text-white font-medium ${
-                  loading 
+                  loading || uploadingScreenshots
                     ? 'bg-primary-light/50 cursor-not-allowed' 
                     : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
                 }`}
                 type="submit"
-                disabled={loading}
+                disabled={loading || uploadingScreenshots}
               >
-                {loading ? 'Creating...' : 'Create Landing Page'}
+                {loading 
+                  ? 'Creating...' 
+                  : uploadingScreenshots 
+                    ? 'Uploading screenshots...' 
+                    : 'Create Landing Page'}
               </button>
             </form>
           </div>
