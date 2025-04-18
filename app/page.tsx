@@ -291,8 +291,15 @@ export default function Home() {
   const addLandingPage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!landingPageName || !selectedDomainId || !subdomain || !affiliateUrl || !originalUrl) {
-      alert('Please fill in all fields');
+    // Check required fields based on screenshot mode
+    if (!landingPageName || !selectedDomainId || !subdomain || !affiliateUrl) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    // For automatic screenshots, original URL is required
+    if (!useManualScreenshots && !originalUrl) {
+      alert('Original URL is required for automatic screenshots');
       return;
     }
     
@@ -793,6 +800,13 @@ export default function Home() {
       if (mobilePreviewUrl) URL.revokeObjectURL(mobilePreviewUrl);
     };
   }, [desktopPreviewUrl, mobilePreviewUrl]);
+  
+  // Clear originalUrl when manual screenshots are enabled
+  useEffect(() => {
+    if (useManualScreenshots) {
+      setOriginalUrl('');
+    }
+  }, [useManualScreenshots]);
   
   // Login form component
   if (!isAuthenticated) {
@@ -1314,11 +1328,12 @@ export default function Home() {
               />
               
               <input
-                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                className={`w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 ${useManualScreenshots ? 'opacity-50 cursor-not-allowed' : ''}`}
                 type="text"
-                placeholder="Original URL"
+                placeholder={useManualScreenshots ? "Not required for manual screenshots" : "Original URL"}
                 value={originalUrl}
                 onChange={(e) => setOriginalUrl(e.target.value)}
+                disabled={useManualScreenshots}
               />
               
               {/* Manual Screenshots Toggle */}

@@ -87,12 +87,23 @@ export async function POST(request: NextRequest) {
     } = body;
     
     // Validate required fields
-    if (!name || !domainId || !subdomain || !affiliateUrl || !originalUrl) {
+    if (!name || !domainId || !subdomain || !affiliateUrl) {
       return NextResponse.json(
-        { error: 'All fields are required' },
+        { error: 'Name, domain, subdomain, and affiliate URL are required' },
         { status: 400 }
       );
     }
+
+    // For non-manual screenshots, originalUrl is required
+    if (!manualScreenshots && !originalUrl) {
+      return NextResponse.json(
+        { error: 'Original URL is required for automatic screenshots' },
+        { status: 400 }
+      );
+    }
+    
+    // Set a placeholder originalUrl for manual screenshots if none provided
+    const effectiveOriginalUrl = originalUrl || (manualScreenshots ? 'https://manual-screenshots.example.com' : '');
     
     // Validate manual screenshots if provided
     if (manualScreenshots && (!desktopScreenshotUrl || !mobileScreenshotUrl)) {
@@ -200,7 +211,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Take screenshots of the original URL
       console.log('Taking automated screenshots');
-      screenshotResult = await takeScreenshots(originalUrl, tempId);
+      screenshotResult = await takeScreenshots(effectiveOriginalUrl, tempId);
     }
     
     // Create the landing page
@@ -209,10 +220,11 @@ export async function POST(request: NextRequest) {
       domainId,
       subdomain,
       affiliateUrl,
-      originalUrl,
+      originalUrl: effectiveOriginalUrl,
       desktopScreenshotUrl: screenshotResult.desktopUrl,
       mobileScreenshotUrl: screenshotResult.mobileUrl,
       isActive: true,
+      manualScreenshots: manualScreenshots || false,
     });
     
     // Return comprehensive information about the setup

@@ -3,7 +3,15 @@ import { extractFavicon } from './faviconExtractor';
 import { extractPageTitle } from './pageInfoExtractor';
 
 export async function generateLandingPageHtml(landingPage: ILandingPage): Promise<string> {
-  const { affiliateUrl, desktopScreenshotUrl, mobileScreenshotUrl, name, originalUrl, subdomain } = landingPage;
+  const { 
+    affiliateUrl, 
+    desktopScreenshotUrl, 
+    mobileScreenshotUrl, 
+    name, 
+    originalUrl, 
+    subdomain, 
+    manualScreenshots 
+  } = landingPage;
   
   // Use the provided name or a default
   let siteName = name || "This Site";
@@ -27,22 +35,35 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   // Use the extracted title for the HTML title tag, or fall back to siteName
   const htmlTitle = pageTitle || `${siteName} - Official Website`;
   
-  // Try to extract the favicon from the original site
-  let faviconUrl = null;
-  try {
-    faviconUrl = await extractFavicon(originalUrl);
-  } catch (error) {
-    console.error("Error extracting favicon:", error);
-    // Continue with default favicon
+  // For manual screenshots, skip favicon extraction to avoid errors
+  let faviconPng = null;
+  let faviconIco = null;
+  
+  if (!manualScreenshots) {
+    // Only try to extract favicon for non-manual pages
+    try {
+      const faviconUrl = await extractFavicon(originalUrl);
+      faviconPng = faviconUrl;
+      faviconIco = faviconUrl;
+    } catch (error) {
+      console.error("Error extracting favicon:", error);
+    }
+    
+    // Use default favicon if extraction failed
+    const defaultFaviconPng = "https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.png";
+    const defaultFaviconIco = "https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.ico";
+    
+    // Determine which favicons to use
+    faviconPng = faviconPng || defaultFaviconPng;
+    faviconIco = faviconIco || defaultFaviconIco;
   }
   
-  // Use default favicon if extraction failed
-  const defaultFaviconPng = "https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.png";
-  const defaultFaviconIco = "https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.ico";
-  
-  // Determine which favicons to use
-  const faviconPng = faviconUrl || defaultFaviconPng;
-  const faviconIco = faviconUrl || defaultFaviconIco;
+  // Prepare the favicon HTML tags based on whether it's a manual page
+  const faviconTags = manualScreenshots ? '' : `
+  <!-- Favicon from original site or default fallback -->
+  <link rel="icon" type="image/png" href="${faviconPng}">
+  <link rel="shortcut icon" href="${faviconIco}" type="image/x-icon">
+  `;
   
   return `<!DOCTYPE html>
 <html lang="en">
@@ -60,10 +81,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <meta property="og:type" content="website" />
   
   <title>${htmlTitle}</title>
-  
-  <!-- Favicon from original site or default fallback -->
-  <link rel="icon" type="image/png" href="${faviconPng}">
-  <link rel="shortcut icon" href="${faviconIco}" type="image/x-icon">
+  ${faviconTags}
   
   <!-- Google reCAPTCHA (load conditionally) -->
   <script>
