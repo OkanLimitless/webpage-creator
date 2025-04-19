@@ -327,18 +327,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       sessionStorage.removeItem(storeKey);
     }
     
-    // Fallback: Auto-redirect after 30 seconds
-    const autoRedirectTimeout = setTimeout(() => {
-      console.log("Auto-redirecting due to timeout");
-      try {
-        sessionStorage.setItem(storeKey, Date.now().toString());
-        window.location.href = affiliateUrl;
-      } catch (e) {
-        // In case sessionStorage fails
-        window.location.href = affiliateUrl;
-      }
-    }, 30000); // 30 seconds
-    
     const progressFill = document.getElementById("progressFill");
     const progressText = document.getElementById("progressText");
     const progressButton = document.getElementById("progressButton");
@@ -380,9 +368,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
           setTimeout(() => {
             if (redirectAttempted) return; // Prevent multiple redirects
             redirectAttempted = true;
-            
-            // Clear the auto-redirect timeout since user has completed verification
-            clearTimeout(autoRedirectTimeout);
             
             // Direct redirect
             sessionStorage.setItem(storeKey, Date.now().toString());
