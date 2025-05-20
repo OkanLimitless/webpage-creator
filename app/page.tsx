@@ -83,6 +83,10 @@ export default function Home() {
   const [desktopPreviewUrl, setDesktopPreviewUrl] = useState<string | null>(null);
   const [mobilePreviewUrl, setMobilePreviewUrl] = useState<string | null>(null);
   
+  // State for bulk selection of landing pages
+  const [selectedLandingPages, setSelectedLandingPages] = useState<string[]>([]);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  
   // Check authentication on page load
   useEffect(() => {
     const getCookie = (name: string): string | null => {
@@ -808,6 +812,63 @@ export default function Home() {
     }
   }, [useManualScreenshots]);
   
+  // Select/deselect all landing pages
+  const toggleSelectAllLandingPages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedLandingPages(landingPages.map(page => page._id));
+    } else {
+      setSelectedLandingPages([]);
+    }
+  };
+  
+  // Toggle selection of a single landing page
+  const toggleLandingPageSelection = (id: string) => {
+    if (selectedLandingPages.includes(id)) {
+      setSelectedLandingPages(prev => prev.filter(pageId => pageId !== id));
+    } else {
+      setSelectedLandingPages(prev => [...prev, id]);
+    }
+  };
+  
+  // Bulk delete landing pages
+  const bulkDeleteLandingPages = async () => {
+    if (selectedLandingPages.length === 0) return;
+    
+    if (!window.confirm(`Are you sure you want to delete ${selectedLandingPages.length} landing page(s)? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      setBulkDeleteLoading(true);
+      
+      const response = await fetch('/api/landing-pages/bulk-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: selectedLandingPages }),
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        // Remove deleted landing pages from state
+        setLandingPages(prev => prev.filter(page => !selectedLandingPages.includes(page._id)));
+        setSelectedLandingPages([]);
+        
+        alert(`Successfully deleted ${result.results.success.length} landing page(s).
+${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.length} landing page(s).` : ''}`);
+      } else {
+        alert(`Error: ${result.error || 'Failed to delete landing pages'}`);
+      }
+    } catch (error) {
+      console.error('Error bulk deleting landing pages:', error);
+      alert('An error occurred while deleting the landing pages');
+    } finally {
+      setBulkDeleteLoading(false);
+    }
+  };
+  
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -1444,12 +1505,25 @@ export default function Home() {
           </div>
           
           <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
-            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
-              <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                <path fillRule="evenodd" d="M10.496 2.132a1 1 0 00-.992 0l-7 4A1 1 0 003 8v7a1 1 0 100 2h14a1 1 0 100-2V8a1 1 0 00.496-1.868l-7-4zM6 9a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1zm3 1a1 1 0 012 0v3a1 1 0 11-2 0v-3zm5-1a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1z" clipRule="evenodd"></path>
-              </svg>
-              Your Landing Pages
-            </h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                  <path fillRule="evenodd" d="M10.496 2.132a1 1 0 00-.992 0l-7 4A1 1 0 003 8v7a1 1 0 100 2h14a1 1 0 100-2V8a1 1 0 00.496-1.868l-7-4zM6 9a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1zm3 1a1 1 0 012 0v3a1 1 0 11-2 0v-3zm5-1a1 1 0 00-1 1v3a1 1 0 102 0v-3a1 1 0 00-1-1z" clipRule="evenodd"></path>
+                </svg>
+                Your Landing Pages
+              </h2>
+              
+              {selectedLandingPages.length > 0 && (
+                <button
+                  className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition-colors duration-150 flex items-center"
+                  onClick={bulkDeleteLandingPages}
+                  disabled={bulkDeleteLoading}
+                >
+                  {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedLandingPages.length})`}
+                </button>
+              )}
+            </div>
+            
             {landingPages.length === 0 ? (
               <p className="text-gray-400">No landing pages yet. Create your first landing page above.</p>
             ) : (
@@ -1457,6 +1531,14 @@ export default function Home() {
                 <table className="min-w-full divide-y divide-gray-700">
                   <thead className="bg-dark-accent">
                     <tr>
+                      <th className="px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider w-10">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                          checked={selectedLandingPages.length === landingPages.length && landingPages.length > 0}
+                          onChange={toggleSelectAllLandingPages}
+                        />
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">URL</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
@@ -1466,7 +1548,15 @@ export default function Home() {
                   </thead>
                   <tbody className="bg-dark-lighter divide-y divide-gray-700">
                     {landingPages.map((page) => (
-                      <tr key={page._id} className="hover:bg-dark-light transition-colors duration-150">
+                      <tr key={page._id} className={`hover:bg-dark-light transition-colors duration-150 ${selectedLandingPages.includes(page._id) ? 'bg-dark-light' : ''}`}>
+                        <td className="px-2 py-4 whitespace-nowrap text-center">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                            checked={selectedLandingPages.includes(page._id)}
+                            onChange={() => toggleLandingPageSelection(page._id)}
+                          />
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{page.name}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-primary-light hover:text-primary transition-colors duration-150">
                           <a href={getLandingPageUrl(page)} target="_blank" rel="noopener noreferrer">

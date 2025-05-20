@@ -16,6 +16,10 @@ export default function DomainsList() {
   const [domains, setDomains] = useState<Domain[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for bulk selection and deletion
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Function to fetch domains
   const fetchDomains = async () => {
@@ -52,6 +56,63 @@ export default function DomainsList() {
       setError(err.message || 'An error occurred while fetching domains');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // Select/deselect all domains
+  const toggleSelectAllDomains = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedDomains(domains.map(domain => domain._id));
+    } else {
+      setSelectedDomains([]);
+    }
+  };
+  
+  // Toggle selection of a single domain
+  const toggleDomainSelection = (id: string) => {
+    if (selectedDomains.includes(id)) {
+      setSelectedDomains(prev => prev.filter(domainId => domainId !== id));
+    } else {
+      setSelectedDomains(prev => [...prev, id]);
+    }
+  };
+  
+  // Bulk delete domains
+  const bulkDeleteDomains = async () => {
+    if (selectedDomains.length === 0) return;
+    
+    if (!window.confirm(`Are you sure you want to delete ${selectedDomains.length} domain(s)? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      setBulkDeleteLoading(true);
+      
+      const response = await fetch('/api/domains/bulk-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: selectedDomains }),
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        // Remove deleted domains from state
+        setDomains(prev => prev.filter(domain => !selectedDomains.includes(domain._id)));
+        setSelectedDomains([]);
+        
+        alert(`Successfully deleted ${result.results.success.length} domain(s).
+${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.length} domain(s). This could be because they have landing pages or other issues.` : ''}`);
+      } else {
+        alert(`Error: ${result.error || 'Failed to delete domains'}`);
+      }
+    } catch (error) {
+      console.error('Error bulk deleting domains:', error);
+      alert('An error occurred while deleting the domains');
+    } finally {
+      setBulkDeleteLoading(false);
     }
   };
 
@@ -91,12 +152,32 @@ export default function DomainsList() {
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-6">Manage Domains</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Manage Domains</h1>
+        
+        {selectedDomains.length > 0 && (
+          <button
+            className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition-colors duration-150 flex items-center"
+            onClick={bulkDeleteDomains}
+            disabled={bulkDeleteLoading}
+          >
+            {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedDomains.length})`}
+          </button>
+        )}
+      </div>
       
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500"
+                  checked={selectedDomains.length === domains.length && domains.length > 0}
+                  onChange={toggleSelectAllDomains}
+                />
+              </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Domain Name
               </th>
@@ -116,7 +197,15 @@ export default function DomainsList() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {domains.map((domain) => (
-              <tr key={domain._id}>
+              <tr key={domain._id} className={selectedDomains.includes(domain._id) ? 'bg-gray-50' : ''}>
+                <td className="px-2 py-4 whitespace-nowrap text-center">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500"
+                    checked={selectedDomains.includes(domain._id)}
+                    onChange={() => toggleDomainSelection(domain._id)}
+                  />
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <Link href={`/admin/domains/${domain._id}`}>
                     <div className="text-sm font-medium text-blue-600 hover:text-blue-800">{domain.name}</div>
