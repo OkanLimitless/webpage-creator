@@ -65,6 +65,10 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <link rel="shortcut icon" href="${faviconIco}" type="image/x-icon">
   `;
   
+  // Cookie banner images
+  const cookieBannerDesktop = "https://storage.googleapis.com/filtrify-public-assets/filtripage/presellTypes/en/cookies_en_desktop.png";
+  const cookieBannerMobile = "https://storage.googleapis.com/filtrify-public-assets/filtripage/presellTypes/en/cookies_en_mobile.png";
+  
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -168,8 +172,26 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     }
 
     .popup img {
-      max-width: 150px;
+      max-width: 100%;
       margin-bottom: 20px;
+    }
+    
+    .popup img.desktop-banner {
+      display: block;
+    }
+    
+    .popup img.mobile-banner {
+      display: none;
+    }
+    
+    @media (max-width: 768px) {
+      .popup img.desktop-banner {
+        display: none;
+      }
+      
+      .popup img.mobile-banner {
+        display: block;
+      }
     }
 
     .popup h1 {
@@ -190,66 +212,26 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       color: #555;
     }
 
-    .verified-message {
-      font-size: 18px;
-      font-weight: bold;
-      margin-top: 20px;
-      transition: opacity 0.5s ease;
-      min-height: 28px;
-    }
-
-    .verified-message.success {
-      color: green;
-    }
-
-    .verified-message.error {
-      color: red;
-    }
-
-    .progress-button {
+    .accept-button {
       margin-top: 20px;
       width: 100%;
       height: 45px;
-      background-color: #ffffff;
+      background-color: #007BFF;
       border-radius: 25px;
-      border: 2px solid #007BFF;
-      position: relative;
-      overflow: hidden;
+      border: none;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 16px;
       font-weight: bold;
-      color: #007BFF;
-      user-select: none;
-      cursor: pointer;
-    }
-
-    .progress-fill {
-      position: absolute;
-      height: 100%;
-      width: 0%;
-      background-color: #007BFF;
-      top: 0;
-      left: 0;
-      transition: width 0.05s linear;
-      z-index: 0;
-    }
-
-    .progress-text {
-      position: relative;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .progress-button.fill-white .progress-text {
       color: white;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background-color 0.3s ease;
     }
-
-    #manualLink {
-      margin-top: 10px;
-      font-size: 13px;
-      display: none;
+    
+    .accept-button:hover {
+      background-color: #0056b3;
     }
 
     footer {
@@ -280,23 +262,17 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     <div class="background-image background-image-mobile"></div>
   </div>
 
-  <div class="container" id="pressArea">
+  <div class="container">
     <div class="popup">
       <h1>Welcome to ${siteName}</h1>
-      <img src="${desktopScreenshotUrl}" alt="${siteName} Logo" />
-      <h2>Before We Continue</h2>
-      <p>🛡️<b> Press and Hold</b> to Verify You're Human and Continue Safely!</p>
-
-      <div class="progress-button" id="progressButton">
-        <div class="progress-fill" id="progressFill"></div>
-        <div class="progress-text" id="progressText"><span style="margin-right: 6px;">👉</span>Press to Verify</div>
-      </div>
-
-      <div class="verified-message" id="verifiedMessage"></div>
-
-      <p id="manualLink">
-        Having trouble? <a href="${affiliateUrl}" style="color: #007BFF; text-decoration: underline;">Click here to continue manually</a>
-      </p>
+      
+      <!-- Cookie banners -->
+      <img src="${cookieBannerDesktop}" alt="Accept Cookies" class="desktop-banner" />
+      <img src="${cookieBannerMobile}" alt="Accept Cookies" class="mobile-banner" />
+      
+      <a href="${affiliateUrl}" id="acceptButton" class="accept-button">
+        Accept & Continue
+      </a>
     </div>
   </div>
 
@@ -306,17 +282,14 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   </footer>
 
   <script>
-    // Use sessionStorage instead of localStorage to only remember verification for current tab session
+    // Use sessionStorage to only remember acceptance for current tab session
     const storeKey = '${siteName.toLowerCase().replace(/\W+/g, "_")}_verified';
     const sessionKey = '${siteName.toLowerCase().replace(/\W+/g, "_")}_current_session';
     const currentSession = Date.now().toString();
     const affiliateUrl = '${affiliateUrl}';
     
-    // Store a unique session ID and compare it to detect new visits even in the same session
-    const savedSession = sessionStorage.getItem(sessionKey);
+    // Check if user has already accepted in current session
     const lastVerifiedTime = parseInt(sessionStorage.getItem(storeKey) || '0', 10);
-    
-    // Check if this is a new session or if the verification is very old (more than 15 minutes)
     const isRecentVerification = lastVerifiedTime > 0 && (Date.now() - lastVerifiedTime) < 15 * 60 * 1000;
     
     // If recently verified in this browser tab session, redirect
@@ -327,135 +300,14 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       sessionStorage.removeItem(storeKey);
     }
     
-    const progressFill = document.getElementById("progressFill");
-    const progressText = document.getElementById("progressText");
-    const progressButton = document.getElementById("progressButton");
-    const verifiedMsg = document.getElementById("verifiedMessage");
-    const pressArea = document.getElementById("pressArea");
-    
-    let interval;
-    let progressValue = 0;
-    const holdTime = 2000; // 2 seconds hold time
-    const updateRate = 50;
-    let loadingInterval;
-    let failCount = 0;
-    let redirectAttempted = false;
-    
-    const startHold = () => {
-      resetProgress();
-      verifiedMsg.innerHTML = "";
-      verifiedMsg.classList.remove("error", "success");
-      
-      interval = setInterval(() => {
-        progressValue += updateRate;
-        const percent = Math.min((progressValue / holdTime) * 100, 100);
-        progressFill.style.width = percent + "%";
-        
-        if (percent >= 50) {
-          progressButton.classList.add("fill-white");
-        } else {
-          progressButton.classList.remove("fill-white");
-        }
-        
-        if (progressValue >= holdTime) {
-          clearInterval(interval);
-          progressText.innerText = "⏳ Loading...";
-          animateLoadingText();
-          verifiedMsg.innerHTML = "✅ 100% Verified";
-          verifiedMsg.classList.add("success");
-          
-          // Handle redirection
-          setTimeout(() => {
-            if (redirectAttempted) return; // Prevent multiple redirects
-            redirectAttempted = true;
-            
-            // Direct redirect
-            sessionStorage.setItem(storeKey, Date.now().toString());
-            
-            // Set a backup timeout to ensure redirection happens
-            const redirectTimeout = setTimeout(() => {
-              window.location.href = affiliateUrl;
-            }, 1000);
-            
-            // Direct redirect
-            window.location.href = affiliateUrl;
-          }, 1000);
-        }
-      }, updateRate);
-    };
-    
-    const resetProgress = () => {
-      clearInterval(interval);
-      clearInterval(loadingInterval);
-      
-      if (progressValue >= holdTime) {
-        progressText.innerText = "⏳ Loading...";
-      } else {
-        failCount++;
-        verifiedMsg.innerHTML = "Press and hold for 2 seconds to continue!";
-        verifiedMsg.classList.remove("success");
-        verifiedMsg.classList.add("error");
-        progressValue = 0;
-        progressFill.style.width = "0%";
-        progressButton.classList.remove("fill-white");
-        progressText.innerHTML = "<span style='margin-right: 6px;'>👉</span>Press to Verify";
-        
-        // Show manual link if user is struggling
-        if (failCount >= 3) {
-          const manualLink = document.getElementById("manualLink");
-          if (manualLink) {
-            manualLink.style.display = "block";
-          }
-        }
-      }
-    };
-    
-    const animateLoadingText = () => {
-      let dots = "";
-      loadingInterval = setInterval(() => {
-        dots = dots.length < 3 ? dots + "." : "";
-        progressText.innerText = "⏳ Loading" + dots;
-      }, 500);
-    };
-    
-    // Mouse events for desktop
-    pressArea.addEventListener("mousedown", startHold);
-    pressArea.addEventListener("mouseup", resetProgress);
-    pressArea.addEventListener("mouseleave", resetProgress);
-    
-    // Touch events for mobile
-    pressArea.addEventListener("touchstart", (e) => {
+    // Set up the accept button
+    document.getElementById("acceptButton").addEventListener("click", function(e) {
       e.preventDefault();
-      startHold();
+      // Store verification in session storage
+      sessionStorage.setItem(storeKey, Date.now().toString());
+      // Redirect to affiliate URL
+      window.location.href = affiliateUrl;
     });
-    pressArea.addEventListener("touchend", resetProgress);
-    
-    // Handle possible redirection errors
-    window.addEventListener('error', function(event) {
-      if (redirectAttempted && !window.location.href.includes(affiliateUrl)) {
-        tryFallbackRedirect();
-      }
-    });
-    
-    // Check if redirection has happened after load
-    window.onload = function() {
-      // If verification was successful but we're still on this page after 3 seconds
-      if (redirectAttempted) {
-        setTimeout(tryFallbackRedirect, 3000);
-      }
-    };
-    
-    // Helper for fallback redirection
-    function tryFallbackRedirect() {
-      console.log("Using fallback redirect method");
-      try {
-        sessionStorage.setItem(storeKey, Date.now().toString());
-        window.location.replace(affiliateUrl);
-      } catch (e) {
-        // Last resort - open in new tab
-        window.open(affiliateUrl, '_blank');
-      }
-    }
   </script>
 </body>
 </html>`;
