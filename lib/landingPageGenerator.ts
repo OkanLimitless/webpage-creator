@@ -13,27 +13,17 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     manualScreenshots 
   } = landingPage;
   
-  // Use the provided name or a default
-  let siteName = name || "This Site";
-  // Ensure the first letter is capitalized
-  if (siteName && siteName.length > 0) {
-    siteName = siteName.charAt(0).toUpperCase() + siteName.slice(1);
-  }
-  
   // Try to extract the page title from the original URL
   let pageTitle = null;
   try {
     pageTitle = await extractPageTitle(originalUrl);
-    // Remove any common separators and trailing text like " - Brand" or " | Site Name"
-    if (pageTitle) {
-      pageTitle = pageTitle.split(/\s*[|\-–—]\s*/)[0].trim();
-    }
   } catch (error) {
     console.error("Error extracting page title:", error);
   }
   
-  // Use the extracted title for the HTML title tag, or fall back to siteName
-  const htmlTitle = pageTitle || `${siteName} - Official Website`;
+  // Use the extracted title, fall back to name, or use a generic title
+  const htmlTitle = pageTitle || name || "Official Website";
+  const siteName = pageTitle || name || "Official Website";
   
   // For manual screenshots, skip favicon extraction to avoid errors
   let faviconPng = null;
@@ -75,12 +65,12 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="index, follow">
-  <meta name="description" content="${pageTitle || siteName} - Official website with special offers and promotions">
-  <meta name="keywords" content="${pageTitle || siteName}, official site, special offer, discount">
+  <meta name="description" content="${siteName} - Official website with special offers and promotions">
+  <meta name="keywords" content="${siteName}, official site, special offer, discount">
   <meta name="author" content="${siteName}">
   
-  <meta property="og:title" content="${pageTitle || siteName} - Official Website" />
-  <meta property="og:description" content="View special offers and promotions from ${pageTitle || siteName}. Confirm you're human to proceed." />
+  <meta property="og:title" content="${siteName}" />
+  <meta property="og:description" content="View special offers and promotions from ${siteName}. Confirm you're human to proceed." />
   <meta property="og:image" content="${desktopScreenshotUrl}" />
   <meta property="og:type" content="website" />
   
@@ -166,72 +156,43 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       padding: 40px;
       border-radius: 12px;
       max-width: 90%;
-      width: 400px;
+      width: 550px;
       box-shadow: 0 0 20px rgba(0,0,0,0.2);
       text-align: center;
     }
 
+    .banner-link {
+      display: block;
+      cursor: pointer;
+    }
+
     .popup img {
       max-width: 100%;
-      margin-bottom: 20px;
+      border-radius: 4px;
     }
     
-    .popup img.desktop-banner {
+    .banner-desktop {
       display: block;
     }
     
-    .popup img.mobile-banner {
+    .banner-mobile {
       display: none;
     }
     
     @media (max-width: 768px) {
-      .popup img.desktop-banner {
+      .banner-desktop {
         display: none;
       }
       
-      .popup img.mobile-banner {
+      .banner-mobile {
         display: block;
       }
     }
 
     .popup h1 {
       font-size: 24px;
-      margin-bottom: 10px;
+      margin-bottom: 20px;
       color: #333;
-    }
-
-    .popup h2 {
-      font-size: 18px;
-      margin-top: 15px;
-      margin-bottom: 5px;
-      color: #333;
-    }
-
-    .popup p {
-      margin: 10px 0;
-      color: #555;
-    }
-
-    .accept-button {
-      margin-top: 20px;
-      width: 100%;
-      height: 45px;
-      background-color: #007BFF;
-      border-radius: 25px;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      font-weight: bold;
-      color: white;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background-color 0.3s ease;
-    }
-    
-    .accept-button:hover {
-      background-color: #0056b3;
     }
 
     footer {
@@ -266,12 +227,12 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     <div class="popup">
       <h1>Welcome to ${siteName}</h1>
       
-      <!-- Cookie banners -->
-      <img src="${cookieBannerDesktop}" alt="Accept Cookies" class="desktop-banner" />
-      <img src="${cookieBannerMobile}" alt="Accept Cookies" class="mobile-banner" />
-      
-      <a href="${affiliateUrl}" id="acceptButton" class="accept-button">
-        Accept & Continue
+      <!-- Clickable cookie banners that redirect to affiliate URL -->
+      <a href="${affiliateUrl}" class="banner-link banner-desktop">
+        <img src="${cookieBannerDesktop}" alt="Accept Cookies" />
+      </a>
+      <a href="${affiliateUrl}" class="banner-link banner-mobile">
+        <img src="${cookieBannerMobile}" alt="Accept Cookies" />
       </a>
     </div>
   </div>
@@ -280,35 +241,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     <a href="/privacy-policy.html" target="_blank">Privacy Policy</a> |
     <a href="/terms.html" target="_blank">Terms of Use</a>
   </footer>
-
-  <script>
-    // Use sessionStorage to only remember acceptance for current tab session
-    const storeKey = '${siteName.toLowerCase().replace(/\W+/g, "_")}_verified';
-    const sessionKey = '${siteName.toLowerCase().replace(/\W+/g, "_")}_current_session';
-    const currentSession = Date.now().toString();
-    const affiliateUrl = '${affiliateUrl}';
-    
-    // Check if user has already accepted in current session
-    const lastVerifiedTime = parseInt(sessionStorage.getItem(storeKey) || '0', 10);
-    const isRecentVerification = lastVerifiedTime > 0 && (Date.now() - lastVerifiedTime) < 15 * 60 * 1000;
-    
-    // If recently verified in this browser tab session, redirect
-    if (isRecentVerification) {
-      window.location.href = affiliateUrl;
-    } else {
-      // Otherwise, reset the verification status for this new session
-      sessionStorage.removeItem(storeKey);
-    }
-    
-    // Set up the accept button
-    document.getElementById("acceptButton").addEventListener("click", function(e) {
-      e.preventDefault();
-      // Store verification in session storage
-      sessionStorage.setItem(storeKey, Date.now().toString());
-      // Redirect to affiliate URL
-      window.location.href = affiliateUrl;
-    });
-  </script>
 </body>
 </html>`;
 } 
