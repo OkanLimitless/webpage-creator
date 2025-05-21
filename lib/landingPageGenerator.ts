@@ -97,78 +97,28 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       font-family: Arial, sans-serif;
       height: 100%;
       overflow: hidden;
+      background-color: rgba(0, 0, 0, 0.5);
     }
 
-    .background-container {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100vh;
-      z-index: -2;
-      overflow: hidden;
-      background-color: #000;
-    }
-
-    .background-image {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      background-size: cover;
-      background-position: center;
-      filter: blur(3px);
-      transform: scale(1.05);
-      opacity: 0.4;
-    }
-
-    .background-image-mobile {
-      background-image: url('${mobileScreenshotUrl}');
-      display: none;
-    }
-
-    .background-image-desktop {
-      background-image: url('${desktopScreenshotUrl}');
-      display: block;
-    }
-
-    @media (max-width: 768px) {
-      .background-image-desktop {
-        display: none;
-      }
-
-      .background-image-mobile {
-        display: block;
-      }
-    }
-
-    .container {
-      height: 100%;
+    .banner-container {
       display: flex;
       align-items: center;
       justify-content: center;
+      height: 100vh;
       padding: 20px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .popup {
-      background: rgba(255, 255, 255, 0.95);
-      padding: 40px;
-      border-radius: 12px;
-      max-width: 90%;
-      width: 550px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.2);
-      text-align: center;
     }
 
     .banner-link {
       display: block;
+      max-width: 550px;
+      width: 100%;
       cursor: pointer;
     }
 
-    .popup img {
-      max-width: 100%;
-      border-radius: 4px;
+    .banner-link img {
+      width: 100%;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
     }
     
     .banner-desktop {
@@ -189,52 +139,31 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       }
     }
 
-    .popup h1 {
-      font-size: 24px;
-      margin-bottom: 20px;
-      color: #333;
-    }
-
     footer {
       position: absolute;
       bottom: 10px;
       width: 100%;
       text-align: center;
       font-size: 12px;
-      color: #aaa;
+      color: #fff;
     }
 
     footer a {
-      color: #aaa;
+      color: #fff;
       text-decoration: underline;
       margin: 0 5px;
-    }
-
-    @media (max-width: 480px) {
-      .popup {
-        padding: 30px 20px;
-      }
     }
   </style>
 </head>
 <body>
-  <div class="background-container">
-    <div class="background-image background-image-desktop"></div>
-    <div class="background-image background-image-mobile"></div>
-  </div>
-
-  <div class="container">
-    <div class="popup">
-      <h1>Welcome to ${siteName}</h1>
-      
-      <!-- Clickable cookie banners that redirect to affiliate URL -->
-      <a href="${affiliateUrl}" class="banner-link banner-desktop">
-        <img src="${cookieBannerDesktop}" alt="Accept Cookies" />
-      </a>
-      <a href="${affiliateUrl}" class="banner-link banner-mobile">
-        <img src="${cookieBannerMobile}" alt="Accept Cookies" />
-      </a>
-    </div>
+  <div class="banner-container">
+    <!-- Clickable cookie banners that redirect to affiliate URL -->
+    <a href="${affiliateUrl}" class="banner-link banner-desktop">
+      <img src="${cookieBannerDesktop}" alt="Accept Cookies" />
+    </a>
+    <a href="${affiliateUrl}" class="banner-link banner-mobile">
+      <img src="${cookieBannerMobile}" alt="Accept Cookies" />
+    </a>
   </div>
 
   <footer>
