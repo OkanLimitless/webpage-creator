@@ -97,7 +97,48 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       font-family: Arial, sans-serif;
       height: 100%;
       overflow: hidden;
-      background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .background-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      z-index: -2;
+      overflow: hidden;
+      background-color: #000;
+    }
+
+    .background-image {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background-size: cover;
+      background-position: center;
+      filter: blur(3px);
+      transform: scale(1.05);
+      opacity: 0.4;
+    }
+
+    .background-image-mobile {
+      background-image: url('${mobileScreenshotUrl}');
+      display: none;
+    }
+
+    .background-image-desktop {
+      background-image: url('${desktopScreenshotUrl}');
+      display: block;
+    }
+
+    @media (max-width: 768px) {
+      .background-image-desktop {
+        display: none;
+      }
+
+      .background-image-mobile {
+        display: block;
+      }
     }
 
     .banner-container {
@@ -118,7 +159,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     .banner-link img {
       width: 100%;
       border-radius: 8px;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
     }
     
     .banner-desktop {
@@ -156,6 +197,11 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   </style>
 </head>
 <body>
+  <div class="background-container">
+    <div class="background-image background-image-desktop"></div>
+    <div class="background-image background-image-mobile"></div>
+  </div>
+
   <div class="banner-container">
     <!-- Clickable cookie banners that redirect to affiliate URL -->
     <a href="${affiliateUrl}" class="banner-link banner-desktop">
