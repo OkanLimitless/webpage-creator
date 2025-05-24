@@ -30,9 +30,10 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
     },
     subdomain: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
       lowercase: true,
+      default: '',
     },
     affiliateUrl: {
       type: String,
@@ -73,7 +74,18 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
 );
 
 // Create a compound index for domainId and subdomain to ensure uniqueness
-LandingPageSchema.index({ domainId: 1, subdomain: 1 }, { unique: true });
+// For external domains (empty subdomain), only one landing page per domain is allowed
+// For regular domains, subdomain must be unique within the domain
+LandingPageSchema.index({ domainId: 1, subdomain: 1 }, { 
+  unique: true,
+  partialFilterExpression: { subdomain: { $ne: '' } }  // Only apply uniqueness when subdomain is not empty
+});
+
+// Separate index to ensure only one landing page per domain when subdomain is empty (external domains)
+LandingPageSchema.index({ domainId: 1 }, { 
+  unique: true,
+  partialFilterExpression: { subdomain: '' }  // Only apply when subdomain is empty
+});
 
 // Check if model already exists to prevent recompilation in development
 export const LandingPage = mongoose.models.LandingPage || 
