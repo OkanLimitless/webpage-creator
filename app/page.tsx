@@ -16,6 +16,8 @@ interface Domain {
   verificationKey?: string;
   landingPageCount?: number;
   banCount?: number;
+  dnsManagement?: 'cloudflare' | 'external';
+  targetCname?: string;
 }
 
 // Landing page type
@@ -49,6 +51,7 @@ export default function Home() {
   
   // Form state
   const [domainName, setDomainName] = useState('');
+  const [dnsManagement, setDnsManagement] = useState<'cloudflare' | 'external'>('cloudflare');
   const [landingPageName, setLandingPageName] = useState('');
   const [selectedDomainId, setSelectedDomainId] = useState('');
   const [subdomain, setSubdomain] = useState('');
@@ -214,7 +217,10 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: domainName }),
+        body: JSON.stringify({ 
+          name: domainName,
+          dnsManagement 
+        }),
       });
       
       if (response.ok) {
@@ -222,7 +228,12 @@ export default function Home() {
         setDomainName('');
         // Add new domain to state
         setDomains(prev => [...prev, data]);
-        alert('Domain added successfully. Please update your domain nameservers to the ones shown in the table.');
+        
+        if (dnsManagement === 'external') {
+          alert(data.message || 'External domain added successfully. Please create the required DNS record.');
+        } else {
+          alert('Domain added successfully. Please update your domain nameservers to the ones shown in the table.');
+        }
       } else {
         const errorData = await response.json();
         alert(`Error: ${errorData.error || 'Failed to add domain'}`);
@@ -676,8 +687,14 @@ export default function Home() {
   const getOtherDomains = (): Domain[] => {
     return domains.filter(domain => 
       domain.verificationStatus !== 'active' && 
-      domain.verificationStatus !== 'pending'
+      domain.verificationStatus !== 'pending' &&
+      domain.dnsManagement !== 'external'
     );
+  };
+  
+  // Function to get external domains
+  const getExternalDomains = (): Domain[] => {
+    return domains.filter(domain => domain.dnsManagement === 'external');
   };
   
   // Add this function to update Google Ads account ID
@@ -869,6 +886,34 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     }
   };
   
+  // Verify external domain DNS
+  const verifyExternalDomain = async (id: string) => {
+    try {
+      const response = await fetch(`/api/domains/${id}/verify-external`, {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.verified) {
+        // Update domain status in local state
+        setDomains(prev => prev.map(domain => 
+          domain._id === id 
+            ? { ...domain, verificationStatus: 'active' }
+            : domain
+        ));
+        alert('Domain verified successfully! DNS is correctly pointing to Vercel.');
+      } else if (data.success && !data.verified) {
+        alert(`Domain verification failed: ${data.message}\n\nExpected targets: ${data.expectedTargets?.join(' or ')}`);
+      } else {
+        alert(`Verification failed: ${data.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error verifying external domain:', error);
+      alert('An error occurred while verifying the domain');
+    }
+  };
+  
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -979,6 +1024,46 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 value={domainName}
                 onChange={(e) => setDomainName(e.target.value)}
               />
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  DNS Management
+                </label>
+                <select 
+                  value={dnsManagement}
+                  onChange={(e) => setDnsManagement(e.target.value as 'cloudflare' | 'external')}
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                >
+                  <option value="cloudflare">Cloudflare (Full Control)</option>
+                  <option value="external">External/Third-Party DNS</option>
+                </select>
+              </div>
+
+              {dnsManagement === 'external' && (
+                <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-md">
+                  <h4 className="font-medium text-blue-300 mb-2">📋 Setup Instructions</h4>
+                  <div className="text-sm text-blue-200 space-y-2">
+                    <p>After adding this domain, you'll need to create a DNS record:</p>
+                    <div className="bg-blue-800/50 p-2 rounded font-mono text-xs text-blue-100">
+                      CNAME {domainName || '[your-domain]'} → cname.vercel-dns.com
+                    </div>
+                    <p className="text-xs text-blue-300">
+                      Ask your domain provider to create this CNAME record pointing to Vercel.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {dnsManagement === 'cloudflare' && (
+                <div className="p-4 bg-green-900/30 border border-green-700 rounded-md">
+                  <h4 className="font-medium text-green-300 mb-2">⚡ Cloudflare Management</h4>
+                  <p className="text-sm text-green-200">
+                    We'll create a Cloudflare zone and configure DNS records automatically. 
+                    You'll need to update your nameservers to the ones provided.
+                  </p>
+                </div>
+              )}
+              
               <div className="flex space-x-2">
                 <button 
                   className={`px-4 py-2 rounded-md text-white font-medium ${
@@ -1279,6 +1364,77 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                                 <div className="flex space-x-2">
+                                  <button 
+                                    className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                                    onClick={() => deleteDomain(domain._id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                
+                {/* External Domains */}
+                {getExternalDomains().length > 0 && (
+                  <div className="mb-8">
+                    <h3 className="text-lg font-medium mb-2 text-blue-300 flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd"></path>
+                      </svg>
+                      External DNS Domains ({getExternalDomains().length})
+                    </h3>
+                    <p className="text-gray-400 text-sm mb-4">
+                      These domains use external DNS management. Create the required DNS records at your domain provider.
+                    </p>
+                    <div className="overflow-x-auto rounded-lg border border-dark-accent">
+                      <table className="min-w-full divide-y divide-gray-700">
+                        <thead className="bg-dark-accent">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">DNS Setup Required</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-dark-lighter divide-y divide-gray-700">
+                          {getExternalDomains().map((domain) => (
+                            <tr key={domain._id} className="hover:bg-dark-light transition-colors duration-150">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{domain.name}</td>
+                              <td className="px-6 py-4 text-sm text-blue-300">
+                                <div className="space-y-1">
+                                  <div className="font-mono text-xs bg-blue-900/30 p-2 rounded">
+                                    CNAME {domain.name} → cname.vercel-dns.com
+                                  </div>
+                                  <p className="text-xs text-gray-400">
+                                    Create this DNS record at your domain provider
+                                  </p>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  domain.verificationStatus === 'active'
+                                    ? 'bg-green-900 text-green-300' 
+                                    : 'bg-yellow-900 text-yellow-300'
+                                }`}>
+                                  {domain.verificationStatus === 'active' ? 'Verified' : 'Pending DNS'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                <div className="flex space-x-2">
+                                  {domain.verificationStatus !== 'active' && (
+                                    <button 
+                                      className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-blue-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                                      onClick={() => verifyExternalDomain(domain._id)}
+                                    >
+                                      Verify DNS
+                                    </button>
+                                  )}
                                   <button 
                                     className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                                     onClick={() => deleteDomain(domain._id)}
