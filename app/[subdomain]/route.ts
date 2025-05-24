@@ -63,23 +63,43 @@ export async function GET(request: NextRequest, { params }: Params) {
     
     console.log(`Final values - Subdomain: ${subdomain}, Domain: ${domain}`);
     
-    // Find the domain in our database
-    console.log(`Looking up domain '${domain}' in database`);
-    const domainDoc = await Domain.findOne({ name: domain });
+    // For external domains, the full domain (including subdomain) might be stored in the database
+    // So we need to check both the full domain and the base domain
+    console.log(`Looking up domain in database. Trying full domain first: '${host.replace(/:\d+$/, '')}'`);
+    
+    // First try to find the full domain (for external domains like medvi.wellnesstoday180.org)
+    let domainDoc = await Domain.findOne({ name: host.replace(/:\d+$/, '') });
     
     if (!domainDoc) {
-      console.error(`Domain not found in database: ${domain}`);
+      // If not found, try the base domain (for regular domains)
+      console.log(`Full domain not found, trying base domain: '${domain}'`);
+      domainDoc = await Domain.findOne({ name: domain });
+    }
+    
+    if (!domainDoc) {
+      console.error(`Domain not found in database. Tried: '${host.replace(/:\d+$/, '')}' and '${domain}'`);
       return new NextResponse(`Domain not found: ${domain}`, { status: 404 });
     }
     
     console.log(`Found domain in database: ${domainDoc.name} (ID: ${domainDoc._id})`);
     
-    // Find the landing page
-    console.log(`Looking up landing page for subdomain '${subdomain}' on domain ID ${domainDoc._id}`);
-    const landingPage = await LandingPage.findOne({
-      domainId: domainDoc._id,
-      subdomain: subdomain,
-    });
+    // For external domains, the subdomain field will be empty, so we search differently
+    let landingPage;
+    
+    if (domainDoc.dnsManagement === 'external') {
+      // For external domains, there's only one landing page per domain (no subdomain)
+      console.log(`External domain detected, looking for landing page without subdomain filter`);
+      landingPage = await LandingPage.findOne({
+        domainId: domainDoc._id,
+      });
+    } else {
+      // For regular domains, find by subdomain
+      console.log(`Regular domain detected, looking up landing page for subdomain '${subdomain}' on domain ID ${domainDoc._id}`);
+      landingPage = await LandingPage.findOne({
+        domainId: domainDoc._id,
+        subdomain: subdomain,
+      });
+    }
     
     if (!landingPage) {
       console.error(`Landing page not found for subdomain: ${subdomain}`);

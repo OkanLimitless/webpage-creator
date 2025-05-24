@@ -283,9 +283,21 @@ function hasValidSubdomain(hostname: string): boolean {
   // Check if it's www (not a real subdomain for our routing purposes)
   if (parts[0] === 'www') return false;
   
-  // Validate if it's a known subdomain type
-  const validPrefixes = ['landing', 'app', 'dashboard', 'admin'];
-  return validPrefixes.includes(parts[0]);
+  // Allow any valid subdomain for external domains
+  // This allows external domains like medvi.wellnesstoday180.org to be recognized
+  const subdomain = parts[0];
+  
+  // Basic validation: subdomain should be alphanumeric and reasonable length
+  if (!/^[a-z0-9\-]{1,63}$/i.test(subdomain)) {
+    return false;
+  }
+  
+  // Don't allow subdomains that start or end with hyphen
+  if (subdomain.startsWith('-') || subdomain.endsWith('-')) {
+    return false;
+  }
+  
+  return true;
 }
 
 // Function to extract the subdomain from a hostname
