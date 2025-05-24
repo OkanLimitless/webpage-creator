@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     
     const body = await request.json();
-    let { name } = body;
+    let { name, dnsManagement = 'cloudflare' } = body;
     
     // Sanitize domain name - trim whitespace
     name = name.trim();
@@ -159,6 +159,14 @@ export async function POST(request: NextRequest) {
     if (!name || typeof name !== 'string') {
       return NextResponse.json(
         { error: 'Domain name is required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate dnsManagement value
+    if (dnsManagement && !['cloudflare', 'external'].includes(dnsManagement)) {
+      return NextResponse.json(
+        { error: 'dnsManagement must be either "cloudflare" or "external"' },
         { status: 400 }
       );
     }
@@ -172,6 +180,33 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Handle external DNS domains differently
+    if (dnsManagement === 'external') {
+      console.log(`Creating external DNS domain: ${name}`);
+      
+      // Create domain without Cloudflare integration
+      const domain = await Domain.create({
+        name,
+        cloudflareNameservers: [], // Empty for external domains
+        cloudflareZoneId: undefined,
+        dnsManagement: 'external',
+        targetCname: 'cname.vercel-dns.com',
+        verificationStatus: 'pending',
+        verificationKey: undefined,
+        isActive: true,
+        deploymentStatus: 'pending',
+      });
+
+      return NextResponse.json({
+        ...domain.toJSON(),
+        message: 'External domain added successfully.',
+        instructions: `Please create a CNAME record: ${name} → cname.vercel-dns.com`,
+        targetCname: 'cname.vercel-dns.com',
+        dnsSetupRequired: true
+      }, { status: 201 });
+    }
+    
+    // Continue with existing Cloudflare flow for 'cloudflare' domains
     console.log('Adding domain to Cloudflare...');
     console.log('Environment check:', {
       hasToken: !!process.env.CLOUDFLARE_API_TOKEN,
@@ -252,6 +287,7 @@ export async function POST(request: NextRequest) {
       name,
       cloudflareNameservers,
       cloudflareZoneId,
+      dnsManagement: 'cloudflare',
       verificationStatus,
       verificationKey,
       isActive: true,

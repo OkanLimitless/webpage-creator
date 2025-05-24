@@ -4,6 +4,8 @@ export interface IDomain {
   name: string;
   cloudflareNameservers: string[];
   cloudflareZoneId?: string;
+  dnsManagement: 'cloudflare' | 'external';
+  targetCname?: string;
   verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
   verificationKey?: string;
   isActive: boolean;
@@ -32,6 +34,15 @@ const DomainSchema = new mongoose.Schema<IDomain>(
       required: true,
     },
     cloudflareZoneId: {
+      type: String,
+      trim: true,
+    },
+    dnsManagement: {
+      type: String,
+      enum: ['cloudflare', 'external'],
+      default: 'cloudflare',
+    },
+    targetCname: {
       type: String,
       trim: true,
     },
