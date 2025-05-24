@@ -4,7 +4,7 @@ import { Domain } from '@/lib/models/Domain';
 import { LandingPage, ILandingPage } from '@/lib/models/LandingPage';
 import { createDnsRecord } from '@/lib/cloudflare';
 import { takeScreenshots } from '@/lib/screenshot';
-import { addDomainAndSubdomainToVercel } from '@/lib/vercel';
+import { addDomainAndSubdomainToVercel, addDomainToVercel } from '@/lib/vercel';
 import mongoose from 'mongoose';
 
 // Flag to check if we're in development mode
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
     
     // For external domains, skip Cloudflare and Vercel operations
     if (domain.dnsManagement === 'external') {
-      console.log(`External domain detected: ${domain.name}. Skipping Cloudflare and Vercel operations.`);
+      console.log(`External domain detected: ${domain.name}. Adding domain to Vercel but skipping Cloudflare DNS operations.`);
       
       // For external domains, only allow one landing page per domain (no subdomain)
       const existingPage = await LandingPage.findOne({
@@ -143,6 +143,40 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: 'External domain already has a landing page. Only one landing page per external domain is allowed.' },
           { status: 400 }
+        );
+      }
+      
+      // Add the external domain to Vercel so it can serve content for it
+      console.log(`Adding external domain ${domain.name} to Vercel`);
+      let vercelResult;
+      try {
+        vercelResult = await addDomainToVercel(domain.name);
+        console.log(`External domain added to Vercel: ${domain.name}`);
+      } catch (error: any) {
+        // Try to extract a more helpful error message
+        let errorMessage = 'Unknown error';
+        if (error.message) {
+          try {
+            // Check if this is a JSON string error from the Vercel API
+            if (error.message.includes('{"error":')) {
+              const errorData = JSON.parse(error.message.substring(error.message.indexOf('{')));
+              if (errorData.error && errorData.error.code === 'domain_already_in_use') {
+                errorMessage = `Domain ${domain.name} is already in use by project ${errorData.error.projectId}. Please choose a different domain or use the existing domain configuration.`;
+              } else {
+                errorMessage = errorData.error?.message || errorData.error?.code || 'API error';
+              }
+            } else {
+              errorMessage = error.message;
+            }
+          } catch (parseError) {
+            errorMessage = error.message;
+          }
+        }
+        
+        console.error(`Error adding external domain to Vercel: ${domain.name}`, error);
+        return NextResponse.json(
+          { error: `Failed to add external domain to Vercel: ${errorMessage}` },
+          { status: 500 }
         );
       }
       
@@ -180,13 +214,14 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json({
         ...landingPage.toJSON(),
-        vercelStatus: 'external_domain',
+        vercelStatus: vercelResult ? 'domain_added' : 'failed',
         fullDomain: domain.name,
         dnsConfiguration: {
           message: 'External domain - DNS managed externally',
-          requiredRecord: `CNAME ${domain.name} → cname.vercel-dns.com`
+          requiredRecord: `CNAME ${domain.name} → cname.vercel-dns.com`,
+          vercelStatus: vercelResult ? 'added' : 'failed'
         },
-        message: `Landing page created for external domain ${domain.name}. Make sure DNS record is configured: CNAME ${domain.name} → cname.vercel-dns.com`,
+        message: `Landing page created for external domain ${domain.name}. Domain added to Vercel. Make sure DNS record is configured: CNAME ${domain.name} → cname.vercel-dns.com`,
       }, { status: 201 });
     }
     
