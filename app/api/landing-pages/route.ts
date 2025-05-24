@@ -87,9 +87,9 @@ export async function POST(request: NextRequest) {
     } = body;
     
     // Validate required fields
-    if (!name || !domainId || !subdomain || !affiliateUrl) {
+    if (!name || !domainId || !affiliateUrl) {
       return NextResponse.json(
-        { error: 'Name, domain, subdomain, and affiliate URL are required' },
+        { error: 'Name, domain, and affiliate URL are required' },
         { status: 400 }
       );
     }
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Check if domain exists
+    // Check if domain exists and get its DNS management type
     const domain = await Domain.findById(domainId);
     if (!domain) {
       return NextResponse.json(
@@ -121,7 +121,76 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    // For non-external domains, subdomain is required
+    if (domain.dnsManagement !== 'external' && !subdomain) {
+      return NextResponse.json(
+        { error: 'Subdomain is required for non-external domains' },
+        { status: 400 }
+      );
+    }
     
+    // For external domains, skip Cloudflare and Vercel operations
+    if (domain.dnsManagement === 'external') {
+      console.log(`External domain detected: ${domain.name}. Skipping Cloudflare and Vercel operations.`);
+      
+      // For external domains, only allow one landing page per domain (no subdomain)
+      const existingPage = await LandingPage.findOne({
+        domainId,
+      });
+      
+      if (existingPage) {
+        return NextResponse.json(
+          { error: 'External domain already has a landing page. Only one landing page per external domain is allowed.' },
+          { status: 400 }
+        );
+      }
+      
+      // Generate a temporary ID for the landing page (for screenshots)
+      const tempId = new mongoose.Types.ObjectId().toString();
+      
+      // Either use the provided manual screenshots or take new ones automatically
+      let screenshotResult: { desktopUrl: string; mobileUrl: string };
+      
+      if (manualScreenshots && desktopScreenshotUrl && mobileScreenshotUrl) {
+        console.log('Using manually uploaded screenshots');
+        screenshotResult = {
+          desktopUrl: desktopScreenshotUrl,
+          mobileUrl: mobileScreenshotUrl
+        };
+      } else {
+        // Take screenshots of the original URL
+        console.log('Taking automated screenshots');
+        const effectiveOriginalUrl = originalUrl || 'https://manual-screenshots.example.com';
+        screenshotResult = await takeScreenshots(effectiveOriginalUrl, tempId);
+      }
+      
+      // Create the landing page for external domain
+      const landingPage = await LandingPage.create({
+        name,
+        domainId,
+        subdomain: '', // Empty subdomain for external domains
+        affiliateUrl,
+        originalUrl: originalUrl || (manualScreenshots ? 'https://manual-screenshots.example.com' : ''),
+        desktopScreenshotUrl: screenshotResult.desktopUrl,
+        mobileScreenshotUrl: screenshotResult.mobileUrl,
+        isActive: true,
+        manualScreenshots: manualScreenshots || false,
+      });
+      
+      return NextResponse.json({
+        ...landingPage.toJSON(),
+        vercelStatus: 'external_domain',
+        fullDomain: domain.name,
+        dnsConfiguration: {
+          message: 'External domain - DNS managed externally',
+          requiredRecord: `CNAME ${domain.name} → cname.vercel-dns.com`
+        },
+        message: `Landing page created for external domain ${domain.name}. Make sure DNS record is configured: CNAME ${domain.name} → cname.vercel-dns.com`,
+      }, { status: 201 });
+    }
+    
+    // For regular domains, continue with original logic
     // Check if the domain has a cloudflareZoneId
     if (!domain.cloudflareZoneId) {
       console.warn(`Domain ${domain.name} does not have a Cloudflare Zone ID. Using default zone.`);
@@ -211,6 +280,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Take screenshots of the original URL
       console.log('Taking automated screenshots');
+      const effectiveOriginalUrl = originalUrl || 'https://manual-screenshots.example.com';
       screenshotResult = await takeScreenshots(effectiveOriginalUrl, tempId);
     }
     
