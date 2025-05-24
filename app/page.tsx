@@ -306,9 +306,19 @@ export default function Home() {
   const addLandingPage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Check required fields based on screenshot mode
-    if (!landingPageName || !selectedDomainId || !subdomain || !affiliateUrl) {
+    // Check if selected domain is external
+    const isExternal = isSelectedDomainExternal();
+    
+    // Check required fields based on screenshot mode and domain type
+    if (!landingPageName || !selectedDomainId || !affiliateUrl) {
       alert('Please fill in all required fields');
+      return;
+    }
+    
+    // For external domains, subdomain is not required (will be empty)
+    // For regular domains, subdomain is required
+    if (!isExternal && !subdomain) {
+      alert('Please enter a subdomain');
       return;
     }
     
@@ -354,7 +364,7 @@ export default function Home() {
         body: JSON.stringify({
           name: landingPageName,
           domainId: selectedDomainId,
-          subdomain,
+          subdomain: isExternal ? '' : subdomain, // Empty subdomain for external domains
           affiliateUrl,
           originalUrl,
           manualScreenshots: useManualScreenshots,
@@ -501,20 +511,32 @@ export default function Home() {
   
   // Helper function to get landing page URL
   const getLandingPageUrl = (page: LandingPage) => {
-    // Extract domain name
+    // Extract domain name and check if it's external
     let domainName = '';
+    let isExternal = false;
+    
     if (typeof page.domainId === 'string') {
       // Find domain by ID
       const domain = domains.find(d => d._id === page.domainId);
       if (domain) {
         domainName = domain.name;
+        isExternal = domain.dnsManagement === 'external';
       }
     } else {
       // Domain object is already embedded
       domainName = page.domainId.name;
+      // We don't have dnsManagement info in embedded object, 
+      // but we can infer from empty subdomain
+      isExternal = !page.subdomain;
     }
     
-    return `https://${page.subdomain}.${domainName}`;
+    // For external domains, use the domain directly
+    // For regular domains, use subdomain.domain format
+    if (isExternal || !page.subdomain) {
+      return `https://${domainName}`;
+    } else {
+      return `https://${page.subdomain}.${domainName}`;
+    }
   };
   
   // Function to increment ban count for a landing page
@@ -695,6 +717,13 @@ export default function Home() {
   // Function to get external domains
   const getExternalDomains = (): Domain[] => {
     return domains.filter(domain => domain.dnsManagement === 'external');
+  };
+  
+  // Function to check if selected domain is external
+  const isSelectedDomainExternal = (): boolean => {
+    if (!selectedDomainId) return false;
+    const domain = domains.find(d => d._id === selectedDomainId);
+    return domain?.dnsManagement === 'external';
   };
   
   // Add this function to update Google Ads account ID
@@ -1467,6 +1496,10 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             </h2>
             <p className="text-gray-400 text-sm mb-4">
               Note: You can only create landing pages on domains that are verified (status: active) and have no landing pages already deployed.
+              <br />
+              <span className="text-blue-300">External domains:</span> Landing page will be created directly on the domain (e.g., medvi.example.com)
+              <br />
+              <span className="text-green-300">Regular domains:</span> Landing page will be created on a subdomain (e.g., offer.example.com)
             </p>
             <form onSubmit={addLandingPage} className="space-y-4">
               <input
@@ -1528,13 +1561,28 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 )}
               </div>
               
-              <input
-                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
-                type="text"
-                placeholder="Subdomain"
-                value={subdomain}
-                onChange={(e) => setSubdomain(e.target.value)}
-              />
+              {/* Subdomain field - only show for non-external domains */}
+              {!isSelectedDomainExternal() ? (
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Subdomain"
+                  value={subdomain}
+                  onChange={(e) => setSubdomain(e.target.value)}
+                />
+              ) : (
+                <div className="p-3 bg-blue-900/30 border border-blue-700 rounded-md">
+                  <div className="flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-blue-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"></path>
+                    </svg>
+                    <span className="text-blue-300 text-sm font-medium">External Domain</span>
+                  </div>
+                  <p className="text-blue-200 text-sm mt-1">
+                    This landing page will be created directly on: <span className="font-mono">{getDomainNameById(selectedDomainId)}</span>
+                  </p>
+                </div>
+              )}
               
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
