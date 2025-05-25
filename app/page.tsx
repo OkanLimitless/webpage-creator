@@ -60,6 +60,7 @@ export default function Home() {
   
   // Bulk domain import state
   const [bulkDomains, setBulkDomains] = useState('');
+  const [bulkDnsManagement, setBulkDnsManagement] = useState<'cloudflare' | 'external'>('cloudflare');
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [bulkResults, setBulkResults] = useState<{success: string[], failed: {domain: string, reason: string}[]}>({
     success: [],
@@ -273,7 +274,10 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ domains: domainsList }),
+        body: JSON.stringify({ 
+          domains: domainsList,
+          dnsManagement: bulkDnsManagement 
+        }),
       });
       
       if (response.ok) {
@@ -1124,6 +1128,71 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 <p className="text-gray-400 text-sm mb-4">
                   Enter one domain per line (e.g., example.com)
                 </p>
+                
+                {/* DNS Management Selection */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-white mb-2">DNS Management</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className={`relative flex items-center p-3 border rounded-md cursor-pointer transition-colors duration-200 ${
+                      bulkDnsManagement === 'cloudflare' 
+                        ? 'border-primary bg-primary/10 text-white' 
+                        : 'border-dark-light bg-dark-lighter text-gray-300 hover:bg-dark-light'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="bulkDnsManagement"
+                        value="cloudflare"
+                        checked={bulkDnsManagement === 'cloudflare'}
+                        onChange={(e) => setBulkDnsManagement(e.target.value as 'cloudflare' | 'external')}
+                        className="sr-only"
+                      />
+                      <div className={`w-4 h-4 rounded-full border-2 mr-3 flex items-center justify-center ${
+                        bulkDnsManagement === 'cloudflare' ? 'border-primary' : 'border-gray-400'
+                      }`}>
+                        {bulkDnsManagement === 'cloudflare' && (
+                          <div className="w-2 h-2 rounded-full bg-primary"></div>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium">Cloudflare DNS</span>
+                    </label>
+                    <label className={`relative flex items-center p-3 border rounded-md cursor-pointer transition-colors duration-200 ${
+                      bulkDnsManagement === 'external' 
+                        ? 'border-primary bg-primary/10 text-white' 
+                        : 'border-dark-light bg-dark-lighter text-gray-300 hover:bg-dark-light'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="bulkDnsManagement"
+                        value="external"
+                        checked={bulkDnsManagement === 'external'}
+                        onChange={(e) => setBulkDnsManagement(e.target.value as 'cloudflare' | 'external')}
+                        className="sr-only"
+                      />
+                      <div className={`w-4 h-4 rounded-full border-2 mr-3 flex items-center justify-center ${
+                        bulkDnsManagement === 'external' ? 'border-primary' : 'border-gray-400'
+                      }`}>
+                        {bulkDnsManagement === 'external' && (
+                          <div className="w-2 h-2 rounded-full bg-primary"></div>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium">External DNS</span>
+                    </label>
+                  </div>
+                  
+                  {/* Instructions based on selection */}
+                  <div className="mt-2 p-3 bg-dark-lighter border border-dark-light rounded-md">
+                    {bulkDnsManagement === 'cloudflare' ? (
+                      <p className="text-xs text-gray-400">
+                        <span className="text-green-300">Cloudflare DNS:</span> Domains will be added to Cloudflare. You'll need to update nameservers at your registrar.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        <span className="text-blue-300">External DNS:</span> For third-party domains where you can't change nameservers. You'll need to create CNAME records pointing to Vercel.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
                 <textarea
                   className="w-full p-3 h-40 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 mb-4"
                   placeholder="domain1.com&#10;domain2.com&#10;domain3.com"

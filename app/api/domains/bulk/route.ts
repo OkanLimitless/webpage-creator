@@ -18,11 +18,19 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
     
     const body = await request.json();
-    let { domains } = body;
+    let { domains, dnsManagement = 'cloudflare' } = body;
     
     if (!domains || !Array.isArray(domains) || domains.length === 0) {
       return NextResponse.json(
         { error: 'Domains list is required and must be an array' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate dnsManagement parameter
+    if (!['cloudflare', 'external'].includes(dnsManagement)) {
+      return NextResponse.json(
+        { error: 'dnsManagement must be either "cloudflare" or "external"' },
         { status: 400 }
       );
     }
@@ -70,6 +78,29 @@ export async function POST(request: NextRequest) {
           continue;
         }
         
+        // Handle external domains differently
+        if (dnsManagement === 'external') {
+          console.log(`Processing external domain: ${sanitized}`);
+          
+          // For external domains, create with minimal Cloudflare integration
+          const domain = await Domain.create({
+            name: sanitized,
+            cloudflareNameservers: [], // Empty for external domains
+            cloudflareZoneId: undefined, // No Cloudflare zone
+            verificationStatus: 'pending', // Will be verified externally
+            verificationKey: undefined,
+            isActive: true,
+            deploymentStatus: 'pending',
+            dnsManagement: 'external',
+            targetCname: 'cname.vercel-dns.com',
+          });
+
+          // Add to success list
+          results.success.push(sanitized);
+          continue;
+        }
+        
+        // For regular Cloudflare domains, continue with existing logic
         // Variables to store Cloudflare information
         let cloudflareZoneId: string | undefined;
         let cloudflareNameservers: string[] = [];
@@ -149,6 +180,7 @@ export async function POST(request: NextRequest) {
           verificationKey,
           isActive: true,
           deploymentStatus: 'pending',
+          dnsManagement: 'cloudflare', // Explicitly set for regular domains
         });
 
         // Try to create DNS records for Vercel integration
