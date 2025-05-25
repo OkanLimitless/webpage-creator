@@ -96,6 +96,27 @@ export default function Home() {
   const [selectedLandingPages, setSelectedLandingPages] = useState<string[]>([]);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   
+  // Bulk landing page creation state
+  const [isBulkLandingPageModalOpen, setIsBulkLandingPageModalOpen] = useState(false);
+  const [bulkLandingPageName, setBulkLandingPageName] = useState('');
+  const [bulkSubdomain, setBulkSubdomain] = useState('');
+  const [bulkAffiliateUrl, setBulkAffiliateUrl] = useState('');
+  const [bulkOriginalUrl, setBulkOriginalUrl] = useState('');
+  const [bulkUseManualScreenshots, setBulkUseManualScreenshots] = useState(false);
+  const [bulkDesktopScreenshotFile, setBulkDesktopScreenshotFile] = useState<File | null>(null);
+  const [bulkMobileScreenshotFile, setBulkMobileScreenshotFile] = useState<File | null>(null);
+  const [bulkDesktopPreviewUrl, setBulkDesktopPreviewUrl] = useState<string | null>(null);
+  const [bulkMobilePreviewUrl, setBulkMobilePreviewUrl] = useState<string | null>(null);
+  const [selectedDomainsForBulk, setSelectedDomainsForBulk] = useState<string[]>([]);
+  const [bulkLandingPageLoading, setBulkLandingPageLoading] = useState(false);
+  const [bulkLandingPageResults, setBulkLandingPageResults] = useState<{
+    success: string[], 
+    failed: {domain: string, reason: string}[]
+  }>({
+    success: [],
+    failed: []
+  });
+  
   // Check authentication on page load
   useEffect(() => {
     const getCookie = (name: string): string | null => {
@@ -959,6 +980,166 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     }
   };
   
+  // Bulk landing page creation functions
+  const handleBulkDesktopScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setBulkDesktopScreenshotFile(file);
+    
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setBulkDesktopPreviewUrl(url);
+    } else {
+      setBulkDesktopPreviewUrl(null);
+    }
+  };
+  
+  const handleBulkMobileScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setBulkMobileScreenshotFile(file);
+    
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setBulkMobilePreviewUrl(url);
+    } else {
+      setBulkMobilePreviewUrl(null);
+    }
+  };
+  
+  const toggleDomainSelectionForBulk = (domainId: string) => {
+    if (selectedDomainsForBulk.includes(domainId)) {
+      setSelectedDomainsForBulk(prev => prev.filter(id => id !== domainId));
+    } else {
+      setSelectedDomainsForBulk(prev => [...prev, domainId]);
+    }
+  };
+  
+  const toggleSelectAllDomainsForBulk = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedDomainsForBulk(getEligibleDomains().map(domain => domain._id));
+    } else {
+      setSelectedDomainsForBulk([]);
+    }
+  };
+  
+  const createBulkLandingPages = async () => {
+    if (!bulkLandingPageName || !bulkAffiliateUrl || selectedDomainsForBulk.length === 0) {
+      alert('Please fill in name, affiliate URL, and select at least one domain');
+      return;
+    }
+    
+    // Check if we need subdomain for regular domains
+    const selectedDomains = getEligibleDomains().filter(d => selectedDomainsForBulk.includes(d._id));
+    const hasRegularDomains = selectedDomains.some(d => d.dnsManagement !== 'external');
+    
+    if (hasRegularDomains && !bulkSubdomain) {
+      alert('Subdomain is required when selecting regular (non-external) domains');
+      return;
+    }
+    
+    // Validate screenshot requirements
+    if (!bulkUseManualScreenshots && !bulkOriginalUrl) {
+      alert('Original URL is required for automatic screenshots');
+      return;
+    }
+    
+    if (bulkUseManualScreenshots && (!bulkDesktopScreenshotFile || !bulkMobileScreenshotFile)) {
+      alert('Please upload both desktop and mobile screenshots for manual mode');
+      return;
+    }
+    
+    setBulkLandingPageLoading(true);
+    setBulkLandingPageResults({ success: [], failed: [] });
+    
+    try {
+      let desktopScreenshotUrl = null;
+      let mobileScreenshotUrl = null;
+      
+      // Upload screenshots if using manual mode
+      if (bulkUseManualScreenshots) {
+        const uploadResults = await uploadBulkScreenshots();
+        if (!uploadResults.desktopUrl || !uploadResults.mobileUrl) {
+          setBulkLandingPageLoading(false);
+          return;
+        }
+        desktopScreenshotUrl = uploadResults.desktopUrl;
+        mobileScreenshotUrl = uploadResults.mobileUrl;
+      }
+      
+      const response = await fetch('/api/landing-pages/bulk-create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: bulkLandingPageName,
+          domainIds: selectedDomainsForBulk,
+          subdomain: bulkSubdomain,
+          affiliateUrl: bulkAffiliateUrl,
+          originalUrl: bulkOriginalUrl,
+          manualScreenshots: bulkUseManualScreenshots,
+          desktopScreenshotUrl,
+          mobileScreenshotUrl
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setBulkLandingPageResults(data.results);
+        
+        // Refresh landing pages and domains
+        fetchLandingPages();
+        fetchDomains();
+        
+        // Clear form if all successful
+        if (data.results.failed.length === 0) {
+          setBulkLandingPageName('');
+          setBulkSubdomain('');
+          setBulkAffiliateUrl('');
+          setBulkOriginalUrl('');
+          setSelectedDomainsForBulk([]);
+          setBulkUseManualScreenshots(false);
+          setBulkDesktopScreenshotFile(null);
+          setBulkMobileScreenshotFile(null);
+          setBulkDesktopPreviewUrl(null);
+          setBulkMobilePreviewUrl(null);
+        }
+        
+        alert(data.message);
+      } else {
+        alert(`Error: ${data.error || 'Failed to create landing pages'}`);
+      }
+    } catch (error) {
+      console.error('Error creating bulk landing pages:', error);
+      alert('An error occurred while creating landing pages');
+    } finally {
+      setBulkLandingPageLoading(false);
+    }
+  };
+  
+  const uploadBulkScreenshots = async (): Promise<{
+    desktopUrl: string | null;
+    mobileUrl: string | null;
+  }> => {
+    if (!bulkDesktopScreenshotFile || !bulkMobileScreenshotFile) {
+      alert('Please select both desktop and mobile screenshots');
+      return { desktopUrl: null, mobileUrl: null };
+    }
+    
+    try {
+      // Upload both files in parallel
+      const [desktopUrl, mobileUrl] = await Promise.all([
+        uploadScreenshot(bulkDesktopScreenshotFile, 'desktop'),
+        uploadScreenshot(bulkMobileScreenshotFile, 'mobile')
+      ]);
+      
+      return { desktopUrl, mobileUrl };
+    } catch (error) {
+      console.error('Error uploading bulk screenshots:', error);
+      return { desktopUrl: null, mobileUrl: null };
+    }
+  };
+  
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -1784,21 +1965,30 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 </div>
               )}
               
-              <button 
-                className={`px-4 py-2 rounded-md text-white font-medium ${
-                  loading || uploadingScreenshots
-                    ? 'bg-primary-light/50 cursor-not-allowed' 
-                    : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
-                }`}
-                type="submit"
-                disabled={loading || uploadingScreenshots}
-              >
-                {loading 
-                  ? 'Creating...' 
-                  : uploadingScreenshots 
-                    ? 'Uploading screenshots...' 
-                    : 'Create Landing Page'}
-              </button>
+              <div className="flex space-x-2">
+                <button 
+                  className={`px-4 py-2 rounded-md text-white font-medium ${
+                    loading || uploadingScreenshots
+                      ? 'bg-primary-light/50 cursor-not-allowed' 
+                      : 'bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200'
+                  }`}
+                  type="submit"
+                  disabled={loading || uploadingScreenshots}
+                >
+                  {loading 
+                    ? 'Creating...' 
+                    : uploadingScreenshots 
+                      ? 'Uploading screenshots...' 
+                      : 'Create Landing Page'}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setIsBulkLandingPageModalOpen(true)}
+                  className="px-4 py-2 rounded-md text-white font-medium bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+                >
+                  Bulk Create
+                </button>
+              </div>
             </form>
           </div>
           
@@ -1921,6 +2111,242 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             )}
           </div>
         </>
+      )}
+      
+      {/* Bulk Landing Page Creation Modal */}
+      {isBulkLandingPageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-dark-card p-6 rounded-lg shadow-lg border border-dark-accent w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4 text-white">Bulk Create Landing Pages</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Create the same landing page on multiple domains at once. Select the domains you want to use.
+            </p>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column - Form */}
+              <div className="space-y-4">
+                <h4 className="text-white font-medium">Landing Page Details</h4>
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Landing Page Name"
+                  value={bulkLandingPageName}
+                  onChange={(e) => setBulkLandingPageName(e.target.value)}
+                />
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Subdomain (for regular domains only)"
+                  value={bulkSubdomain}
+                  onChange={(e) => setBulkSubdomain(e.target.value)}
+                />
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Affiliate URL"
+                  value={bulkAffiliateUrl}
+                  onChange={(e) => setBulkAffiliateUrl(e.target.value)}
+                />
+                
+                <input
+                  className={`w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 ${bulkUseManualScreenshots ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  type="text"
+                  placeholder={bulkUseManualScreenshots ? "Not required for manual screenshots" : "Original URL"}
+                  value={bulkOriginalUrl}
+                  onChange={(e) => setBulkOriginalUrl(e.target.value)}
+                  disabled={bulkUseManualScreenshots}
+                />
+                
+                {/* Manual Screenshots Toggle */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="bulkManualScreenshots"
+                    checked={bulkUseManualScreenshots}
+                    onChange={(e) => setBulkUseManualScreenshots(e.target.checked)}
+                    className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                  />
+                  <label htmlFor="bulkManualScreenshots" className="text-gray-300 text-sm">
+                    Manually upload screenshots
+                  </label>
+                </div>
+                
+                {/* Manual Screenshot Upload Fields */}
+                {bulkUseManualScreenshots && (
+                  <div className="space-y-4 p-4 border border-dark-accent rounded-md bg-dark-light">
+                    <h5 className="text-white text-sm font-medium">Upload Screenshots</h5>
+                    
+                    {/* Desktop Screenshot */}
+                    <div>
+                      <label className="block text-gray-400 text-xs mb-1">Desktop Screenshot</label>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleBulkDesktopScreenshotChange}
+                        className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark"
+                      />
+                      {bulkDesktopPreviewUrl && (
+                        <div className="mt-2 relative">
+                          <img 
+                            src={bulkDesktopPreviewUrl} 
+                            alt="Desktop Preview" 
+                            className="max-h-32 rounded-md border border-dark-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkDesktopScreenshotFile(null);
+                              setBulkDesktopPreviewUrl(null);
+                            }}
+                            className="absolute top-1 right-1 bg-red-600 rounded-full text-white text-xs p-1"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Mobile Screenshot */}
+                    <div>
+                      <label className="block text-gray-400 text-xs mb-1">Mobile Screenshot</label>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleBulkMobileScreenshotChange}
+                        className="text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary file:text-white hover:file:bg-primary-dark"
+                      />
+                      {bulkMobilePreviewUrl && (
+                        <div className="mt-2 relative">
+                          <img 
+                            src={bulkMobilePreviewUrl} 
+                            alt="Mobile Preview" 
+                            className="max-h-32 rounded-md border border-dark-accent"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkMobileScreenshotFile(null);
+                              setBulkMobilePreviewUrl(null);
+                            }}
+                            className="absolute top-1 right-1 bg-red-600 rounded-full text-white text-xs p-1"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Right Column - Domain Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-white font-medium">Select Domains ({selectedDomainsForBulk.length} selected)</h4>
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedDomainsForBulk.length === getEligibleDomains().length && getEligibleDomains().length > 0}
+                      onChange={toggleSelectAllDomainsForBulk}
+                      className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                    />
+                    <span className="text-gray-300 text-sm">Select All</span>
+                  </label>
+                </div>
+                
+                <div className="max-h-64 overflow-y-auto border border-dark-accent rounded-md bg-dark-lighter">
+                  {getEligibleDomains().length > 0 ? (
+                    getEligibleDomains().map((domain) => (
+                      <label key={domain._id} className="flex items-center p-3 hover:bg-dark-light cursor-pointer border-b border-dark-accent last:border-b-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedDomainsForBulk.includes(domain._id)}
+                          onChange={() => toggleDomainSelectionForBulk(domain._id)}
+                          className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary mr-3"
+                        />
+                        <div className="flex-1">
+                          <div className="text-white text-sm">{domain.name}</div>
+                          <div className="text-gray-400 text-xs">
+                            {domain.dnsManagement === 'external' ? 'External DNS' : 'Cloudflare DNS'}
+                          </div>
+                        </div>
+                      </label>
+                    ))
+                  ) : (
+                    <div className="p-4 text-gray-400 text-center">
+                      No eligible domains available. Domains must be verified and have no landing pages.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Results display */}
+            {(bulkLandingPageResults.success.length > 0 || bulkLandingPageResults.failed.length > 0) && (
+              <div className="mt-6">
+                <h4 className="text-white font-medium mb-2">Results:</h4>
+                {bulkLandingPageResults.success.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-green-400 text-sm">{bulkLandingPageResults.success.length} landing pages created successfully:</p>
+                    <ul className="text-gray-300 text-xs ml-4 list-disc">
+                      {bulkLandingPageResults.success.map((domain, index) => (
+                        <li key={index}>{domain}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {bulkLandingPageResults.failed.length > 0 && (
+                  <div>
+                    <p className="text-red-400 text-sm">{bulkLandingPageResults.failed.length} landing pages failed:</p>
+                    <ul className="text-gray-300 text-xs ml-4 list-disc">
+                      {bulkLandingPageResults.failed.map((item, index) => (
+                        <li key={index}>{item.domain}: {item.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setIsBulkLandingPageModalOpen(false);
+                  setBulkLandingPageResults({ success: [], failed: [] });
+                  if (bulkLandingPageResults.success.length > 0) {
+                    setBulkLandingPageName('');
+                    setBulkSubdomain('');
+                    setBulkAffiliateUrl('');
+                    setBulkOriginalUrl('');
+                    setSelectedDomainsForBulk([]);
+                    setBulkUseManualScreenshots(false);
+                    setBulkDesktopScreenshotFile(null);
+                    setBulkMobileScreenshotFile(null);
+                    setBulkDesktopPreviewUrl(null);
+                    setBulkMobilePreviewUrl(null);
+                  }
+                }}
+                className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
+              >
+                Close
+              </button>
+              <button
+                onClick={createBulkLandingPages}
+                disabled={bulkLandingPageLoading}
+                className={`px-4 py-2 rounded-md text-white font-medium ${
+                  bulkLandingPageLoading 
+                    ? 'bg-primary-light/50 cursor-not-allowed' 
+                    : 'bg-primary hover:bg-primary-dark transition-colors duration-200'
+                }`}
+              >
+                {bulkLandingPageLoading ? 'Creating...' : 'Create Landing Pages'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
