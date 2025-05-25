@@ -1065,6 +1065,11 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
         mobileScreenshotUrl = uploadResults.mobileUrl;
       }
       
+      // Show progress message for large batches
+      if (selectedDomainsForBulk.length > 5) {
+        alert(`Creating landing pages on ${selectedDomainsForBulk.length} domains. This may take 1-2 minutes. Please wait...`);
+      }
+      
       const response = await fetch('/api/landing-pages/bulk-create', {
         method: 'POST',
         headers: {
@@ -1111,7 +1116,11 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
       }
     } catch (error) {
       console.error('Error creating bulk landing pages:', error);
-      alert('An error occurred while creating landing pages');
+      if (error instanceof Error && error.name === 'AbortError') {
+        alert('Request timed out. Some landing pages may have been created. Please refresh the page to see the current status.');
+      } else {
+        alert('An error occurred while creating landing pages. Please try again with fewer domains or check your connection.');
+      }
     } finally {
       setBulkLandingPageLoading(false);
     }

@@ -5,6 +5,9 @@ import { Domain } from '@/lib/models/Domain';
 import { addDomainToVercel } from '@/lib/vercel';
 import { takeScreenshots } from '@/lib/screenshot';
 
+// Set a reasonable timeout for the function
+export const maxDuration = 60; // 60 seconds
+
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
@@ -82,78 +85,113 @@ export async function POST(request: NextRequest) {
       failed: [] as { domain: string, reason: string }[]
     };
 
-    // Process each domain
-    for (const domain of domains) {
-      try {
-        const isExternal = domain.dnsManagement === 'external';
-        const finalSubdomain = isExternal ? '' : subdomain;
-        
-        // For external domains, subdomain should be empty, for regular domains it's required
-        if (!isExternal && !subdomain) {
-          results.failed.push({
-            domain: domain.name,
-            reason: 'Subdomain is required for regular domains'
-          });
-          continue;
-        }
+    // Process domains in parallel with a concurrency limit to avoid overwhelming the system
+    const BATCH_SIZE = 3; // Process 3 domains at a time
+    const batches = [];
+    
+    for (let i = 0; i < domains.length; i += BATCH_SIZE) {
+      batches.push(domains.slice(i, i + BATCH_SIZE));
+    }
 
-        let finalDesktopUrl = desktopScreenshotUrl;
-        let finalMobileUrl = mobileScreenshotUrl;
-
-        // Take screenshots if not using manual mode
-        if (!manualScreenshots && originalUrl) {
-          try {
-            const screenshots = await takeScreenshots(originalUrl, domain._id.toString());
-            finalDesktopUrl = screenshots.desktopUrl;
-            finalMobileUrl = screenshots.mobileUrl;
-          } catch (screenshotError) {
-            console.error(`Screenshot error for ${domain.name}:`, screenshotError);
-            results.failed.push({
-              domain: domain.name,
-              reason: 'Failed to capture screenshots'
-            });
-            continue;
-          }
-        }
-
-        // Create the landing page
-        const landingPage = new LandingPage({
-          name,
-          domainId: domain._id,
-          subdomain: finalSubdomain,
-          affiliateUrl,
-          originalUrl: originalUrl || '',
-          desktopScreenshotUrl: finalDesktopUrl,
-          mobileScreenshotUrl: finalMobileUrl,
-          isActive: true,
-          banCount: 0
-        });
-
-        await landingPage.save();
-
-        // Add domain to Vercel
+    // Process each batch sequentially, but domains within each batch in parallel
+    for (const batch of batches) {
+      const batchPromises = batch.map(async (domain) => {
         try {
-          const fullDomain = isExternal ? domain.name : `${finalSubdomain}.${domain.name}`;
-          await addDomainToVercel(fullDomain);
-        } catch (vercelError) {
-          console.error(`Vercel error for ${domain.name}:`, vercelError);
-          // Don't fail the entire operation for Vercel errors, just log them
+          const isExternal = domain.dnsManagement === 'external';
+          const finalSubdomain = isExternal ? '' : subdomain;
+          
+          // For external domains, subdomain should be empty, for regular domains it's required
+          if (!isExternal && !subdomain) {
+            return {
+              success: false,
+              domain: domain.name,
+              reason: 'Subdomain is required for regular domains'
+            };
+          }
+
+          let finalDesktopUrl = desktopScreenshotUrl;
+          let finalMobileUrl = mobileScreenshotUrl;
+
+          // Take screenshots if not using manual mode
+          if (!manualScreenshots && originalUrl) {
+            try {
+              // Add timeout for screenshot capture
+              const screenshotPromise = takeScreenshots(originalUrl, domain._id.toString());
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Screenshot timeout')), 30000) // 30 second timeout
+              );
+              
+              const screenshots = await Promise.race([screenshotPromise, timeoutPromise]) as any;
+              finalDesktopUrl = screenshots.desktopUrl;
+              finalMobileUrl = screenshots.mobileUrl;
+            } catch (screenshotError) {
+              console.error(`Screenshot error for ${domain.name}:`, screenshotError);
+              return {
+                success: false,
+                domain: domain.name,
+                reason: 'Failed to capture screenshots'
+              };
+            }
+          }
+
+          // Create the landing page
+          const landingPage = new LandingPage({
+            name,
+            domainId: domain._id,
+            subdomain: finalSubdomain,
+            affiliateUrl,
+            originalUrl: originalUrl || '',
+            desktopScreenshotUrl: finalDesktopUrl,
+            mobileScreenshotUrl: finalMobileUrl,
+            isActive: true,
+            banCount: 0
+          });
+
+          await landingPage.save();
+
+          // Add domain to Vercel (don't fail the entire operation if this fails)
+          try {
+            const fullDomain = isExternal ? domain.name : `${finalSubdomain}.${domain.name}`;
+            await addDomainToVercel(fullDomain);
+          } catch (vercelError) {
+            console.error(`Vercel error for ${domain.name}:`, vercelError);
+            // Continue anyway - Vercel errors shouldn't fail the landing page creation
+          }
+
+          // Update domain's landing page count
+          await Domain.findByIdAndUpdate(domain._id, {
+            $inc: { landingPageCount: 1 }
+          });
+
+          return {
+            success: true,
+            domain: domain.name
+          };
+
+        } catch (error) {
+          console.error(`Error creating landing page for ${domain.name}:`, error);
+          return {
+            success: false,
+            domain: domain.name,
+            reason: error instanceof Error ? error.message : 'Unknown error'
+          };
         }
+      });
 
-        // Update domain's landing page count
-        await Domain.findByIdAndUpdate(domain._id, {
-          $inc: { landingPageCount: 1 }
-        });
-
-        results.success.push(domain.name);
-
-      } catch (error) {
-        console.error(`Error creating landing page for ${domain.name}:`, error);
-        results.failed.push({
-          domain: domain.name,
-          reason: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
+      // Wait for the current batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      
+      // Process results
+      batchResults.forEach(result => {
+        if (result.success) {
+          results.success.push(result.domain);
+        } else {
+          results.failed.push({
+            domain: result.domain,
+            reason: result.reason || 'Unknown error'
+          });
+        }
+      });
     }
 
     return NextResponse.json({
