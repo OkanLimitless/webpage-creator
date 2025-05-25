@@ -6,7 +6,7 @@ export interface IDomain {
   cloudflareZoneId?: string;
   dnsManagement: 'cloudflare' | 'external';
   targetCname?: string;
-  verificationStatus: 'pending' | 'active' | 'inactive' | 'error';
+  verificationStatus: 'pending' | 'active' | 'inactive' | 'error' | 'verified';
   verificationKey?: string;
   isActive: boolean;
   // Deployment-related fields
@@ -48,7 +48,7 @@ const DomainSchema = new mongoose.Schema<IDomain>(
     },
     verificationStatus: {
       type: String,
-      enum: ['pending', 'active', 'inactive', 'error'],
+      enum: ['pending', 'active', 'inactive', 'error', 'verified'],
       default: 'pending',
     },
     verificationKey: {

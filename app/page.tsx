@@ -12,7 +12,7 @@ interface Domain {
   createdAt: string;
   updatedAt: string;
   cloudflareZoneId?: string;
-  verificationStatus: string;
+  verificationStatus: 'pending' | 'active' | 'inactive' | 'error' | 'verified';
   verificationKey?: string;
   landingPageCount?: number;
   banCount?: number;
