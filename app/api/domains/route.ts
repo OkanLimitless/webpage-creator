@@ -5,6 +5,7 @@ import { LandingPage } from '@/lib/models/LandingPage';
 import { getNameservers, addDomain as addDomainToCloudflare, createDnsRecord, getZoneIdByName, checkDomainActivation, getDnsRecords, deleteDnsRecord } from '@/lib/cloudflare';
 import { addDomainToVercel } from '@/lib/vercel';
 import { startDomainDeployment } from '@/lib/services/domainDeploymentService';
+import { promises as dns } from 'dns';
 
 // Flag to check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'development';
@@ -145,6 +146,74 @@ const createOrSkipDnsRecord = async (
   }
 };
 
+// Helper function to verify external domain DNS
+const verifyExternalDomainDNS = async (domain: string): Promise<{
+  verified: boolean;
+  message: string;
+  dnsInfo?: any;
+}> => {
+  try {
+    console.log(`Verifying DNS for external domain: ${domain}`);
+    
+    // Expected targets for verification
+    const expectedTargets = ['cname.vercel-dns.com', '76.76.21.21'];
+    
+    try {
+      // First try CNAME lookup
+      const cnameRecords = await dns.resolveCname(domain);
+      console.log(`CNAME records for ${domain}:`, cnameRecords);
+      
+      // Check if any CNAME points to Vercel
+      const validCname = cnameRecords.some(record => 
+        expectedTargets.some(target => record.toLowerCase().includes(target.toLowerCase()))
+      );
+      
+      if (validCname) {
+        return {
+          verified: true,
+          message: `Domain ${domain} is correctly configured with CNAME pointing to Vercel`,
+          dnsInfo: { type: 'CNAME', records: cnameRecords }
+        };
+      }
+    } catch (cnameError) {
+      console.log(`No CNAME records found for ${domain}, checking A records...`);
+    }
+    
+    try {
+      // Try A record lookup
+      const aRecords = await dns.resolve4(domain);
+      console.log(`A records for ${domain}:`, aRecords);
+      
+      // Check if any A record points to Vercel IP
+      const validA = aRecords.some(record => expectedTargets.includes(record));
+      
+      if (validA) {
+        return {
+          verified: true,
+          message: `Domain ${domain} is correctly configured with A record pointing to Vercel`,
+          dnsInfo: { type: 'A', records: aRecords }
+        };
+      }
+    } catch (aError) {
+      console.log(`No A records found for ${domain}`);
+    }
+    
+    return {
+      verified: false,
+      message: `Domain ${domain} is not pointing to Vercel. Please create a CNAME record: ${domain} → cname.vercel-dns.com`,
+      dnsInfo: null
+    };
+    
+  } catch (error) {
+    console.error(`Error verifying DNS for ${domain}:`, error);
+    return {
+      verified: false,
+      message: `Failed to verify DNS for ${domain}. Please ensure the domain is accessible and try again.`,
+      dnsInfo: null
+    };
+  }
+};
+
 // POST /api/domains - Create a new domain
 export async function POST(request: NextRequest) {
   try {
@@ -184,26 +253,39 @@ export async function POST(request: NextRequest) {
     if (dnsManagement === 'external') {
       console.log(`Creating external DNS domain: ${name}`);
       
-      // Create domain without Cloudflare integration
-      const domain = await Domain.create({
-        name,
-        cloudflareNameservers: [], // Empty for external domains
-        cloudflareZoneId: undefined,
-        dnsManagement: 'external',
-        targetCname: 'cname.vercel-dns.com',
-        verificationStatus: 'pending',
-        verificationKey: undefined,
-        isActive: true,
-        deploymentStatus: 'pending',
-      });
+      // Verify DNS for external domain
+      const verificationResult = await verifyExternalDomainDNS(name);
+      
+      if (verificationResult.verified) {
+        console.log(`DNS verification successful for external domain: ${name}`);
+        
+        // Create domain without Cloudflare integration
+        const domain = await Domain.create({
+          name,
+          cloudflareNameservers: [], // Empty for external domains
+          cloudflareZoneId: undefined,
+          dnsManagement: 'external',
+          targetCname: 'cname.vercel-dns.com',
+          verificationStatus: 'verified',
+          verificationKey: verificationResult.dnsInfo?.records.join(', ') || '',
+          isActive: true,
+          deploymentStatus: 'pending',
+        });
 
-      return NextResponse.json({
-        ...domain.toJSON(),
-        message: 'External domain added successfully.',
-        instructions: `Please create a CNAME record: ${name} → cname.vercel-dns.com`,
-        targetCname: 'cname.vercel-dns.com',
-        dnsSetupRequired: true
-      }, { status: 201 });
+        return NextResponse.json({
+          ...domain.toJSON(),
+          message: 'External domain added successfully. DNS verification successful.',
+          instructions: `Please create a CNAME record: ${name} → cname.vercel-dns.com`,
+          targetCname: 'cname.vercel-dns.com',
+          dnsSetupRequired: true
+        }, { status: 201 });
+      } else {
+        console.error(`DNS verification failed for external domain: ${name}`);
+        return NextResponse.json(
+          { error: verificationResult.message },
+          { status: 400 }
+        );
+      }
     }
     
     // Continue with existing Cloudflare flow for 'cloudflare' domains

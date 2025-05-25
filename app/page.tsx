@@ -62,9 +62,14 @@ export default function Home() {
   const [bulkDomains, setBulkDomains] = useState('');
   const [bulkDnsManagement, setBulkDnsManagement] = useState<'cloudflare' | 'external'>('cloudflare');
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-  const [bulkResults, setBulkResults] = useState<{success: string[], failed: {domain: string, reason: string}[]}>({
+  const [bulkResults, setBulkResults] = useState<{
+    success: string[], 
+    failed: {domain: string, reason: string}[],
+    nonVerified?: {domain: string, reason: string}[]
+  }>({
     success: [],
-    failed: []
+    failed: [],
+    nonVerified: []
   });
   const [bulkLoading, setBulkLoading] = useState(false);
   
@@ -266,7 +271,7 @@ export default function Home() {
     }
     
     setBulkLoading(true);
-    setBulkResults({ success: [], failed: [] });
+    setBulkResults({ success: [], failed: [], nonVerified: [] });
     
     try {
       const response = await fetch('/api/domains/bulk', {
@@ -291,7 +296,7 @@ export default function Home() {
         }
         
         // Clear the input if all domains were successfully added
-        if (data.results.failed.length === 0) {
+        if (data.results.failed.length === 0 && data.results.nonVerified.length === 0) {
           setBulkDomains('');
         }
       } else {
@@ -701,7 +706,10 @@ export default function Home() {
   
   // Function to get verified domains
   const getVerifiedDomains = (): Domain[] => {
-    return domains.filter(domain => domain.verificationStatus === 'active');
+    return domains.filter(domain => 
+      domain.verificationStatus === 'active' || 
+      (domain.dnsManagement === 'external' && domain.verificationStatus === 'verified')
+    );
   };
   
   // Function to get pending domains that need nameserver changes
@@ -720,7 +728,10 @@ export default function Home() {
   
   // Function to get external domains
   const getExternalDomains = (): Domain[] => {
-    return domains.filter(domain => domain.dnsManagement === 'external');
+    return domains.filter(domain => 
+      domain.dnsManagement === 'external' && 
+      domain.verificationStatus !== 'verified'
+    );
   };
   
   // Function to check if selected domain is external
@@ -1201,7 +1212,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 ></textarea>
                 
                 {/* Results display */}
-                {(bulkResults.success.length > 0 || bulkResults.failed.length > 0) && (
+                {(bulkResults.success.length > 0 || bulkResults.failed.length > 0 || (bulkResults.nonVerified && bulkResults.nonVerified.length > 0)) && (
                   <div className="mb-4">
                     <h4 className="text-white font-medium mb-2">Results:</h4>
                     {bulkResults.success.length > 0 && (
@@ -1212,6 +1223,19 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                             <li key={index}>{domain}</li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+                    {bulkResults.nonVerified && bulkResults.nonVerified.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-yellow-400 text-sm">{bulkResults.nonVerified.length} domains not verified (DNS not pointing to Vercel):</p>
+                        <ul className="text-gray-300 text-xs ml-4 list-disc">
+                          {bulkResults.nonVerified.map((item, index) => (
+                            <li key={index}>{item.domain}: {item.reason}</li>
+                          ))}
+                        </ul>
+                        <p className="text-yellow-300 text-xs mt-2">
+                          💡 These domains need DNS configuration before they can be added. Create CNAME records pointing to cname.vercel-dns.com
+                        </p>
                       </div>
                     )}
                     {bulkResults.failed.length > 0 && (
@@ -1231,7 +1255,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   <button
                     onClick={() => {
                       setIsBulkModalOpen(false);
-                      setBulkResults({ success: [], failed: [] });
+                      setBulkResults({ success: [], failed: [], nonVerified: [] });
                       if (bulkResults.success.length > 0) {
                         setBulkDomains('');
                       }

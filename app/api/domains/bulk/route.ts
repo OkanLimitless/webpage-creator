@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Domain } from '@/lib/models/Domain';
 import { getNameservers, addDomain as addDomainToCloudflare, getZoneIdByName, checkDomainActivation } from '@/lib/cloudflare';
+import { promises as dns } from 'dns';
 
 // Mark this route as dynamic to prevent static optimization issues
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,74 @@ export const maxDuration = 60;
 
 // Validation regex for domain names
 const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/i;
+
+// Helper function to verify external domain DNS
+const verifyExternalDomainDNS = async (domain: string): Promise<{
+  verified: boolean;
+  message: string;
+  dnsInfo?: any;
+}> => {
+  try {
+    console.log(`Verifying DNS for external domain: ${domain}`);
+    
+    // Expected targets for verification
+    const expectedTargets = ['cname.vercel-dns.com', '76.76.21.21'];
+    
+    try {
+      // First try CNAME lookup
+      const cnameRecords = await dns.resolveCname(domain);
+      console.log(`CNAME records for ${domain}:`, cnameRecords);
+      
+      // Check if any CNAME points to Vercel
+      const validCname = cnameRecords.some(record => 
+        expectedTargets.some(target => record.toLowerCase().includes(target.toLowerCase()))
+      );
+      
+      if (validCname) {
+        return {
+          verified: true,
+          message: `Domain ${domain} is correctly configured with CNAME pointing to Vercel`,
+          dnsInfo: { type: 'CNAME', records: cnameRecords }
+        };
+      }
+    } catch (cnameError) {
+      console.log(`No CNAME records found for ${domain}, checking A records...`);
+    }
+    
+    try {
+      // Try A record lookup
+      const aRecords = await dns.resolve4(domain);
+      console.log(`A records for ${domain}:`, aRecords);
+      
+      // Check if any A record points to Vercel IP
+      const validA = aRecords.some(record => expectedTargets.includes(record));
+      
+      if (validA) {
+        return {
+          verified: true,
+          message: `Domain ${domain} is correctly configured with A record pointing to Vercel`,
+          dnsInfo: { type: 'A', records: aRecords }
+        };
+      }
+    } catch (aError) {
+      console.log(`No A records found for ${domain}`);
+    }
+    
+    return {
+      verified: false,
+      message: `Domain ${domain} is not pointing to Vercel. Please create a CNAME record: ${domain} → cname.vercel-dns.com`,
+      dnsInfo: null
+    };
+    
+  } catch (error) {
+    console.error(`Error verifying DNS for ${domain}:`, error);
+    return {
+      verified: false,
+      message: `Failed to verify DNS for ${domain}. Please ensure the domain is accessible and try again.`,
+      dnsInfo: null
+    };
+  }
+};
 
 // POST /api/domains/bulk - Create multiple domains at once
 export async function POST(request: NextRequest) {
@@ -53,7 +122,8 @@ export async function POST(request: NextRequest) {
     // Results tracking
     const results = {
       success: [] as string[],
-      failed: [] as { domain: string, reason: string }[]
+      failed: [] as { domain: string, reason: string }[],
+      nonVerified: [] as { domain: string, reason: string }[] // Track non-verified external domains
     };
     
     // Process each domain sequentially to avoid rate limiting
@@ -82,21 +152,35 @@ export async function POST(request: NextRequest) {
         if (dnsManagement === 'external') {
           console.log(`Processing external domain: ${sanitized}`);
           
-          // For external domains, create with minimal Cloudflare integration
-          const domain = await Domain.create({
-            name: sanitized,
-            cloudflareNameservers: [], // Empty for external domains
-            cloudflareZoneId: undefined, // No Cloudflare zone
-            verificationStatus: 'pending', // Will be verified externally
-            verificationKey: undefined,
-            isActive: true,
-            deploymentStatus: 'pending',
-            dnsManagement: 'external',
-            targetCname: 'cname.vercel-dns.com',
-          });
+          // Verify DNS for external domain
+          const verificationResult = await verifyExternalDomainDNS(sanitized);
+          
+          if (verificationResult.verified) {
+            console.log(`DNS verification successful for external domain: ${sanitized}`);
+            
+            // For external domains, create with verified status
+            const domain = await Domain.create({
+              name: sanitized,
+              cloudflareNameservers: [], // Empty for external domains
+              cloudflareZoneId: undefined, // No Cloudflare zone
+              verificationStatus: 'verified', // Verified through DNS check
+              verificationKey: verificationResult.dnsInfo?.records.join(', ') || '',
+              isActive: true,
+              deploymentStatus: 'pending',
+              dnsManagement: 'external',
+              targetCname: 'cname.vercel-dns.com',
+            });
 
-          // Add to success list
-          results.success.push(sanitized);
+            // Add to success list
+            results.success.push(sanitized);
+          } else {
+            console.error(`DNS verification failed for external domain: ${sanitized}`);
+            // Add to non-verified list instead of failed
+            results.nonVerified.push({
+              domain: original,
+              reason: verificationResult.message
+            });
+          }
           continue;
         }
         
@@ -241,7 +325,7 @@ export async function POST(request: NextRequest) {
     // Return results
     return NextResponse.json({
       results,
-      message: `Processed ${sanitizedDomains.length} domains. ${results.success.length} succeeded, ${results.failed.length} failed.`
+      message: `Processed ${sanitizedDomains.length} domains. ${results.success.length} succeeded, ${results.failed.length} failed${results.nonVerified.length > 0 ? `, ${results.nonVerified.length} not verified` : ''}.`
     });
     
   } catch (error: any) {
@@ -259,4 +343,4 @@ async function createDnsRecord(subdomain: string, domain: string, type: 'A' | 'C
   // In a real implementation, you would import this from lib/cloudflare
   console.log(`[MOCK] Creating DNS record: ${subdomain}.${domain} ${type} ${content}`);
   return { success: true };
-} 
+}
