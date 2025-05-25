@@ -693,12 +693,13 @@ export default function Home() {
   
   // Function to get eligible domains for landing pages
   // Only show domains that:
-  // 1. Are active (verified with Cloudflare)
+  // 1. Are active (verified with Cloudflare) OR verified external domains
   // 2. Have no landing pages deployed
   const getEligibleDomains = (): Domain[] => {
     return domains.filter(domain => 
-      // Active domains have verification status "active"
-      domain.verificationStatus === 'active' &&
+      // Active domains have verification status "active" OR external domains with "verified" status
+      (domain.verificationStatus === 'active' || 
+       (domain.dnsManagement === 'external' && domain.verificationStatus === 'verified')) &&
       // No landing pages at all
       (domain.landingPageCount || 0) === 0
     );
