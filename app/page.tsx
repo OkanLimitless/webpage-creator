@@ -117,6 +117,31 @@ export default function Home() {
     failed: []
   });
   
+  // DNS status checking state
+  const [isDnsCheckModalOpen, setIsDnsCheckModalOpen] = useState(false);
+  const [dnsCheckLoading, setDnsCheckLoading] = useState(false);
+  const [dnsCheckResults, setDnsCheckResults] = useState<{
+    summary?: {
+      total: number;
+      active: number;
+      inactive: number;
+      errors: number;
+    };
+    results?: {
+      all: Array<{
+        domain: string;
+        status: 'active' | 'inactive' | 'error';
+        currentTarget?: string;
+        expectedTarget: string;
+        error?: string;
+        verificationStatus: string;
+        dnsManagement: string;
+      }>;
+      inactive: Array<any>;
+      externalInactive: Array<any>;
+    };
+  }>({});
+  
   // Check authentication on page load
   useEffect(() => {
     const getCookie = (name: string): string | null => {
@@ -1149,6 +1174,43 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     }
   };
   
+  // DNS status checking function
+  const checkDnsStatus = async (checkType: 'all' | 'external' | 'inactive' = 'external') => {
+    setDnsCheckLoading(true);
+    setDnsCheckResults({});
+    
+    try {
+      const response = await fetch(`/api/domains/check-dns-status?type=${checkType}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        setDnsCheckResults(data);
+        
+        // Show summary alert
+        const { summary } = data;
+        if (summary) {
+          const inactiveCount = summary.inactive + summary.errors;
+          if (inactiveCount > 0) {
+            alert(`DNS Check Complete!\n\n` +
+              `Total domains checked: ${summary.total}\n` +
+              `Active: ${summary.active}\n` +
+              `Inactive/Issues: ${inactiveCount}\n\n` +
+              `Check the results below for details on inactive domains.`);
+          } else {
+            alert(`All ${summary.total} domains are active and pointing to Vercel correctly!`);
+          }
+        }
+      } else {
+        alert(`Error: ${data.error || 'Failed to check DNS status'}`);
+      }
+    } catch (error) {
+      console.error('Error checking DNS status:', error);
+      alert('An error occurred while checking DNS status. Please try again.');
+    } finally {
+      setDnsCheckLoading(false);
+    }
+  };
+  
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -1317,6 +1379,13 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   className="px-4 py-2 rounded-md text-white font-medium bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
                 >
                   Bulk Import
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setIsDnsCheckModalOpen(true)}
+                  className="px-4 py-2 rounded-md text-white font-medium bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+                >
+                  Check DNS Status
                 </button>
               </div>
             </form>
@@ -2352,6 +2421,197 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 }`}
               >
                 {bulkLandingPageLoading ? 'Creating...' : 'Create Landing Pages'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* DNS Status Check Modal */}
+      {isDnsCheckModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-dark-card p-6 rounded-lg shadow-lg border border-dark-accent w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4 text-white">DNS Status Check</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Check which domains are properly pointing to Vercel and identify any that went offline.
+            </p>
+            
+            {/* Check Type Selection */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-white mb-2">Check Type</label>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => checkDnsStatus('external')}
+                  disabled={dnsCheckLoading}
+                  className={`px-4 py-2 rounded-md text-white font-medium ${
+                    dnsCheckLoading 
+                      ? 'bg-purple-600/50 cursor-not-allowed' 
+                      : 'bg-purple-600 hover:bg-purple-700 transition-colors duration-200'
+                  }`}
+                >
+                  {dnsCheckLoading ? 'Checking...' : 'Check External Domains'}
+                </button>
+                <button
+                  onClick={() => checkDnsStatus('inactive')}
+                  disabled={dnsCheckLoading}
+                  className={`px-4 py-2 rounded-md text-white font-medium ${
+                    dnsCheckLoading 
+                      ? 'bg-orange-600/50 cursor-not-allowed' 
+                      : 'bg-orange-600 hover:bg-orange-700 transition-colors duration-200'
+                  }`}
+                >
+                  {dnsCheckLoading ? 'Checking...' : 'Check Inactive Only'}
+                </button>
+                <button
+                  onClick={() => checkDnsStatus('all')}
+                  disabled={dnsCheckLoading}
+                  className={`px-4 py-2 rounded-md text-white font-medium ${
+                    dnsCheckLoading 
+                      ? 'bg-blue-600/50 cursor-not-allowed' 
+                      : 'bg-blue-600 hover:bg-blue-700 transition-colors duration-200'
+                  }`}
+                >
+                  {dnsCheckLoading ? 'Checking...' : 'Check All Domains'}
+                </button>
+              </div>
+            </div>
+            
+            {/* Results Summary */}
+            {dnsCheckResults.summary && (
+              <div className="mb-6 p-4 bg-dark-lighter border border-dark-light rounded-md">
+                <h4 className="text-white font-medium mb-2">Summary</h4>
+                <div className="grid grid-cols-4 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">{dnsCheckResults.summary.total}</div>
+                    <div className="text-gray-400">Total</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-400">{dnsCheckResults.summary.active}</div>
+                    <div className="text-gray-400">Active</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-yellow-400">{dnsCheckResults.summary.inactive}</div>
+                    <div className="text-gray-400">Inactive</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-400">{dnsCheckResults.summary.errors}</div>
+                    <div className="text-gray-400">Errors</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Results Table */}
+            {dnsCheckResults.results && dnsCheckResults.results.externalInactive.length > 0 && (
+              <div className="mb-4">
+                <h4 className="text-white font-medium mb-2">External Domains with Issues ({dnsCheckResults.results.externalInactive.length})</h4>
+                <div className="overflow-x-auto rounded-lg border border-dark-accent">
+                  <table className="min-w-full divide-y divide-gray-700">
+                    <thead className="bg-dark-accent">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Current Target</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Expected</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Error</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-dark-lighter divide-y divide-gray-700">
+                      {dnsCheckResults.results.externalInactive.map((result: any, index: number) => (
+                        <tr key={index} className="hover:bg-dark-light transition-colors duration-150">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-white">{result.domain}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              result.status === 'active' 
+                                ? 'bg-green-900 text-green-300'
+                                : result.status === 'error'
+                                  ? 'bg-red-900 text-red-300'
+                                  : 'bg-yellow-900 text-yellow-300'
+                            }`}>
+                              {result.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300">
+                            {result.currentTarget || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-blue-300">
+                            {result.expectedTarget}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-red-300">
+                            {result.error || 'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {/* All Results Table (collapsed by default) */}
+            {dnsCheckResults.results && dnsCheckResults.results.all.length > 0 && (
+              <details className="mb-4">
+                <summary className="cursor-pointer text-white font-medium mb-2 hover:text-gray-300">
+                  All Results ({dnsCheckResults.results.all.length}) - Click to expand
+                </summary>
+                <div className="overflow-x-auto rounded-lg border border-dark-accent">
+                  <table className="min-w-full divide-y divide-gray-700">
+                    <thead className="bg-dark-accent">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">DNS Management</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Current Target</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Expected</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-dark-lighter divide-y divide-gray-700">
+                      {dnsCheckResults.results.all.map((result: any, index: number) => (
+                        <tr key={index} className="hover:bg-dark-light transition-colors duration-150">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-white">{result.domain}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              result.dnsManagement === 'external' 
+                                ? 'bg-blue-900 text-blue-300'
+                                : 'bg-green-900 text-green-300'
+                            }`}>
+                              {result.dnsManagement}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              result.status === 'active' 
+                                ? 'bg-green-900 text-green-300'
+                                : result.status === 'error'
+                                  ? 'bg-red-900 text-red-300'
+                                  : 'bg-yellow-900 text-yellow-300'
+                            }`}>
+                              {result.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300">
+                            {result.currentTarget || 'N/A'}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-blue-300">
+                            {result.expectedTarget}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setIsDnsCheckModalOpen(false);
+                  setDnsCheckResults({});
+                }}
+                className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
+              >
+                Close
               </button>
             </div>
           </div>
