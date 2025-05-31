@@ -12,6 +12,9 @@ export interface ILandingPage {
   googleAdsAccountId?: string;
   banCount?: number;
   manualScreenshots?: boolean;
+  templateType?: 'standard' | 'call-ads';
+  phoneNumber?: string;
+  businessName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,6 +71,25 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
     manualScreenshots: {
       type: Boolean,
       default: false,
+    },
+    templateType: {
+      type: String,
+      enum: ['standard', 'call-ads'],
+      default: 'standard',
+    },
+    phoneNumber: {
+      type: String,
+      trim: true,
+      required: function(this: ILandingPage) {
+        return this.templateType === 'call-ads';
+      },
+    },
+    businessName: {
+      type: String,
+      trim: true,
+      required: function(this: ILandingPage) {
+        return this.templateType === 'call-ads';
+      },
     },
   },
   { timestamps: true }

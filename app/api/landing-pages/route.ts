@@ -83,7 +83,10 @@ export async function POST(request: NextRequest) {
       originalUrl,
       manualScreenshots,
       desktopScreenshotUrl,
-      mobileScreenshotUrl
+      mobileScreenshotUrl,
+      templateType,
+      phoneNumber,
+      businessName
     } = body;
     
     // Validate required fields
@@ -94,19 +97,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // For non-manual screenshots, originalUrl is required
-    if (!manualScreenshots && !originalUrl) {
+    // Validate template-specific fields
+    if (templateType === 'call-ads') {
+      if (!phoneNumber || !businessName) {
+        return NextResponse.json(
+          { error: 'Phone number and business name are required for call ads template' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // For non-manual screenshots and non-call-ads templates, originalUrl is required
+    if (!manualScreenshots && !originalUrl && templateType !== 'call-ads') {
       return NextResponse.json(
         { error: 'Original URL is required for automatic screenshots' },
         { status: 400 }
       );
     }
     
-    // Set a placeholder originalUrl for manual screenshots if none provided
-    const effectiveOriginalUrl = originalUrl || (manualScreenshots ? 'https://manual-screenshots.example.com' : '');
+    // Set a placeholder originalUrl for manual screenshots or call-ads if none provided
+    const effectiveOriginalUrl = originalUrl || (manualScreenshots || templateType === 'call-ads' ? 'https://manual-screenshots.example.com' : '');
     
-    // Validate manual screenshots if provided
-    if (manualScreenshots && (!desktopScreenshotUrl || !mobileScreenshotUrl)) {
+    // Validate manual screenshots if provided (only for standard template)
+    if (manualScreenshots && templateType === 'standard' && (!desktopScreenshotUrl || !mobileScreenshotUrl)) {
       return NextResponse.json(
         { error: 'Both desktop and mobile screenshots are required when using manual mode' },
         { status: 400 }
@@ -186,7 +199,14 @@ export async function POST(request: NextRequest) {
       // Either use the provided manual screenshots or take new ones automatically
       let screenshotResult: { desktopUrl: string; mobileUrl: string };
       
-      if (manualScreenshots && desktopScreenshotUrl && mobileScreenshotUrl) {
+      if (templateType === 'call-ads') {
+        // For call-ads template, no screenshots are needed
+        console.log('Call ads template - no screenshots needed');
+        screenshotResult = {
+          desktopUrl: '',
+          mobileUrl: ''
+        };
+      } else if (manualScreenshots && desktopScreenshotUrl && mobileScreenshotUrl) {
         console.log('Using manually uploaded screenshots');
         screenshotResult = {
           desktopUrl: desktopScreenshotUrl,
@@ -205,11 +225,14 @@ export async function POST(request: NextRequest) {
         domainId,
         subdomain: '', // Empty subdomain for external domains
         affiliateUrl,
-        originalUrl: originalUrl || (manualScreenshots ? 'https://manual-screenshots.example.com' : ''),
+        originalUrl: originalUrl || (manualScreenshots || templateType === 'call-ads' ? 'https://manual-screenshots.example.com' : ''),
         desktopScreenshotUrl: screenshotResult.desktopUrl,
         mobileScreenshotUrl: screenshotResult.mobileUrl,
         isActive: true,
         manualScreenshots: manualScreenshots || false,
+        templateType: templateType || 'standard',
+        phoneNumber: templateType === 'call-ads' ? phoneNumber : undefined,
+        businessName: templateType === 'call-ads' ? businessName : undefined,
       });
       
       return NextResponse.json({
@@ -306,7 +329,14 @@ export async function POST(request: NextRequest) {
     // Either use the provided manual screenshots or take new ones automatically
     let screenshotResult: { desktopUrl: string; mobileUrl: string };
     
-    if (manualScreenshots && desktopScreenshotUrl && mobileScreenshotUrl) {
+    if (templateType === 'call-ads') {
+      // For call-ads template, no screenshots are needed
+      console.log('Call ads template - no screenshots needed');
+      screenshotResult = {
+        desktopUrl: '',
+        mobileUrl: ''
+      };
+    } else if (manualScreenshots && desktopScreenshotUrl && mobileScreenshotUrl) {
       console.log('Using manually uploaded screenshots');
       screenshotResult = {
         desktopUrl: desktopScreenshotUrl,
@@ -330,6 +360,9 @@ export async function POST(request: NextRequest) {
       mobileScreenshotUrl: screenshotResult.mobileUrl,
       isActive: true,
       manualScreenshots: manualScreenshots || false,
+      templateType: templateType || 'standard',
+      phoneNumber: templateType === 'call-ads' ? phoneNumber : undefined,
+      businessName: templateType === 'call-ads' ? businessName : undefined,
     });
     
     // Return comprehensive information about the setup

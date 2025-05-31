@@ -32,6 +32,9 @@ interface LandingPage {
   mobileScreenshotUrl: string;
   isActive: boolean;
   googleAdsAccountId?: string;
+  templateType?: 'standard' | 'call-ads';
+  phoneNumber?: string;
+  businessName?: string;
   createdAt: string;
   updatedAt: string;
   banCount: number;
@@ -57,6 +60,11 @@ export default function Home() {
   const [subdomain, setSubdomain] = useState('');
   const [affiliateUrl, setAffiliateUrl] = useState('');
   const [originalUrl, setOriginalUrl] = useState('');
+  
+  // Template form state
+  const [templateType, setTemplateType] = useState<'standard' | 'call-ads'>('standard');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [businessName, setBusinessName] = useState('');
   
   // Bulk domain import state
   const [bulkDomains, setBulkDomains] = useState('');
@@ -370,6 +378,22 @@ export default function Home() {
       return;
     }
     
+    // For call-ads template, validate phone number and business name
+    if (templateType === 'call-ads') {
+      if (!phoneNumber || !businessName) {
+        alert('Phone number and business name are required for call ads template');
+        return;
+      }
+      
+      // Basic phone number validation (US format)
+      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+      const cleanedPhone = phoneNumber.replace(/\D/g, '');
+      if (cleanedPhone.length < 10 || cleanedPhone.length > 11) {
+        alert('Please enter a valid US phone number (10-11 digits)');
+        return;
+      }
+    }
+    
     // For external domains, subdomain is not required (will be empty)
     // For regular domains, subdomain is required
     if (!isExternal && !subdomain) {
@@ -377,14 +401,14 @@ export default function Home() {
       return;
     }
     
-    // For automatic screenshots, original URL is required
-    if (!useManualScreenshots && !originalUrl) {
+    // For automatic screenshots, original URL is required (not needed for call-ads)
+    if (!useManualScreenshots && !originalUrl && templateType !== 'call-ads') {
       alert('Original URL is required for automatic screenshots');
       return;
     }
     
-    // Check if manual screenshots are required but not provided
-    if (useManualScreenshots && (!desktopScreenshotFile || !mobileScreenshotFile)) {
+    // Check if manual screenshots are required but not provided (only for standard template)
+    if (useManualScreenshots && templateType === 'standard' && (!desktopScreenshotFile || !mobileScreenshotFile)) {
       alert('Please upload both desktop and mobile screenshots');
       return;
     }
@@ -398,7 +422,7 @@ export default function Home() {
         mobileUrl: null 
       };
       
-      if (useManualScreenshots) {
+      if (useManualScreenshots && templateType === 'standard') {
         setUploadingScreenshots(true);
         screenshotUrls = await uploadScreenshots();
         setUploadingScreenshots(false);
@@ -421,10 +445,13 @@ export default function Home() {
           domainId: selectedDomainId,
           subdomain: isExternal ? '' : subdomain, // Empty subdomain for external domains
           affiliateUrl,
-          originalUrl,
+          originalUrl: originalUrl || 'https://placeholder.example.com',
           manualScreenshots: useManualScreenshots,
           desktopScreenshotUrl: screenshotUrls.desktopUrl,
           mobileScreenshotUrl: screenshotUrls.mobileUrl,
+          templateType,
+          phoneNumber: templateType === 'call-ads' ? phoneNumber : undefined,
+          businessName: templateType === 'call-ads' ? businessName : undefined,
         }),
       });
       
@@ -435,6 +462,11 @@ export default function Home() {
         setSubdomain('');
         setAffiliateUrl('');
         setOriginalUrl('');
+        
+        // Reset template fields
+        setTemplateType('standard');
+        setPhoneNumber('');
+        setBusinessName('');
         
         // Reset screenshot state
         setUseManualScreenshots(false);
@@ -1914,6 +1946,91 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 )}
               </div>
               
+              {/* Template Selection */}
+              <div className="space-y-2">
+                <label className="block text-gray-400 text-sm font-medium">Template Type</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                    templateType === 'standard' 
+                      ? 'border-primary bg-primary/10 text-white' 
+                      : 'border-dark-light bg-dark-lighter text-gray-300 hover:bg-dark-light'
+                  }`}
+                  onClick={() => setTemplateType('standard')}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        name="templateType"
+                        value="standard"
+                        checked={templateType === 'standard'}
+                        onChange={() => setTemplateType('standard')}
+                        className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                      />
+                      <div>
+                        <div className="font-medium">Standard</div>
+                        <div className="text-xs text-gray-400">Regular landing page with screenshots</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                    templateType === 'call-ads' 
+                      ? 'border-primary bg-primary/10 text-white' 
+                      : 'border-dark-light bg-dark-lighter text-gray-300 hover:bg-dark-light'
+                  }`}
+                  onClick={() => setTemplateType('call-ads')}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        name="templateType"
+                        value="call-ads"
+                        checked={templateType === 'call-ads'}
+                        onChange={() => setTemplateType('call-ads')}
+                        className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                      />
+                      <div>
+                        <div className="font-medium">Call Ads</div>
+                        <div className="text-xs text-gray-400">Simple page for verification (phone + business)</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Call Ads Template Fields */}
+              {templateType === 'call-ads' && (
+                <div className="space-y-4 p-4 border border-orange-500/30 rounded-md bg-orange-900/10">
+                  <h3 className="text-orange-300 text-sm font-medium flex items-center">
+                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+                    </svg>
+                    Call Ads Configuration
+                  </h3>
+                  
+                  <input
+                    className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-white placeholder-gray-500"
+                    type="text"
+                    placeholder="Business Name (e.g., Acme Digital Marketing)"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                  />
+                  
+                  <input
+                    className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-white placeholder-gray-500"
+                    type="tel"
+                    placeholder="Phone Number (e.g., (555) 123-4567)"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                  />
+                  
+                  <div className="text-xs text-orange-200 bg-orange-900/20 p-3 rounded-md">
+                    <div className="font-medium mb-1">📞 Call Ads Template</div>
+                    <p>This creates a simple verification page showing your business name and phone number. Perfect for Google call-only ads that require a working landing page for verification.</p>
+                  </div>
+                </div>
+              )}
+              
               {/* Subdomain field - only show for non-external domains */}
               {!isSelectedDomainExternal() ? (
                 <input
@@ -1945,31 +2062,36 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 onChange={(e) => setAffiliateUrl(e.target.value)}
               />
               
-              <input
-                className={`w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 ${useManualScreenshots ? 'opacity-50 cursor-not-allowed' : ''}`}
-                type="text"
-                placeholder={useManualScreenshots ? "Not required for manual screenshots" : "Original URL"}
-                value={originalUrl}
-                onChange={(e) => setOriginalUrl(e.target.value)}
-                disabled={useManualScreenshots}
-              />
-              
-              {/* Manual Screenshots Toggle */}
-              <div className="flex items-center space-x-2">
+              {/* Original URL - only required for standard template */}
+              {templateType === 'standard' && (
                 <input
-                  type="checkbox"
-                  id="manualScreenshots"
-                  checked={useManualScreenshots}
-                  onChange={(e) => setUseManualScreenshots(e.target.checked)}
-                  className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                  className={`w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 ${useManualScreenshots ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  type="text"
+                  placeholder={useManualScreenshots ? "Not required for manual screenshots" : "Original URL"}
+                  value={originalUrl}
+                  onChange={(e) => setOriginalUrl(e.target.value)}
+                  disabled={useManualScreenshots}
                 />
-                <label htmlFor="manualScreenshots" className="text-gray-300 text-sm">
-                  Manually upload screenshots (for sites that don't work with automatic capture)
-                </label>
-              </div>
+              )}
               
-              {/* Manual Screenshot Upload Fields */}
-              {useManualScreenshots && (
+              {/* Manual Screenshots Toggle - only for standard template */}
+              {templateType === 'standard' && (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="manualScreenshots"
+                    checked={useManualScreenshots}
+                    onChange={(e) => setUseManualScreenshots(e.target.checked)}
+                    className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                  />
+                  <label htmlFor="manualScreenshots" className="text-gray-300 text-sm">
+                    Manually upload screenshots (for sites that don't work with automatic capture)
+                  </label>
+                </div>
+              )}
+              
+              {/* Manual Screenshot Upload Fields - only for standard template */}
+              {useManualScreenshots && templateType === 'standard' && (
                 <div className="space-y-4 p-4 border border-dark-accent rounded-md bg-dark-light">
                   <h3 className="text-white text-sm font-medium">Upload Screenshots</h3>
                   
@@ -2107,6 +2229,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">URL</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Template</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Google Ads Account ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
@@ -2128,6 +2251,15 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                           <a href={getLandingPageUrl(page)} target="_blank" rel="noopener noreferrer">
                             {getLandingPageUrl(page)}
                           </a>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            page.templateType === 'call-ads' 
+                              ? 'bg-orange-900 text-orange-300' 
+                              : 'bg-blue-900 text-blue-300'
+                          }`}>
+                            {page.templateType === 'call-ads' ? '📞 Call Ads' : '🌐 Standard'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
