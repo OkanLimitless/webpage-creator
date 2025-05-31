@@ -372,9 +372,15 @@ export default function Home() {
     // Check if selected domain is external
     const isExternal = isSelectedDomainExternal();
     
-    // Check required fields based on screenshot mode and domain type
-    if (!landingPageName || !selectedDomainId || !affiliateUrl) {
+    // Check required fields based on template type
+    if (!landingPageName || !selectedDomainId) {
       alert('Please fill in all required fields');
+      return;
+    }
+    
+    // For standard template, affiliate URL is required
+    if (templateType === 'standard' && !affiliateUrl) {
+      alert('Affiliate URL is required for standard template');
       return;
     }
     
@@ -444,7 +450,7 @@ export default function Home() {
           name: landingPageName,
           domainId: selectedDomainId,
           subdomain: isExternal ? '' : subdomain, // Empty subdomain for external domains
-          affiliateUrl,
+          affiliateUrl: templateType === 'standard' ? affiliateUrl : undefined,
           originalUrl: originalUrl || 'https://placeholder.example.com',
           manualScreenshots: useManualScreenshots,
           desktopScreenshotUrl: screenshotUrls.desktopUrl,
@@ -2054,13 +2060,16 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 </div>
               )}
               
-              <input
-                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
-                type="text"
-                placeholder="Affiliate URL"
-                value={affiliateUrl}
-                onChange={(e) => setAffiliateUrl(e.target.value)}
-              />
+              {/* Affiliate URL - only for standard template */}
+              {templateType === 'standard' && (
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Affiliate URL"
+                  value={affiliateUrl}
+                  onChange={(e) => setAffiliateUrl(e.target.value)}
+                />
+              )}
               
               {/* Original URL - only required for standard template */}
               {templateType === 'standard' && (

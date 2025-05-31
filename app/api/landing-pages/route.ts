@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
     } = body;
     
     // Validate required fields
-    if (!name || !domainId || !affiliateUrl) {
+    if (!name || !domainId) {
       return NextResponse.json(
-        { error: 'Name, domain, and affiliate URL are required' },
+        { error: 'Name and domain are required' },
         { status: 400 }
       );
     }
@@ -102,6 +102,14 @@ export async function POST(request: NextRequest) {
       if (!phoneNumber || !businessName) {
         return NextResponse.json(
           { error: 'Phone number and business name are required for call ads template' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // For standard template, affiliate URL is required
+      if (!affiliateUrl) {
+        return NextResponse.json(
+          { error: 'Affiliate URL is required for standard template' },
           { status: 400 }
         );
       }
@@ -224,7 +232,7 @@ export async function POST(request: NextRequest) {
         name,
         domainId,
         subdomain: '', // Empty subdomain for external domains
-        affiliateUrl,
+        affiliateUrl: affiliateUrl || (templateType === 'call-ads' ? 'https://verification-placeholder.example.com' : ''),
         originalUrl: originalUrl || (manualScreenshots || templateType === 'call-ads' ? 'https://manual-screenshots.example.com' : ''),
         desktopScreenshotUrl: screenshotResult.desktopUrl,
         mobileScreenshotUrl: screenshotResult.mobileUrl,
@@ -354,7 +362,7 @@ export async function POST(request: NextRequest) {
       name,
       domainId,
       subdomain,
-      affiliateUrl,
+      affiliateUrl: affiliateUrl || (templateType === 'call-ads' ? 'https://verification-placeholder.example.com' : ''),
       originalUrl: effectiveOriginalUrl,
       desktopScreenshotUrl: screenshotResult.desktopUrl,
       mobileScreenshotUrl: screenshotResult.mobileUrl,
