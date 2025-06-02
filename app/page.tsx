@@ -152,6 +152,9 @@ export default function Home() {
     };
   }>({});
   
+  // Landing pages tab state
+  const [landingPageTab, setLandingPageTab] = useState<'all' | 'standard' | 'travel' | 'pest-control'>('all');
+  
   // Check authentication on page load
   useEffect(() => {
     const getCookie = (name: string): string | null => {
@@ -830,6 +833,36 @@ export default function Home() {
     return domain?.dnsManagement === 'external';
   };
   
+  // Filter functions for landing page tabs
+  const getStandardLandingPages = (): LandingPage[] => {
+    return landingPages.filter(page => page.templateType === 'standard');
+  };
+  
+  const getTravelLandingPages = (): LandingPage[] => {
+    return landingPages.filter(page => 
+      page.templateType === 'call-ads' && page.callAdsTemplateType === 'travel'
+    );
+  };
+  
+  const getPestControlLandingPages = (): LandingPage[] => {
+    return landingPages.filter(page => 
+      page.templateType === 'call-ads' && page.callAdsTemplateType === 'pest-control'
+    );
+  };
+  
+  const getFilteredLandingPages = (): LandingPage[] => {
+    switch (landingPageTab) {
+      case 'standard':
+        return getStandardLandingPages();
+      case 'travel':
+        return getTravelLandingPages();
+      case 'pest-control':
+        return getPestControlLandingPages();
+      default:
+        return landingPages;
+    }
+  };
+  
   // Add this function to update Google Ads account ID
   const updateGoogleAdsAccountId = async (id: string, accountId: string) => {
     try {
@@ -964,10 +997,15 @@ export default function Home() {
   
   // Select/deselect all landing pages
   const toggleSelectAllLandingPages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const filteredPages = getFilteredLandingPages();
     if (e.target.checked) {
-      setSelectedLandingPages(landingPages.map(page => page._id));
+      // Add all filtered page IDs to selection, keeping any already selected pages from other tabs
+      const newSelections = Array.from(new Set([...selectedLandingPages, ...filteredPages.map(page => page._id)]));
+      setSelectedLandingPages(newSelections);
     } else {
-      setSelectedLandingPages([]);
+      // Remove only the filtered page IDs from selection
+      const filteredPageIds = filteredPages.map(page => page._id);
+      setSelectedLandingPages(prev => prev.filter(id => !filteredPageIds.includes(id)));
     }
   };
   
@@ -2277,8 +2315,54 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               )}
             </div>
             
+            {/* Landing Page Filter Tabs */}
+            <div className="flex mb-6 border-b border-gray-700">
+              <div 
+                className={`px-4 py-3 cursor-pointer mr-2 ${
+                  landingPageTab === 'all'
+                    ? 'border-b-2 border-primary text-white font-semibold'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+                onClick={() => setLandingPageTab('all')}
+              >
+                All ({landingPages.length})
+              </div>
+              <div 
+                className={`px-4 py-3 cursor-pointer mr-2 ${
+                  landingPageTab === 'standard'
+                    ? 'border-b-2 border-primary text-white font-semibold'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+                onClick={() => setLandingPageTab('standard')}
+              >
+                🌐 Standard ({getStandardLandingPages().length})
+              </div>
+              <div 
+                className={`px-4 py-3 cursor-pointer mr-2 ${
+                  landingPageTab === 'travel'
+                    ? 'border-b-2 border-primary text-white font-semibold'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+                onClick={() => setLandingPageTab('travel')}
+              >
+                ✈️ Travel ({getTravelLandingPages().length})
+              </div>
+              <div 
+                className={`px-4 py-3 cursor-pointer mr-2 ${
+                  landingPageTab === 'pest-control'
+                    ? 'border-b-2 border-primary text-white font-semibold'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+                onClick={() => setLandingPageTab('pest-control')}
+              >
+                🐛 Pest Control ({getPestControlLandingPages().length})
+              </div>
+            </div>
+            
             {landingPages.length === 0 ? (
               <p className="text-gray-400">No landing pages yet. Create your first landing page above.</p>
+            ) : getFilteredLandingPages().length === 0 ? (
+              <p className="text-gray-400">No landing pages found for the selected filter.</p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-dark-accent">
                 <table className="min-w-full divide-y divide-gray-700">
@@ -2288,7 +2372,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                         <input
                           type="checkbox"
                           className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
-                          checked={selectedLandingPages.length === landingPages.length && landingPages.length > 0}
+                          checked={getFilteredLandingPages().length > 0 && getFilteredLandingPages().every(page => selectedLandingPages.includes(page._id))}
                           onChange={toggleSelectAllLandingPages}
                         />
                       </th>
@@ -2301,7 +2385,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                     </tr>
                   </thead>
                   <tbody className="bg-dark-lighter divide-y divide-gray-700">
-                    {landingPages.map((page) => (
+                    {getFilteredLandingPages().map((page) => (
                       <tr key={page._id} className={`hover:bg-dark-light transition-colors duration-150 ${selectedLandingPages.includes(page._id) ? 'bg-dark-light' : ''}`}>
                         <td className="px-2 py-4 whitespace-nowrap text-center">
                           <input
