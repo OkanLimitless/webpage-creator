@@ -9,8 +9,8 @@ export async function generateCallAdsHtml(landingPage: ILandingPage): Promise<st
     name 
   } = landingPage;
   
-  const htmlTitle = businessName || name || "Contact Us";
-  const siteName = businessName || name || "Business";
+  const htmlTitle = businessName || name || "Fly Easy";
+  const siteName = businessName || name || "Fly Easy";
   
   // Format phone number for display (assuming US format)
   const formatPhoneNumber = (phone: string) => {
@@ -31,19 +31,18 @@ export async function generateCallAdsHtml(landingPage: ILandingPage): Promise<st
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="index, follow">
-  <meta name="description" content="${siteName} - Contact us for more information">
-  <meta name="keywords" content="${siteName}, contact, phone, business">
+  <meta name="description" content="${siteName} - Best prices on flights. Call now to speak with a live travel specialist!">
+  <meta name="keywords" content="${siteName}, flights, travel, booking, cheap flights, travel deals">
   <meta name="author" content="${siteName}">
   
-  <meta property="og:title" content="${siteName}" />
-  <meta property="og:description" content="Contact ${siteName} for more information" />
+  <meta property="og:title" content="${siteName} - Best Flight Deals" />
+  <meta property="og:description" content="Call now to speak with a live travel specialist and get the best prices on flights!" />
   <meta property="og:type" content="website" />
   
-  <title>${htmlTitle}</title>
+  <title>${htmlTitle} - Best Flight Deals</title>
   
-  <!-- Default favicon -->
-  <link rel="icon" type="image/png" href="https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.png">
-  <link rel="shortcut icon" href="https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.ico" type="image/x-icon">
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="https://img.icons8.com/ios-filled/32/ffffff/airplane-take-off.png">
   
   <!-- Microsoft Clarity for analytics -->
   <script type="text/javascript">
@@ -64,158 +63,363 @@ export async function generateCallAdsHtml(landingPage: ILandingPage): Promise<st
     html, body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       height: 100%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #333;
+      background: linear-gradient(135deg, #1e90ff 0%, #0073e6 100%);
+      color: white;
+      line-height: 1.6;
     }
     
-    .container {
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 40px;
+      position: relative;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .logo img {
+      margin-right: 10px;
+      width: 32px;
+      height: 32px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 30px;
+    }
+
+    .nav a {
+      color: white;
+      text-decoration: none;
+      font-weight: 500;
+      transition: opacity 0.3s ease;
+    }
+
+    .nav a:hover {
+      opacity: 0.8;
+    }
+
+    .hero {
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      padding: 20px;
+      min-height: 60vh;
+      padding: 40px 20px;
     }
 
-    .card {
-      background: white;
+    .hero-card {
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
       border-radius: 20px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
       padding: 60px 40px;
       text-align: center;
-      max-width: 500px;
+      max-width: 600px;
       width: 100%;
-      position: relative;
-      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
-    .card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 5px;
-      background: linear-gradient(90deg, #667eea, #764ba2);
-    }
-
-    .business-name {
-      font-size: 2.5rem;
+    .hero-title {
+      font-size: 3.5rem;
       font-weight: 700;
-      color: #2d3748;
       margin-bottom: 20px;
-      line-height: 1.2;
+      color: white;
     }
 
-    .subtitle {
-      font-size: 1.2rem;
-      color: #718096;
-      margin-bottom: 40px;
-      font-weight: 400;
-    }
-
-    .phone-section {
-      background: #f7fafc;
-      border-radius: 15px;
-      padding: 30px;
-      margin: 30px 0;
-      border: 2px solid #e2e8f0;
-    }
-
-    .phone-label {
-      font-size: 1rem;
-      color: #4a5568;
+    .hero-subtitle {
+      font-size: 1.4rem;
       margin-bottom: 15px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.9);
+      font-weight: 500;
     }
 
-    .phone-number {
-      font-size: 2.2rem;
-      font-weight: 700;
-      color: #2b6cb0;
-      margin-bottom: 20px;
-      font-family: 'Courier New', monospace;
+    .hero-description {
+      font-size: 1.1rem;
+      margin-bottom: 40px;
+      color: rgba(255, 255, 255, 0.8);
     }
 
     .call-button {
       display: inline-block;
-      background: linear-gradient(135deg, #48bb78, #38a169);
+      background: linear-gradient(135deg, #4CAF50, #45a049);
       color: white;
-      padding: 15px 30px;
+      padding: 18px 40px;
       text-decoration: none;
       border-radius: 50px;
-      font-size: 1.1rem;
+      font-size: 1.3rem;
       font-weight: 600;
       transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3);
+      box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+      border: none;
+      cursor: pointer;
     }
 
     .call-button:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
+      box-shadow: 0 12px 35px rgba(76, 175, 80, 0.4);
     }
 
-    .verification-note {
-      margin-top: 40px;
-      padding: 20px;
-      background: #fff5f5;
-      border-left: 4px solid #fc8181;
-      border-radius: 5px;
-      text-align: left;
+    .trust-badges {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin: 60px 0;
+      flex-wrap: wrap;
     }
 
-    .verification-note h3 {
-      color: #c53030;
-      font-size: 1rem;
-      margin-bottom: 10px;
-      font-weight: 600;
+    .trust-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
     }
 
-    .verification-note p {
-      color: #742a2a;
+    .trust-badge img {
+      width: 60px;
+      height: 60px;
+      opacity: 0.9;
+    }
+
+    .trust-badge span {
       font-size: 0.9rem;
-      line-height: 1.5;
+      color: rgba(255, 255, 255, 0.8);
+      font-weight: 500;
+    }
+
+    .content-section {
+      padding: 60px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-title {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+
+    .about-text {
+      font-size: 1.1rem;
+      line-height: 1.8;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .faq-section {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 60px 40px;
+      margin-top: 40px;
+    }
+
+    .faq-item {
+      margin-bottom: 25px;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .faq-question {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 8px;
+    }
+
+    .faq-answer {
+      font-size: 1rem;
+      color: rgba(255, 255, 255, 0.85);
+      line-height: 1.6;
+    }
+
+    .footer {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 40px;
+      text-align: center;
+      margin-top: 60px;
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .footer-logo img {
+      margin-right: 10px;
+      width: 24px;
+      height: 24px;
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .footer-links a {
+      color: rgba(255, 255, 255, 0.8);
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+
+    .footer-links a:hover {
+      color: white;
+    }
+
+    .footer-text {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 0.9rem;
     }
 
     @media (max-width: 768px) {
-      .card {
+      .header {
+        padding: 15px 20px;
+        flex-direction: column;
+        gap: 15px;
+      }
+
+      .nav {
+        gap: 20px;
+      }
+
+      .hero-card {
         padding: 40px 25px;
-        margin: 10px;
+        margin: 20px;
       }
 
-      .business-name {
-        font-size: 2rem;
+      .hero-title {
+        font-size: 2.5rem;
       }
 
-      .phone-number {
-        font-size: 1.8rem;
+      .hero-subtitle {
+        font-size: 1.2rem;
       }
 
-      .subtitle {
+      .call-button {
+        padding: 15px 30px;
         font-size: 1.1rem;
+      }
+
+      .trust-badges {
+        gap: 20px;
+      }
+
+      .content-section {
+        padding: 40px 20px;
+      }
+
+      .faq-section {
+        padding: 40px 20px;
+      }
+
+      .footer-links {
+        gap: 15px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h1 class="business-name">${businessName}</h1>
-      <p class="subtitle">Contact us for more information</p>
-      
-      <div class="phone-section">
-        <div class="phone-label">Call Now</div>
-        <div class="phone-number">${formattedPhone}</div>
-        <a href="tel:${phoneNumber}" class="call-button">📞 Call Now</a>
-      </div>
-
-      <div class="verification-note">
-        <h3>Verification Purpose Only</h3>
-        <p>This page is created for domain verification purposes. It displays basic contact information to comply with advertising platform requirements.</p>
-      </div>
+  <header class="header">
+    <div class="logo">
+      <img src="https://img.icons8.com/ios-filled/50/ffffff/airplane-take-off.png" alt="${siteName} Logo">
+      ${siteName}
     </div>
-  </div>
+    <nav class="nav">
+      <a href="#about">About Us</a>
+      <a href="#faq">FAQs</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="hero-card">
+      <h1 class="hero-title">${siteName}</h1>
+      <p class="hero-subtitle">Best Prices in Market on flights</p>
+      <p class="hero-description">Call now to speak with a live travel specialist!</p>
+      <a href="tel:${phoneNumber}" class="call-button">Call ${formattedPhone}</a>
+    </div>
+  </section>
+
+  <section class="trust-badges">
+    <div class="trust-badge">
+      <img src="https://img.icons8.com/ios-filled/100/ffffff/verified-account.png" alt="Secure Booking" title="Secure Booking" />
+      <span>Secure Booking</span>
+    </div>
+    <div class="trust-badge">
+      <img src="https://img.icons8.com/ios-filled/100/ffffff/clock.png" alt="24/7 Support" title="24/7 Support" />
+      <span>24/7 Support</span>
+    </div>
+    <div class="trust-badge">
+      <img src="https://img.icons8.com/ios-filled/100/ffffff/ticket.png" alt="Flight Deals" title="Flight Deals" />
+      <span>Flight Deals</span>
+    </div>
+  </section>
+
+  <section id="about" class="content-section">
+    <h2 class="section-title">About Us</h2>
+    <p class="about-text">
+      ${siteName} was founded with a simple mission: make flight booking fast, and hassle-free. Since 
+      our inception, we've helped thousands of travelers find the best flight deals available. Our team 
+      of travel experts is passionate about helping people reach their destinations with ease, 
+      comfort, and savings. Whether you're flying for business or leisure, ${siteName} is your trusted travel 
+      companion.
+    </p>
+  </section>
+
+  <section id="faq" class="faq-section">
+    <h2 class="section-title">FAQs</h2>
+    
+    <div class="faq-item">
+      <div class="faq-question">Q1: How do I book a flight with ${siteName}?</div>
+      <div class="faq-answer">A: Simply call our helpline and our agents will guide you through the process.</div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">Q2: Can I change or cancel my flight after booking?</div>
+      <div class="faq-answer">A: Yes, changes and cancellations are possible depending on the airline's policies.</div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">Q3: Do I get a confirmation email or ticket?</div>
+      <div class="faq-answer">A: Yes, a confirmation and e-ticket will be sent to your email after booking.</div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">Q4: What payment methods do you accept?</div>
+      <div class="faq-answer">A: We accept all major credit/debit cards and other secure online payment options.</div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">Q5: Is it safe to book over the phone?</div>
+      <div class="faq-answer">A: Absolutely. We use secure systems and your privacy is protected.</div>
+    </div>
+  </section>
+
+  <footer id="contact" class="footer">
+    <div class="footer-logo">
+      <img src="https://img.icons8.com/ios-filled/50/ffffff/airplane-take-off.png" alt="${siteName} Logo">
+      ${siteName}
+    </div>
+    <div class="footer-links">
+      <a href="#about">About Us</a>
+      <a href="#faq">FAQs</a>
+      <a href="#contact">Contact</a>
+    </div>
+    <p class="footer-text">© 2025 ${siteName}. All rights reserved.</p>
+  </footer>
 </body>
 </html>`;
 }
