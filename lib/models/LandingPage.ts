@@ -13,6 +13,7 @@ export interface ILandingPage {
   banCount?: number;
   manualScreenshots?: boolean;
   templateType?: 'standard' | 'call-ads';
+  callAdsTemplateType?: 'travel' | 'pest-control';
   phoneNumber?: string;
   businessName?: string;
   createdAt: Date;
@@ -76,6 +77,10 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
       type: String,
       enum: ['standard', 'call-ads'],
       default: 'standard',
+    },
+    callAdsTemplateType: {
+      type: String,
+      enum: ['travel', 'pest-control'],
     },
     phoneNumber: {
       type: String,

@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       desktopScreenshotUrl,
       mobileScreenshotUrl,
       templateType,
+      callAdsTemplateType,
       phoneNumber,
       businessName
     } = body;
@@ -239,6 +240,7 @@ export async function POST(request: NextRequest) {
         isActive: true,
         manualScreenshots: manualScreenshots || false,
         templateType: templateType || 'standard',
+        callAdsTemplateType: templateType === 'call-ads' ? (callAdsTemplateType || 'travel') : undefined,
         phoneNumber: templateType === 'call-ads' ? phoneNumber : undefined,
         businessName: templateType === 'call-ads' ? businessName : undefined,
       });
@@ -369,6 +371,7 @@ export async function POST(request: NextRequest) {
       isActive: true,
       manualScreenshots: manualScreenshots || false,
       templateType: templateType || 'standard',
+      callAdsTemplateType: templateType === 'call-ads' ? (callAdsTemplateType || 'travel') : undefined,
       phoneNumber: templateType === 'call-ads' ? phoneNumber : undefined,
       businessName: templateType === 'call-ads' ? businessName : undefined,
     });

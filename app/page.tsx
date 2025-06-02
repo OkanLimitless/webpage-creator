@@ -33,6 +33,7 @@ interface LandingPage {
   isActive: boolean;
   googleAdsAccountId?: string;
   templateType?: 'standard' | 'call-ads';
+  callAdsTemplateType?: 'travel' | 'pest-control';
   phoneNumber?: string;
   businessName?: string;
   createdAt: string;
@@ -63,6 +64,7 @@ export default function Home() {
   
   // Template form state
   const [templateType, setTemplateType] = useState<'standard' | 'call-ads'>('standard');
+  const [callAdsTemplateType, setCallAdsTemplateType] = useState<'travel' | 'pest-control'>('travel');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [businessName, setBusinessName] = useState('');
   
@@ -456,6 +458,7 @@ export default function Home() {
           desktopScreenshotUrl: screenshotUrls.desktopUrl,
           mobileScreenshotUrl: screenshotUrls.mobileUrl,
           templateType,
+          callAdsTemplateType: templateType === 'call-ads' ? callAdsTemplateType : undefined,
           phoneNumber: templateType === 'call-ads' ? phoneNumber : undefined,
           businessName: templateType === 'call-ads' ? businessName : undefined,
         }),
@@ -471,6 +474,7 @@ export default function Home() {
         
         // Reset template fields
         setTemplateType('standard');
+        setCallAdsTemplateType('travel');
         setPhoneNumber('');
         setBusinessName('');
         
@@ -2014,6 +2018,58 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                     Call Ads Configuration
                   </h3>
                   
+                  {/* Industry Template Selection */}
+                  <div className="space-y-2">
+                    <label className="block text-orange-300 text-sm font-medium">Industry Template</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                        callAdsTemplateType === 'travel' 
+                          ? 'border-orange-400 bg-orange-500/20 text-white' 
+                          : 'border-orange-500/50 bg-orange-900/20 text-orange-200 hover:bg-orange-800/20'
+                      }`}
+                      onClick={() => setCallAdsTemplateType('travel')}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            name="callAdsTemplateType"
+                            value="travel"
+                            checked={callAdsTemplateType === 'travel'}
+                            onChange={() => setCallAdsTemplateType('travel')}
+                            className="w-4 h-4 text-orange-500 bg-dark-lighter border-orange-500 rounded focus:ring-orange-500"
+                          />
+                          <div>
+                            <div className="font-medium text-sm">✈️ Travel/Flight</div>
+                            <div className="text-xs opacity-80">Flight booking & travel deals</div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                        callAdsTemplateType === 'pest-control' 
+                          ? 'border-orange-400 bg-orange-500/20 text-white' 
+                          : 'border-orange-500/50 bg-orange-900/20 text-orange-200 hover:bg-orange-800/20'
+                      }`}
+                      onClick={() => setCallAdsTemplateType('pest-control')}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            name="callAdsTemplateType"
+                            value="pest-control"
+                            checked={callAdsTemplateType === 'pest-control'}
+                            onChange={() => setCallAdsTemplateType('pest-control')}
+                            className="w-4 h-4 text-orange-500 bg-dark-lighter border-orange-500 rounded focus:ring-orange-500"
+                          />
+                          <div>
+                            <div className="font-medium text-sm">🐛 Pest Control</div>
+                            <div className="text-xs opacity-80">Extermination & pest services</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
                   <input
                     className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-white placeholder-gray-500"
                     type="text"
@@ -2267,7 +2323,10 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                               ? 'bg-orange-900 text-orange-300' 
                               : 'bg-blue-900 text-blue-300'
                           }`}>
-                            {page.templateType === 'call-ads' ? '📞 Call Ads' : '🌐 Standard'}
+                            {page.templateType === 'call-ads' 
+                              ? `📞 ${page.callAdsTemplateType === 'pest-control' ? '🐛 Pest Control' : '✈️ Travel'}`
+                              : '🌐 Standard'
+                            }
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
