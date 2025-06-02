@@ -839,9 +839,16 @@ export default function Home() {
   };
   
   const getTravelLandingPages = (): LandingPage[] => {
-    return landingPages.filter(page => 
-      page.templateType === 'call-ads' && page.callAdsTemplateType === 'travel'
-    );
+    return landingPages.filter(page => {
+      // Only call-ads template pages
+      if (page.templateType !== 'call-ads') return false;
+      
+      // If callAdsTemplateType is explicitly set to pest-control, it's not travel
+      if (page.callAdsTemplateType === 'pest-control') return false;
+      
+      // Everything else (travel or undefined) is considered travel
+      return true;
+    });
   };
   
   const getPestControlLandingPages = (): LandingPage[] => {
