@@ -10,6 +10,7 @@ export interface ILandingPage {
   mobileScreenshotUrl: string;
   isActive: boolean;
   googleAdsAccountId?: string;
+  googleAnalyticsId?: string;
   banCount?: number;
   manualScreenshots?: boolean;
   templateType?: 'standard' | 'call-ads';
@@ -62,6 +63,10 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
       default: true,
     },
     googleAdsAccountId: {
+      type: String,
+      trim: true,
+    },
+    googleAnalyticsId: {
       type: String,
       trim: true,
     },

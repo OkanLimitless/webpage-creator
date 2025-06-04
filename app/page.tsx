@@ -32,6 +32,7 @@ interface LandingPage {
   mobileScreenshotUrl: string;
   isActive: boolean;
   googleAdsAccountId?: string;
+  googleAnalyticsId?: string;
   templateType?: 'standard' | 'call-ads';
   callAdsTemplateType?: 'travel' | 'pest-control';
   phoneNumber?: string;
@@ -893,6 +894,32 @@ export default function Home() {
     } catch (error) {
       console.error('Error updating Google Ads account:', error);
       alert('An error occurred while updating Google Ads account');
+    }
+  };
+  
+  // Add this function to update Google Analytics ID
+  const updateGoogleAnalyticsId = async (id: string, analyticsId: string) => {
+    try {
+      const response = await fetch(`/api/landing-pages/${id}/update-google-ads-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ googleAnalyticsId: analyticsId }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message);
+        // Refresh landing pages list to update status
+        fetchLandingPages();
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to update Google Analytics ID'}`);
+      }
+    } catch (error) {
+      console.error('Error updating Google Analytics ID:', error);
+      alert('An error occurred while updating Google Analytics ID');
     }
   };
   
@@ -2388,6 +2415,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Template</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Google Ads Account ID</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Google Analytics ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -2446,6 +2474,29 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                             />
                             <button
                               onClick={() => updateGoogleAdsAccountId(page._id, page.googleAdsAccountId || '')}
+                              className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="text"
+                              placeholder="Enter Analytics ID"
+                              value={page.googleAnalyticsId || ''}
+                              onChange={(e) => {
+                                // Update the landing page in state with the new value
+                                const updatedPages = landingPages.map(p => 
+                                  p._id === page._id ? { ...p, googleAnalyticsId: e.target.value } : p
+                                );
+                                setLandingPages(updatedPages);
+                              }}
+                              className="p-1 text-sm bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-1 focus:ring-primary text-white placeholder-gray-500 w-40"
+                            />
+                            <button
+                              onClick={() => updateGoogleAnalyticsId(page._id, page.googleAnalyticsId || '')}
                               className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                             >
                               Save
