@@ -1038,7 +1038,6 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       color: #333;
       transition: all 0.3s ease;
       position: relative;
-      overflow: hidden;
       box-sizing: border-box;
     }
 
@@ -1081,6 +1080,7 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       transition: background 0.3s ease;
       display: inline-block;
       text-decoration: none;
+      margin-bottom: 15px;
     }
 
     .continue-button:hover {
@@ -1088,17 +1088,18 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     }
 
     .cookie-links {
-      margin-top: 15px;
       font-size: 0.8rem;
+      color: #007bff;
       width: 100%;
       text-align: center;
+      clear: both;
+      display: block;
     }
 
     .cookie-links a {
       color: #007bff;
       text-decoration: none;
-      margin: 0 8px;
-      display: inline;
+      margin: 0 5px;
     }
 
     .cookie-links a:hover {
