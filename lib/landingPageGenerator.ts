@@ -862,14 +862,59 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
     return generateCallAdsHtml(landingPage);
   }
   
-  // For standard template, generate the regular landing page
-  const domainName = typeof landingPage.domainId === 'object' && landingPage.domainId && 'name' in landingPage.domainId 
-    ? (landingPage.domainId as any).name || 'unknown-domain.com'
-    : 'unknown-domain.com';
-
-  const subdomain = landingPage.subdomain;
-  const fullDomain = subdomain ? `${subdomain}.${domainName}` : domainName;
-
+  // For standard template, restore the original cookie banner design
+  const { 
+    affiliateUrl, 
+    desktopScreenshotUrl, 
+    mobileScreenshotUrl, 
+    name, 
+    originalUrl, 
+    subdomain, 
+    manualScreenshots 
+  } = landingPage;
+  
+  // Try to extract the page title from the original URL
+  let pageTitle = null;
+  try {
+    pageTitle = await extractPageTitle(originalUrl);
+  } catch (error) {
+    console.error("Error extracting page title:", error);
+  }
+  
+  // Use the extracted title, fall back to name, or use a generic title
+  const htmlTitle = pageTitle || name || "Official Website";
+  const siteName = pageTitle || name || "Official Website";
+  
+  // For manual screenshots, skip favicon extraction to avoid errors
+  let faviconPng = null;
+  let faviconIco = null;
+  
+  if (!manualScreenshots) {
+    // Only try to extract favicon for non-manual pages
+    try {
+      const faviconUrl = await extractFavicon(originalUrl);
+      faviconPng = faviconUrl;
+      faviconIco = faviconUrl;
+    } catch (error) {
+      console.error("Error extracting favicon:", error);
+    }
+    
+    // Use default favicon if extraction failed
+    const defaultFaviconPng = "https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.png";
+    const defaultFaviconIco = "https://storage.googleapis.com/filtrify-public-assets/filtripage/others/padlock.ico";
+    
+    // Determine which favicons to use
+    faviconPng = faviconPng || defaultFaviconPng;
+    faviconIco = faviconIco || defaultFaviconIco;
+  }
+  
+  // Prepare the favicon HTML tags based on whether it's a manual page
+  const faviconTags = manualScreenshots ? '' : `
+  <!-- Favicon from original site or default fallback -->
+  <link rel="icon" type="image/png" href="${faviconPng}">
+  <link rel="shortcut icon" href="${faviconIco}" type="image/x-icon">
+  `;
+  
   // Generate Google Analytics tracking code if ID is provided
   const googleAnalyticsCode = landingPage.googleAnalyticsId ? `
   <!-- Google tag (gtag.js) -->
@@ -881,14 +926,38 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
 
     gtag('config', '${landingPage.googleAnalyticsId}');
   </script>` : '';
-
-  const html = `<!DOCTYPE html>
+  
+  // Professional privacy notice banner images (more legitimate looking)
+  const privacyBannerDesktop = "https://storage.googleapis.com/filtrify-public-assets/filtripage/presellTypes/en/privacy_notice_desktop.png";
+  const privacyBannerMobile = "https://storage.googleapis.com/filtrify-public-assets/filtripage/presellTypes/en/privacy_notice_mobile.png";
+  
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${landingPage.name}</title>
-  <meta name="description" content="Discover amazing deals and offers at ${landingPage.name}">
+  <meta name="robots" content="index, follow">
+  <meta name="description" content="${siteName} - Official website with exclusive offers and promotions. View our privacy policy and terms of service.">
+  <meta name="keywords" content="${siteName}, official site, privacy policy, terms of service, exclusive offers">
+  <meta name="author" content="${siteName}">
+  
+  <meta property="og:title" content="${siteName} - Official Website" />
+  <meta property="og:description" content="Visit the official ${siteName} website. Please review our privacy policy before proceeding." />
+  <meta property="og:image" content="${desktopScreenshotUrl}" />
+  <meta property="og:type" content="website" />
+  
+  <title>${htmlTitle}</title>
+  ${faviconTags}
+  
+  <!-- Microsoft Clarity for analytics -->
+  <script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "julpry3eht");
+  </script>${googleAnalyticsCode}
+  
   <style>
     * {
       margin: 0;
@@ -896,148 +965,253 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       box-sizing: border-box;
     }
     
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      height: 100%;
+      overflow: hidden;
     }
     
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    
-    .header {
-      text-align: center;
-      color: white;
-      margin-bottom: 40px;
-    }
-    
-    .header h1 {
-      font-size: 3rem;
-      margin-bottom: 10px;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    }
-    
-    .header p {
-      font-size: 1.2rem;
-      opacity: 0.9;
-    }
-    
-    .content-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 40px;
-      margin-bottom: 40px;
-    }
-    
-    .screenshot-container {
-      background: white;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      transition: transform 0.3s ease;
-    }
-    
-    .screenshot-container:hover {
-      transform: translateY(-5px);
-    }
-    
-    .screenshot-container h3 {
-      color: #667eea;
-      margin-bottom: 15px;
-      font-size: 1.5rem;
-    }
-    
-    .screenshot {
+    .background-container {
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 100%;
-      height: auto;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-      margin-bottom: 15px;
+      height: 100vh;
+      z-index: -2;
+      overflow: hidden;
+      background-color: #000;
     }
     
-    .cta-button {
-      display: inline-block;
-      background: linear-gradient(45deg, #ff6b6b, #ee5a24);
-      color: white;
-      text-decoration: none;
-      padding: 15px 30px;
-      border-radius: 30px;
-      font-weight: bold;
-      font-size: 1.1rem;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    .background-image {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background-size: cover;
+      background-position: center;
+      filter: blur(3px);
+      transform: scale(1.05);
+      opacity: 0.4;
     }
     
-    .cta-button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    .background-image-mobile {
+      background-image: url('${mobileScreenshotUrl}');
+      display: none;
     }
     
-    .footer {
-      text-align: center;
-      color: white;
-      margin-top: 40px;
-      opacity: 0.8;
+    .background-image-desktop {
+      background-image: url('${desktopScreenshotUrl}');
+      display: block;
     }
-    
+
     @media (max-width: 768px) {
-      .content-grid {
-        grid-template-columns: 1fr;
-        gap: 20px;
+      .background-image-desktop {
+        display: none;
       }
-      
-      .header h1 {
-        font-size: 2rem;
-      }
-      
-      .container {
-        padding: 15px;
+    
+      .background-image-mobile {
+        display: block;
       }
     }
-  </style>${googleAnalyticsCode}
+
+    .overlay-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .privacy-notice {
+      display: block;
+      max-width: 600px;
+      width: 100%;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.98);
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      text-align: center;
+      text-decoration: none;
+      color: #333;
+      transition: all 0.3s ease;
+    }
+
+    .privacy-notice:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .notice-header {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #2c3e50;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .privacy-icon {
+      width: 32px;
+      height: 32px;
+      background: #3498db;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 16px;
+    }
+
+    .notice-text {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #555;
+      margin-bottom: 20px;
+    }
+
+    .continue-button {
+      background: linear-gradient(135deg, #3498db, #2980b9);
+      color: white;
+      padding: 12px 30px;
+      border-radius: 25px;
+      font-weight: 600;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-block;
+      text-decoration: none;
+    }
+
+    .continue-button:hover {
+      background: linear-gradient(135deg, #2980b9, #1f5f8b);
+    }
+
+    .legal-links {
+      margin-top: 20px;
+      font-size: 0.9rem;
+    }
+
+    .legal-links a {
+      color: #3498db;
+      text-decoration: none;
+      margin: 0 10px;
+    }
+
+    .legal-links a:hover {
+      text-decoration: underline;
+    }
+
+    .site-info {
+      margin-bottom: 15px;
+      padding: 15px;
+      background: rgba(52, 152, 219, 0.1);
+      border-radius: 8px;
+      border-left: 4px solid #3498db;
+    }
+
+    .site-name {
+      font-weight: 600;
+      color: #2c3e50;
+      font-size: 1.2rem;
+    }
+
+    .site-description {
+      color: #666;
+      font-size: 0.95rem;
+      margin-top: 5px;
+    }
+    
+    footer {
+      position: absolute;
+      bottom: 15px;
+      width: 100%;
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      z-index: 2;
+    }
+    
+    footer a {
+      color: rgba(255, 255, 255, 0.9);
+      text-decoration: none;
+      margin: 0 8px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.3);
+      transition: background 0.3s ease;
+    }
+
+    footer a:hover {
+      background: rgba(0, 0, 0, 0.5);
+      text-decoration: none;
+    }
+
+    @media (max-width: 768px) {
+      .privacy-notice {
+        padding: 25px 20px;
+        margin: 15px;
+      }
+
+      .notice-header {
+        font-size: 1.5rem;
+      }
+
+      .notice-text {
+        font-size: 1rem;
+      }
+
+      .continue-button {
+        padding: 10px 25px;
+        font-size: 0.95rem;
+      }
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>${landingPage.name}</h1>
-      <p>Experience the best deals and exclusive offers</p>
-    </div>
-    
-    <div class="content-grid">
-      <div class="screenshot-container">
-        <h3>Desktop Experience</h3>
-        <img src="${landingPage.desktopScreenshotUrl}" alt="Desktop Screenshot" class="screenshot">
-        <a href="${landingPage.affiliateUrl}" class="cta-button" target="_blank">Visit Site</a>
-      </div>
-      
-      <div class="screenshot-container">
-        <h3>Mobile Experience</h3>
-        <img src="${landingPage.mobileScreenshotUrl}" alt="Mobile Screenshot" class="screenshot">
-        <a href="${landingPage.affiliateUrl}" class="cta-button" target="_blank">Get Started</a>
-      </div>
-    </div>
-    
-    <div class="footer">
-      <p>&copy; 2024 ${fullDomain}. All rights reserved.</p>
-    </div>
+  <div class="background-container">
+    <div class="background-image background-image-desktop"></div>
+    <div class="background-image background-image-mobile"></div>
   </div>
   
-  <script>
-    // Track button clicks
-    document.querySelectorAll('.cta-button').forEach(button => {
-      button.addEventListener('click', function() {
-        console.log('CTA button clicked:', this.href);
-        // You can add additional tracking here
-      });
-    });
-  </script>
+  <div class="overlay-container">
+    <a href="${affiliateUrl}" class="privacy-notice">
+      <div class="notice-header">
+        <div class="privacy-icon">🔒</div>
+        Privacy Notice
+      </div>
+      
+      <div class="site-info">
+        <div class="site-name">${siteName}</div>
+        <div class="site-description">Official website with exclusive offers</div>
+      </div>
+      
+      <div class="notice-text">
+        We value your privacy and are committed to protecting your personal information. 
+        By continuing to this website, you acknowledge that you have read and understood our privacy policy 
+        and agree to our terms of service.
+      </div>
+      
+      <div class="continue-button">Continue to ${siteName}</div>
+      
+      <div class="legal-links">
+        <a href="/privacy-policy.html" target="_blank">Privacy Policy</a> |
+        <a href="/terms.html" target="_blank">Terms of Service</a>
+      </div>
+    </a>
+  </div>
+    
+  <footer>
+    <a href="/privacy-policy.html" target="_blank">Privacy Policy</a>
+    <a href="/terms.html" target="_blank">Terms of Use</a>
+    <a href="/contact.html" target="_blank">Contact</a>
+  </footer>
 </body>
 </html>`;
-
-  return html;
 } 
