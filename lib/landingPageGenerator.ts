@@ -1025,109 +1025,81 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
 
     .privacy-notice {
       display: block;
-      max-width: 600px;
+      max-width: 500px;
       width: 100%;
       cursor: pointer;
-      background: rgba(255, 255, 255, 0.98);
-      border-radius: 12px;
-      padding: 30px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 8px;
+      padding: 25px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      border: 1px solid rgba(0, 0, 0, 0.1);
       text-align: center;
       text-decoration: none;
       color: #333;
       transition: all 0.3s ease;
+      position: relative;
     }
 
     .privacy-notice:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
     }
 
     .notice-header {
-      font-size: 1.8rem;
-      font-weight: 700;
-      color: #2c3e50;
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #333;
       margin-bottom: 15px;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .privacy-icon {
-      width: 32px;
-      height: 32px;
-      background: #3498db;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 16px;
+      font-size: 20px;
     }
 
     .notice-text {
-      font-size: 1.1rem;
-      line-height: 1.6;
-      color: #555;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: #666;
       margin-bottom: 20px;
     }
 
     .continue-button {
-      background: linear-gradient(135deg, #3498db, #2980b9);
+      background: #007bff;
       color: white;
-      padding: 12px 30px;
-      border-radius: 25px;
-      font-weight: 600;
-      font-size: 1rem;
+      padding: 10px 24px;
+      border-radius: 5px;
+      font-weight: 500;
+      font-size: 0.9rem;
       border: none;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: background 0.3s ease;
       display: inline-block;
       text-decoration: none;
     }
 
     .continue-button:hover {
-      background: linear-gradient(135deg, #2980b9, #1f5f8b);
+      background: #0056b3;
     }
 
-    .legal-links {
-      margin-top: 20px;
-      font-size: 0.9rem;
+    .cookie-links {
+      margin-top: 15px;
+      font-size: 0.8rem;
     }
 
-    .legal-links a {
-      color: #3498db;
+    .cookie-links a {
+      color: #007bff;
       text-decoration: none;
-      margin: 0 10px;
+      margin: 0 8px;
     }
 
-    .legal-links a:hover {
+    .cookie-links a:hover {
       text-decoration: underline;
     }
 
-    .site-info {
-      margin-bottom: 15px;
-      padding: 15px;
-      background: rgba(52, 152, 219, 0.1);
-      border-radius: 8px;
-      border-left: 4px solid #3498db;
-    }
-
-    .site-name {
-      font-weight: 600;
-      color: #2c3e50;
-      font-size: 1.2rem;
-    }
-
-    .site-description {
-      color: #666;
-      font-size: 0.95rem;
-      margin-top: 5px;
-    }
-    
     footer {
       position: absolute;
       bottom: 15px;
@@ -1183,26 +1155,20 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
   <div class="overlay-container">
     <a href="${affiliateUrl}" class="privacy-notice">
       <div class="notice-header">
-        <div class="privacy-icon">🔒</div>
-        Privacy Notice
-      </div>
-      
-      <div class="site-info">
-        <div class="site-name">${siteName}</div>
-        <div class="site-description">Official website with exclusive offers</div>
+        <div class="privacy-icon">🍪</div>
+        Cookie Notice
       </div>
       
       <div class="notice-text">
-        We value your privacy and are committed to protecting your personal information. 
-        By continuing to this website, you acknowledge that you have read and understood our privacy policy 
-        and agree to our terms of service.
+        This website uses cookies to enhance your browsing experience and provide personalized content. 
+        By clicking "Accept All Cookies", you consent to our use of cookies as described in our privacy policy.
       </div>
       
-      <div class="continue-button">Continue to ${siteName}</div>
+      <div class="continue-button">Accept All Cookies</div>
       
-      <div class="legal-links">
-        <a href="/privacy-policy.html" target="_blank">Privacy Policy</a> |
-        <a href="/terms.html" target="_blank">Terms of Service</a>
+      <div class="cookie-links">
+        <a href="#" onclick="event.preventDefault();">Cookie Settings</a> |
+        <a href="#" onclick="event.preventDefault();">Learn More</a>
       </div>
     </a>
   </div>
