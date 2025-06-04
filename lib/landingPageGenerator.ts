@@ -1068,7 +1068,14 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       margin-bottom: 20px;
     }
 
-    .continue-button {
+    .cookie-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 15px;
+    }
+
+    .accept-button {
       background: #007bff;
       color: white;
       padding: 10px 24px;
@@ -1078,13 +1085,26 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       border: none;
       cursor: pointer;
       transition: background 0.3s ease;
-      display: inline-block;
-      text-decoration: none;
-      margin-bottom: 15px;
     }
 
-    .continue-button:hover {
+    .accept-button:hover {
       background: #0056b3;
+    }
+
+    .reject-button {
+      background: #dc3545;
+      color: white;
+      padding: 10px 24px;
+      border-radius: 5px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      border: none;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .reject-button:hover {
+      background: #c82333;
     }
 
     .cookie-links {
@@ -1096,14 +1116,15 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       display: block;
     }
 
-    .cookie-links a {
+    .cookie-link {
       color: #007bff;
-      text-decoration: none;
+      text-decoration: underline;
+      cursor: pointer;
       margin: 0 5px;
     }
 
-    .cookie-links a:hover {
-      text-decoration: underline;
+    .cookie-link:hover {
+      color: #0056b3;
     }
 
     footer {
@@ -1145,7 +1166,12 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
         font-size: 1rem;
       }
 
-      .continue-button {
+      .cookie-buttons {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .accept-button, .reject-button {
         padding: 10px 25px;
         font-size: 0.95rem;
       }
@@ -1167,14 +1193,16 @@ export async function generateLandingPageHtml(landingPage: ILandingPage): Promis
       
       <div class="notice-text">
         This website uses cookies to enhance your browsing experience and provide personalized content. 
-        By clicking "Accept All Cookies", you consent to our use of cookies as described in our privacy policy.
+        By continuing to browse, you consent to our use of cookies.
       </div>
       
-      <div class="continue-button">Accept All Cookies</div>
+      <div class="cookie-buttons">
+        <div class="accept-button">Accept All Cookies</div>
+        <div class="reject-button">Reject All</div>
+      </div>
       
       <div class="cookie-links">
-        <a href="#" onclick="event.preventDefault();">Cookie Settings</a> |
-        <a href="#" onclick="event.preventDefault();">Learn More</a>
+        <span class="cookie-link">Cookie Settings</span> | <span class="cookie-link">Learn More</span>
       </div>
     </a>
   </div>
