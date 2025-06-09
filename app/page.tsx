@@ -42,17 +42,30 @@ interface LandingPage {
   banCount: number;
 }
 
+// Phone number type
+interface PhoneNumber {
+  _id: string;
+  phoneNumber: string;
+  industry: 'travel' | 'pest-control';
+  isActive: boolean;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function Home() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // State
-  const [activeTab, setActiveTab] = useState<'domains' | 'landingPages'>('domains');
+  const [activeTab, setActiveTab] = useState<'domains' | 'landingPages' | 'phoneNumbers'>('domains');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [landingPages, setLandingPages] = useState<LandingPage[]>([]);
+  const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
   
   // Form state
   const [domainName, setDomainName] = useState('');
@@ -156,6 +169,35 @@ export default function Home() {
   // Landing pages tab state
   const [landingPageTab, setLandingPageTab] = useState<'all' | 'standard' | 'travel' | 'pest-control'>('all');
   
+  // Phone numbers state
+  const [isPhoneNumberModalOpen, setIsPhoneNumberModalOpen] = useState(false);
+  const [bulkPhoneNumbers, setBulkPhoneNumbers] = useState('');
+  const [phoneNumberIndustry, setPhoneNumberIndustry] = useState<'travel' | 'pest-control'>('travel');
+  const [phoneNumberDescription, setPhoneNumberDescription] = useState('');
+  const [phoneNumberLoading, setPhoneNumberLoading] = useState(false);
+  const [phoneNumberResults, setPhoneNumberResults] = useState<{
+    success: string[];
+    failed: { phoneNumber: string; reason: string; }[];
+  }>({
+    success: [],
+    failed: []
+  });
+  
+  // Bulk call ads creation state
+  const [isBulkCallAdsModalOpen, setIsBulkCallAdsModalOpen] = useState(false);
+  const [bulkCallAdsName, setBulkCallAdsName] = useState('');
+  const [bulkCallAdsIndustry, setBulkCallAdsIndustry] = useState<'travel' | 'pest-control'>('travel');
+  const [bulkCallAdsSubdomain, setBulkCallAdsSubdomain] = useState('');
+  const [selectedDomainsForCallAds, setSelectedDomainsForCallAds] = useState<string[]>([]);
+  const [bulkCallAdsLoading, setBulkCallAdsLoading] = useState(false);
+  const [bulkCallAdsResults, setBulkCallAdsResults] = useState<{
+    success: string[];
+    failed: { domain: string; reason: string; }[];
+  }>({
+    success: [],
+    failed: []
+  });
+  
   // Check authentication on page load
   useEffect(() => {
     const getCookie = (name: string): string | null => {
@@ -166,7 +208,7 @@ export default function Home() {
     };
     
     const authToken = getCookie('auth_token');
-    if (authToken === 'authenticated') {
+    if (authToken && authToken.startsWith('authenticated_')) {
       setIsAuthenticated(true);
     }
   }, []);
@@ -183,13 +225,14 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       
       const data = await response.json();
       
       if (response.ok) {
         setIsAuthenticated(true);
+        setUsername('');
         setPassword('');
       } else {
         setLoginError(data.error || 'Login failed. Please try again.');
@@ -233,6 +276,7 @@ export default function Home() {
     if (isAuthenticated) {
       fetchDomains();
       fetchLandingPages();
+      fetchPhoneNumbers();
     }
   }, [isAuthenticated]);
   
@@ -1325,6 +1369,159 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     }
   };
   
+  // Fetch phone numbers
+  const fetchPhoneNumbers = async () => {
+    try {
+      const response = await fetch('/api/phone-numbers');
+      const data = await response.json();
+      setPhoneNumbers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching phone numbers:', error);
+      setPhoneNumbers([]);
+    }
+  };
+
+  // Add phone numbers function
+  const addPhoneNumbers = async () => {
+    if (!bulkPhoneNumbers.trim()) {
+      alert('Please enter at least one phone number');
+      return;
+    }
+    
+    const phoneNumbersList = bulkPhoneNumbers
+      .split('\n')
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+    
+    if (phoneNumbersList.length === 0) {
+      alert('Please enter at least one phone number');
+      return;
+    }
+    
+    setPhoneNumberLoading(true);
+    setPhoneNumberResults({ success: [], failed: [] });
+    
+    try {
+      const response = await fetch('/api/phone-numbers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phoneNumbers: phoneNumbersList,
+          industry: phoneNumberIndustry,
+          description: phoneNumberDescription
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPhoneNumberResults(data.results);
+        
+        // Refresh phone numbers list
+        fetchPhoneNumbers();
+        
+        // Clear form if all successful
+        if (data.results.failed.length === 0) {
+          setBulkPhoneNumbers('');
+          setPhoneNumberDescription('');
+        }
+        
+        alert(data.message);
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.error || 'Failed to add phone numbers'}`);
+      }
+    } catch (error) {
+      console.error('Error adding phone numbers:', error);
+      alert('An error occurred while adding phone numbers');
+    } finally {
+      setPhoneNumberLoading(false);
+    }
+  };
+  
+  // Bulk call ads creation functions
+  const toggleDomainSelectionForCallAds = (domainId: string) => {
+    if (selectedDomainsForCallAds.includes(domainId)) {
+      setSelectedDomainsForCallAds(prev => prev.filter(id => id !== domainId));
+    } else {
+      setSelectedDomainsForCallAds(prev => [...prev, domainId]);
+    }
+  };
+  
+  const toggleSelectAllDomainsForCallAds = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedDomainsForCallAds(getEligibleDomains().map(domain => domain._id));
+    } else {
+      setSelectedDomainsForCallAds([]);
+    }
+  };
+  
+  const createBulkCallAds = async () => {
+    if (!bulkCallAdsName || selectedDomainsForCallAds.length === 0) {
+      alert('Please fill in name and select at least one domain');
+      return;
+    }
+    
+    // Check if we need subdomain for regular domains
+    const selectedDomains = getEligibleDomains().filter(d => selectedDomainsForCallAds.includes(d._id));
+    const hasRegularDomains = selectedDomains.some(d => d.dnsManagement !== 'external');
+    
+    if (hasRegularDomains && !bulkCallAdsSubdomain) {
+      alert('Subdomain is required when selecting regular (non-external) domains');
+      return;
+    }
+    
+    setBulkCallAdsLoading(true);
+    setBulkCallAdsResults({ success: [], failed: [] });
+    
+    try {
+      const response = await fetch('/api/landing-pages/bulk-create-call-ads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: bulkCallAdsName,
+          domainIds: selectedDomainsForCallAds,
+          industry: bulkCallAdsIndustry,
+          subdomain: bulkCallAdsSubdomain
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setBulkCallAdsResults(data.results);
+        
+        // Refresh landing pages and domains
+        fetchLandingPages();
+        fetchDomains();
+        
+        // Clear form if all successful
+        if (data.results.failed.length === 0) {
+          setBulkCallAdsName('');
+          setBulkCallAdsSubdomain('');
+          setSelectedDomainsForCallAds([]);
+        }
+        
+        alert(`${data.message}\nPhone numbers used: ${data.phoneNumbersUsed}/${data.availablePhoneNumbers}`);
+      } else {
+        alert(`Error: ${data.error || 'Failed to create call ads landing pages'}`);
+      }
+    } catch (error) {
+      console.error('Error creating bulk call ads:', error);
+      alert('An error occurred while creating call ads landing pages');
+    } finally {
+      setBulkCallAdsLoading(false);
+    }
+  };
+
+  // Get phone numbers by industry
+  const getPhoneNumbersByIndustry = (industry: 'travel' | 'pest-control') => {
+    return phoneNumbers.filter(p => p.industry === industry && p.isActive);
+  };
+  
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -1338,6 +1535,20 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
           </h1>
           
           <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-gray-400 mb-1">
+                Username
+              </label>
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                placeholder="Enter username"
+                required
+              />
+            </div>
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-400 mb-1">
                 Password
@@ -1415,6 +1626,16 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
           onClick={() => setActiveTab('landingPages')}
         >
           Landing Pages
+        </div>
+        <div 
+          className={`px-4 py-3 cursor-pointer mr-2 ${
+            activeTab === 'phoneNumbers'
+              ? 'border-b-2 border-primary text-white font-semibold'
+              : 'text-gray-400 hover:text-gray-200'
+          }`}
+          onClick={() => setActiveTab('phoneNumbers')}
+        >
+          Phone Numbers
         </div>
       </div>
       
@@ -1968,6 +2189,24 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               <br />
               <span className="text-green-300">Regular domains:</span> Landing page will be created on a subdomain (e.g., offer.example.com)
             </p>
+            
+            <div className="flex space-x-2 mb-6">
+              <button 
+                type="button"
+                onClick={() => setIsBulkLandingPageModalOpen(true)}
+                className="px-4 py-2 rounded-md text-white font-medium bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+              >
+                🌐 Bulk Create Standard
+              </button>
+              <button 
+                type="button"
+                onClick={() => setIsBulkCallAdsModalOpen(true)}
+                className="px-4 py-2 rounded-md text-white font-medium bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+              >
+                📞 Bulk Create Call Ads
+              </button>
+            </div>
+            
             <form onSubmit={addLandingPage} className="space-y-4">
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
@@ -2318,13 +2557,6 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                       ? 'Uploading screenshots...' 
                       : 'Create Landing Page'}
                 </button>
-                <button 
-                  type="button"
-                  onClick={() => setIsBulkLandingPageModalOpen(true)}
-                  className="px-4 py-2 rounded-md text-white font-medium bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
-                >
-                  Bulk Create
-                </button>
               </div>
             </form>
           </div>
@@ -2529,6 +2761,89 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 </table>
               </div>
             )}
+          </div>
+        </>
+      )}
+      
+      {activeTab === 'phoneNumbers' && (
+        <>
+          <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
+              <svg className="w-5 h-5 mr-2 text-primary" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+              </svg>
+              Manage Phone Numbers
+            </h2>
+            <p className="text-gray-400 text-sm mb-4">
+              Add industry-specific phone numbers for call ads landing pages. Each industry uses different phone numbers that point to different offers.
+            </p>
+            
+            <button 
+              onClick={() => setIsPhoneNumberModalOpen(true)}
+              className="px-4 py-2 rounded-md text-white font-medium bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-primary-light focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200 mb-6"
+            >
+              Add Phone Numbers
+            </button>
+          </div>
+          
+          <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h3 className="text-lg font-semibold mb-4 text-white">Phone Numbers by Industry</h3>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Travel Phone Numbers */}
+              <div>
+                <h4 className="text-white font-medium mb-3 flex items-center">
+                  ✈️ Travel ({getPhoneNumbersByIndustry('travel').length} numbers)
+                </h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {getPhoneNumbersByIndustry('travel').map((phone) => (
+                    <div key={phone._id} className="p-3 bg-dark-lighter border border-dark-light rounded-md">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white font-mono">{phone.phoneNumber}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          phone.isActive ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-300'
+                        }`}>
+                          {phone.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      {phone.description && (
+                        <p className="text-gray-400 text-sm mt-1">{phone.description}</p>
+                      )}
+                    </div>
+                  ))}
+                  {getPhoneNumbersByIndustry('travel').length === 0 && (
+                    <p className="text-gray-400 text-center py-4">No travel phone numbers added yet</p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Pest Control Phone Numbers */}
+              <div>
+                <h4 className="text-white font-medium mb-3 flex items-center">
+                  🐛 Pest Control ({getPhoneNumbersByIndustry('pest-control').length} numbers)
+                </h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {getPhoneNumbersByIndustry('pest-control').map((phone) => (
+                    <div key={phone._id} className="p-3 bg-dark-lighter border border-dark-light rounded-md">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white font-mono">{phone.phoneNumber}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          phone.isActive ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-300'
+                        }`}>
+                          {phone.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      {phone.description && (
+                        <p className="text-gray-400 text-sm mt-1">{phone.description}</p>
+                      )}
+                    </div>
+                  ))}
+                  {getPhoneNumbersByIndustry('pest-control').length === 0 && (
+                    <p className="text-gray-400 text-center py-4">No pest control phone numbers added yet</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -2954,6 +3269,262 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Phone Number Management Modal */}
+      {isPhoneNumberModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-dark-card p-6 rounded-lg shadow-lg border border-dark-accent w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4 text-white">Add Phone Numbers</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Add phone numbers for call ads landing pages. Each phone number should be on a new line.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Industry</label>
+                <select 
+                  value={phoneNumberIndustry}
+                  onChange={(e) => setPhoneNumberIndustry(e.target.value as 'travel' | 'pest-control')}
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                >
+                  <option value="travel">✈️ Travel</option>
+                  <option value="pest-control">🐛 Pest Control</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Phone Numbers (one per line)</label>
+                <textarea
+                  value={bulkPhoneNumbers}
+                  onChange={(e) => setBulkPhoneNumbers(e.target.value)}
+                  placeholder="Enter phone numbers, one per line:&#10;+1-555-123-4567&#10;+1-555-987-6543&#10;+1-555-456-7890"
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500 h-32"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Description (optional)</label>
+                <input
+                  type="text"
+                  value={phoneNumberDescription}
+                  onChange={(e) => setPhoneNumberDescription(e.target.value)}
+                  placeholder="e.g., Campaign batch #1, High-converting numbers"
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                />
+              </div>
+            </div>
+            
+            {/* Results display */}
+            {(phoneNumberResults.success.length > 0 || phoneNumberResults.failed.length > 0) && (
+              <div className="mt-6">
+                <h4 className="text-white font-medium mb-2">Results:</h4>
+                {phoneNumberResults.success.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-green-400 text-sm">{phoneNumberResults.success.length} phone numbers added successfully:</p>
+                    <ul className="text-gray-300 text-xs ml-4 list-disc max-h-20 overflow-y-auto">
+                      {phoneNumberResults.success.map((phone, index) => (
+                        <li key={index}>{phone}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {phoneNumberResults.failed.length > 0 && (
+                  <div>
+                    <p className="text-red-400 text-sm">{phoneNumberResults.failed.length} phone numbers failed:</p>
+                    <ul className="text-gray-300 text-xs ml-4 list-disc max-h-20 overflow-y-auto">
+                      {phoneNumberResults.failed.map((failure, index) => (
+                        <li key={index}>{failure.phoneNumber}: {failure.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setIsPhoneNumberModalOpen(false);
+                  setBulkPhoneNumbers('');
+                  setPhoneNumberDescription('');
+                  setPhoneNumberResults({ success: [], failed: [] });
+                }}
+                className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={addPhoneNumbers}
+                disabled={phoneNumberLoading}
+                className={`px-4 py-2 rounded-md text-white font-medium ${
+                  phoneNumberLoading 
+                    ? 'bg-primary-light/50 cursor-not-allowed' 
+                    : 'bg-primary hover:bg-primary-dark transition-colors duration-200'
+                }`}
+              >
+                {phoneNumberLoading ? 'Adding...' : 'Add Phone Numbers'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Bulk Call Ads Creation Modal */}
+      {isBulkCallAdsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-dark-card p-6 rounded-lg shadow-lg border border-dark-accent w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4 text-white">Bulk Create Call Ads Landing Pages</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Create call ads landing pages on multiple domains. Phone numbers and business names will be automatically assigned from your database.
+            </p>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column - Form */}
+              <div className="space-y-4">
+                <h4 className="text-white font-medium">Call Ads Details</h4>
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Campaign Name"
+                  value={bulkCallAdsName}
+                  onChange={(e) => setBulkCallAdsName(e.target.value)}
+                />
+                
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">Industry</label>
+                  <select 
+                    value={bulkCallAdsIndustry}
+                    onChange={(e) => setBulkCallAdsIndustry(e.target.value as 'travel' | 'pest-control')}
+                    className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                  >
+                    <option value="travel">✈️ Travel ({getPhoneNumbersByIndustry('travel').length} numbers available)</option>
+                    <option value="pest-control">🐛 Pest Control ({getPhoneNumbersByIndustry('pest-control').length} numbers available)</option>
+                  </select>
+                </div>
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Subdomain (for regular domains only)"
+                  value={bulkCallAdsSubdomain}
+                  onChange={(e) => setBulkCallAdsSubdomain(e.target.value)}
+                />
+                
+                <div className="p-3 bg-blue-900/30 border border-blue-700 rounded-md">
+                  <p className="text-blue-200 text-sm">
+                    📞 Phone numbers and business names will be automatically assigned from your {bulkCallAdsIndustry} database.
+                    Each landing page will get a unique phone number and generated business name.
+                  </p>
+                </div>
+              </div>
+              
+              {/* Right Column - Domain Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-white font-medium">Select Domains ({selectedDomainsForCallAds.length} selected)</h4>
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedDomainsForCallAds.length === getEligibleDomains().length && getEligibleDomains().length > 0}
+                      onChange={toggleSelectAllDomainsForCallAds}
+                      className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary"
+                    />
+                    <span className="text-gray-300 text-sm">Select All</span>
+                  </label>
+                </div>
+                
+                <div className="max-h-64 overflow-y-auto border border-dark-accent rounded-md bg-dark-lighter">
+                  {getEligibleDomains().length > 0 ? (
+                    getEligibleDomains().map((domain) => (
+                      <label key={domain._id} className="flex items-center p-3 hover:bg-dark-light cursor-pointer border-b border-dark-accent last:border-b-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedDomainsForCallAds.includes(domain._id)}
+                          onChange={() => toggleDomainSelectionForCallAds(domain._id)}
+                          className="w-4 h-4 text-primary bg-dark-lighter border-dark-light rounded focus:ring-primary mr-3"
+                        />
+                        <div className="flex-1">
+                          <div className="text-white text-sm">{domain.name}</div>
+                          <div className="text-gray-400 text-xs">
+                            {domain.dnsManagement === 'external' ? 'External DNS' : 'Cloudflare DNS'}
+                          </div>
+                        </div>
+                      </label>
+                    ))
+                  ) : (
+                    <div className="p-4 text-gray-400 text-center">
+                      No eligible domains available. Domains must be verified and have no landing pages.
+                    </div>
+                  )}
+                </div>
+                
+                {getPhoneNumbersByIndustry(bulkCallAdsIndustry).length < selectedDomainsForCallAds.length && (
+                  <div className="mt-3 p-3 bg-yellow-900/30 border border-yellow-700 rounded-md">
+                    <p className="text-yellow-200 text-sm">
+                      ⚠️ Warning: You have selected {selectedDomainsForCallAds.length} domains but only have {getPhoneNumbersByIndustry(bulkCallAdsIndustry).length} phone numbers available for {bulkCallAdsIndustry}.
+                      Only {getPhoneNumbersByIndustry(bulkCallAdsIndustry).length} landing pages will be created.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Results display */}
+            {(bulkCallAdsResults.success.length > 0 || bulkCallAdsResults.failed.length > 0) && (
+              <div className="mt-6">
+                <h4 className="text-white font-medium mb-2">Results:</h4>
+                {bulkCallAdsResults.success.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-green-400 text-sm">{bulkCallAdsResults.success.length} call ads landing pages created successfully:</p>
+                    <ul className="text-gray-300 text-xs ml-4 list-disc max-h-20 overflow-y-auto">
+                      {bulkCallAdsResults.success.map((domain, index) => (
+                        <li key={index}>{domain}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {bulkCallAdsResults.failed.length > 0 && (
+                  <div>
+                    <p className="text-red-400 text-sm">{bulkCallAdsResults.failed.length} domains failed:</p>
+                    <ul className="text-gray-300 text-xs ml-4 list-disc max-h-20 overflow-y-auto">
+                      {bulkCallAdsResults.failed.map((failure, index) => (
+                        <li key={index}>{failure.domain}: {failure.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setIsBulkCallAdsModalOpen(false);
+                  setBulkCallAdsName('');
+                  setBulkCallAdsSubdomain('');
+                  setSelectedDomainsForCallAds([]);
+                  setBulkCallAdsResults({ success: [], failed: [] });
+                }}
+                className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createBulkCallAds}
+                disabled={bulkCallAdsLoading}
+                className={`px-4 py-2 rounded-md text-white font-medium ${
+                  bulkCallAdsLoading 
+                    ? 'bg-primary-light/50 cursor-not-allowed' 
+                    : 'bg-primary hover:bg-primary-dark transition-colors duration-200'
+                }`}
+              >
+                {bulkCallAdsLoading ? 'Creating...' : 'Create Call Ads Landing Pages'}
               </button>
             </div>
           </div>
