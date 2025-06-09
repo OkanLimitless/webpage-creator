@@ -4,6 +4,8 @@ import { LandingPage } from '@/lib/models/LandingPage';
 import { Domain } from '@/lib/models/Domain';
 import { PhoneNumber } from '@/lib/models/PhoneNumber';
 import { generateBusinessName } from '@/lib/utils/businessNameGenerator';
+import { addDomainToVercel, addDomainAndSubdomainToVercel } from '@/lib/vercel';
+import { createDnsRecord } from '@/lib/cloudflare';
 
 // POST /api/landing-pages/bulk-create-call-ads
 export async function POST(request: NextRequest) {
@@ -113,6 +115,42 @@ export async function POST(request: NextRequest) {
         });
         
         await landingPage.save();
+        
+        // Deploy to Vercel and create DNS records (don't fail if this fails)
+        try {
+          if (isExternal) {
+            // For external domains, add the domain directly to Vercel
+            console.log(`Adding external domain ${domain.name} to Vercel`);
+            await addDomainToVercel(domain.name);
+            console.log(`External domain ${domain.name} added to Vercel successfully`);
+          } else {
+            // For regular domains, add the subdomain to Vercel and create DNS record
+            console.log(`Adding subdomain ${finalSubdomain}.${domain.name} to Vercel`);
+            const vercelResult = await addDomainAndSubdomainToVercel(domain.name, finalSubdomain, false);
+            console.log(`Subdomain ${finalSubdomain}.${domain.name} added to Vercel successfully`);
+            
+            // Create DNS record in Cloudflare if domain has a zone ID
+            if (domain.cloudflareZoneId) {
+              // Get the Vercel DNS target - default to cname.vercel-dns.com if not provided
+              let vercelDnsTarget = 'cname.vercel-dns.com';
+              const subdomainDnsRecords = vercelResult.dnsRecords?.subdomain || [];
+              const cnameRecord = subdomainDnsRecords.find((record: { type: string; value?: string }) => record.type === 'CNAME');
+              if (cnameRecord && cnameRecord.value) {
+                vercelDnsTarget = cnameRecord.value;
+              }
+              
+              console.log(`Creating DNS record in Cloudflare for ${finalSubdomain}.${domain.name} pointing to ${vercelDnsTarget}`);
+              await createDnsRecord(finalSubdomain, domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId);
+              console.log(`DNS record created successfully for ${finalSubdomain}.${domain.name}`);
+            } else {
+              console.warn(`Domain ${domain.name} does not have a Cloudflare Zone ID. Skipping DNS record creation.`);
+            }
+          }
+        } catch (deploymentError) {
+          console.error(`Deployment error for ${domain.name}:`, deploymentError);
+          // Continue anyway - deployment errors shouldn't fail the landing page creation
+          // but we should track this for debugging
+        }
         
         // Update domain's landing page count
         await Domain.findByIdAndUpdate(domain._id, {
