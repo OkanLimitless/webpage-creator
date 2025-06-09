@@ -102,7 +102,6 @@ export async function POST(request: NextRequest) {
           name,
           domainId: domain._id,
           subdomain: finalSubdomain,
-          affiliateUrl: '', // Not used for call ads
           originalUrl: 'https://placeholder.example.com',
           desktopScreenshotUrl: '',
           mobileScreenshotUrl: '',

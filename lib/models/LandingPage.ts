@@ -42,8 +42,11 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
     },
     affiliateUrl: {
       type: String,
-      required: true,
+      required: function(this: ILandingPage) {
+        return this.templateType === 'standard';
+      },
       trim: true,
+      default: '',
     },
     originalUrl: {
       type: String,
