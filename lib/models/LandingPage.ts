@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
+import { IDomain } from './Domain';
 
-export interface ILandingPage {
+export interface ILandingPage extends mongoose.Document {
   name: string;
-  domainId: mongoose.Types.ObjectId;
+  domainId: mongoose.Types.ObjectId | IDomain;
   subdomain: string;
   affiliateUrl: string;
   originalUrl: string;
@@ -11,14 +12,22 @@ export interface ILandingPage {
   isActive: boolean;
   googleAdsAccountId?: string;
   googleAnalyticsId?: string;
+  facebookPixelId?: string;
   banCount?: number;
   manualScreenshots?: boolean;
-  templateType?: 'standard' | 'call-ads';
+  createdAt: Date;
+  updatedAt: Date;
+  templateType: 'standard' | 'call-ads' | 'cloaked';
   callAdsTemplateType?: 'travel' | 'pest-control';
   phoneNumber?: string;
   businessName?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  // Cloaking specific fields
+  moneyUrl?: string;
+  targetCountries?: string[];
+  excludeCountries?: string[];
+  workerScriptName?: string;
+  workerRouteId?: string;
+  safePageContent?: string;
 }
 
 const LandingPageSchema = new mongoose.Schema<ILandingPage>(
@@ -83,7 +92,7 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
     },
     templateType: {
       type: String,
-      enum: ['standard', 'call-ads'],
+      enum: ['standard', 'call-ads', 'cloaked'],
       default: 'standard',
     },
     callAdsTemplateType: {
@@ -103,6 +112,30 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
       required: function(this: ILandingPage) {
         return this.templateType === 'call-ads';
       },
+    },
+    moneyUrl: {
+      type: String,
+      trim: true,
+    },
+    targetCountries: {
+      type: [String],
+      trim: true,
+    },
+    excludeCountries: {
+      type: [String],
+      trim: true,
+    },
+    workerScriptName: {
+      type: String,
+      trim: true,
+    },
+    workerRouteId: {
+      type: String,
+      trim: true,
+    },
+    safePageContent: {
+      type: String,
+      trim: true,
     },
   },
   { timestamps: true }

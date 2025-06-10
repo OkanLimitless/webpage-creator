@@ -33,10 +33,16 @@ interface LandingPage {
   isActive: boolean;
   googleAdsAccountId?: string;
   googleAnalyticsId?: string;
-  templateType?: 'standard' | 'call-ads';
+  templateType?: 'standard' | 'call-ads' | 'cloaked';
   callAdsTemplateType?: 'travel' | 'pest-control';
   phoneNumber?: string;
   businessName?: string;
+  // Cloaking specific fields
+  moneyUrl?: string;
+  targetCountries?: string[];
+  excludeCountries?: string[];
+  workerScriptName?: string;
+  workerRouteId?: string;
   createdAt: string;
   updatedAt: string;
   banCount: number;
@@ -197,6 +203,26 @@ export default function Home() {
     success: [],
     failed: []
   });
+  
+  // Cloaked landing page creation state
+  const [isCloakedModalOpen, setIsCloakedModalOpen] = useState(false);
+  const [cloakedName, setCloakedName] = useState('');
+  const [cloakedSubdomain, setCloakedSubdomain] = useState('');
+  const [moneyUrl, setMoneyUrl] = useState('');
+  const [targetCountries, setTargetCountries] = useState<string[]>(['Germany']);
+  const [excludeCountries, setExcludeCountries] = useState<string[]>([]);
+  const [selectedDomainForCloaked, setSelectedDomainForCloaked] = useState('');
+  const [cloakedLoading, setCloakedLoading] = useState(false);
+  const [newTargetCountry, setNewTargetCountry] = useState('');
+  const [newExcludeCountry, setNewExcludeCountry] = useState('');
+  
+  // Common countries list for easy selection
+  const commonCountries = [
+    'Germany', 'United States', 'United Kingdom', 'France', 'Italy', 'Spain', 
+    'Netherlands', 'Belgium', 'Austria', 'Switzerland', 'Canada', 'Australia',
+    'Norway', 'Sweden', 'Denmark', 'Finland', 'Poland', 'Czech Republic',
+    'Portugal', 'Ireland', 'Luxembourg', 'New Zealand', 'Japan', 'South Korea'
+  ];
   
   // Check authentication on page load
   useEffect(() => {
@@ -1522,6 +1548,95 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     return phoneNumbers.filter(p => p.industry === industry && p.isActive);
   };
   
+  // Create cloaked landing page
+  const createCloakedLandingPage = async () => {
+    if (!cloakedName || !selectedDomainForCloaked || !moneyUrl || targetCountries.length === 0) {
+      alert('Please fill in all required fields: name, domain, money URL, and at least one target country.');
+      return;
+    }
+    
+    if (!moneyUrl.startsWith('http://') && !moneyUrl.startsWith('https://')) {
+      alert('Money URL must start with http:// or https://');
+      return;
+    }
+    
+    setCloakedLoading(true);
+    
+    try {
+      const selectedDomain = domains.find(d => d._id === selectedDomainForCloaked);
+      if (!selectedDomain) {
+        alert('Selected domain not found');
+        return;
+      }
+      
+      const isExternal = selectedDomain.dnsManagement === 'external';
+      const requestData = {
+        name: cloakedName,
+        domainId: selectedDomainForCloaked,
+        subdomain: isExternal ? '' : cloakedSubdomain,
+        moneyUrl,
+        targetCountries,
+        excludeCountries: excludeCountries.length > 0 ? excludeCountries : undefined
+      };
+      
+      const response = await fetch('/api/landing-pages/create-cloaked', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert(`${data.message}${data.warning ? `\n\nWarning: ${data.warning}` : ''}`);
+        
+        // Reset form
+        setCloakedName('');
+        setCloakedSubdomain('');
+        setMoneyUrl('');
+        setTargetCountries(['Germany']);
+        setExcludeCountries([]);
+        setSelectedDomainForCloaked('');
+        setIsCloakedModalOpen(false);
+        
+        // Refresh landing pages
+        fetchLandingPages();
+      } else {
+        alert(`Error creating cloaked landing page: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error creating cloaked landing page:', error);
+      alert('An error occurred while creating the cloaked landing page');
+    } finally {
+      setCloakedLoading(false);
+    }
+  };
+  
+  // Helper functions for country management
+  const addTargetCountry = () => {
+    if (newTargetCountry && !targetCountries.includes(newTargetCountry)) {
+      setTargetCountries([...targetCountries, newTargetCountry]);
+      setNewTargetCountry('');
+    }
+  };
+  
+  const removeTargetCountry = (country: string) => {
+    setTargetCountries(targetCountries.filter(c => c !== country));
+  };
+  
+  const addExcludeCountry = () => {
+    if (newExcludeCountry && !excludeCountries.includes(newExcludeCountry)) {
+      setExcludeCountries([...excludeCountries, newExcludeCountry]);
+      setNewExcludeCountry('');
+    }
+  };
+  
+  const removeExcludeCountry = (country: string) => {
+    setExcludeCountries(excludeCountries.filter(c => c !== country));
+  };
+
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -2204,6 +2319,13 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 className="px-4 py-2 rounded-md text-white font-medium bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
               >
                 📞 Bulk Create Call Ads
+              </button>
+              <button 
+                type="button"
+                onClick={() => setIsCloakedModalOpen(true)}
+                className="px-4 py-2 rounded-md text-white font-medium bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors duration-200"
+              >
+                🎭 Create Cloaked Page
               </button>
             </div>
             
@@ -3525,6 +3647,181 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 }`}
               >
                 {bulkCallAdsLoading ? 'Creating...' : 'Create Call Ads Landing Pages'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Cloaked Landing Page Creation Modal */}
+      {isCloakedModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-dark-card p-6 rounded-lg shadow-lg border border-dark-accent w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4 text-white">🎭 Create Cloaked Landing Page</h3>
+            <p className="text-gray-400 text-sm mb-4">
+              Create a cloaked landing page with JCI API filtering. Shows different content based on visitor origin and quality.
+            </p>
+            
+            <div className="space-y-4">
+              <input
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                type="text"
+                placeholder="Campaign Name"
+                value={cloakedName}
+                onChange={(e) => setCloakedName(e.target.value)}
+              />
+              
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Select Domain</label>
+                <select 
+                  value={selectedDomainForCloaked}
+                  onChange={(e) => setSelectedDomainForCloaked(e.target.value)}
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                >
+                  <option value="">Select a domain</option>
+                  {getEligibleDomains().map((domain) => (
+                    <option key={domain._id} value={domain._id}>
+                      {domain.name} ({domain.dnsManagement === 'external' ? 'External' : 'Cloudflare'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {selectedDomainForCloaked && !domains.find(d => d._id === selectedDomainForCloaked)?.dnsManagement?.includes('external') && (
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Subdomain (e.g., offers, campaign1)"
+                  value={cloakedSubdomain}
+                  onChange={(e) => setCloakedSubdomain(e.target.value)}
+                />
+              )}
+              
+              <input
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                type="url"
+                placeholder="Money Page URL (where qualified visitors go)"
+                value={moneyUrl}
+                onChange={(e) => setMoneyUrl(e.target.value)}
+              />
+              
+              {/* Target Countries */}
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Target Countries (Whitelist)</label>
+                <div className="flex space-x-2 mb-2">
+                  <select
+                    value={newTargetCountry}
+                    onChange={(e) => setNewTargetCountry(e.target.value)}
+                    className="flex-1 p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
+                  >
+                    <option value="">Select a country</option>
+                    {commonCountries.filter(country => !targetCountries.includes(country)).map((country) => (
+                      <option key={country} value={country}>{country}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addTargetCountry}
+                    disabled={!newTargetCountry}
+                    className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm rounded-md transition-colors duration-200"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {targetCountries.map((country, index) => (
+                    <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-900/30 text-green-300 border border-green-600">
+                      {country}
+                      <button
+                        type="button"
+                        onClick={() => removeTargetCountry(country)}
+                        className="ml-1 text-green-400 hover:text-green-200"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Exclude Countries */}
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">Exclude Countries (Optional)</label>
+                <div className="flex space-x-2 mb-2">
+                  <select
+                    value={newExcludeCountry}
+                    onChange={(e) => setNewExcludeCountry(e.target.value)}
+                    className="flex-1 p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
+                  >
+                    <option value="">Select a country to exclude</option>
+                    {commonCountries.filter(country => !excludeCountries.includes(country)).map((country) => (
+                      <option key={country} value={country}>{country}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addExcludeCountry}
+                    disabled={!newExcludeCountry}
+                    className="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm rounded-md transition-colors duration-200"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {excludeCountries.map((country, index) => (
+                    <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-900/30 text-red-300 border border-red-600">
+                      {country}
+                      <button
+                        type="button"
+                        onClick={() => removeExcludeCountry(country)}
+                        className="ml-1 text-red-400 hover:text-red-200"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Info Box */}
+              <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-md">
+                <h4 className="font-medium text-blue-300 mb-2">🎭 How Cloaking Works</h4>
+                <ul className="text-blue-200 text-sm space-y-1">
+                  <li>• <strong>Qualified visitors</strong> (from target countries, real users) → Money Page</li>
+                  <li>• <strong>Bots & reviewers</strong> (suspicious traffic) → Safe Page (Coming Soon)</li>
+                  <li>• Uses JCI API with advanced filtering (geo, device, IP quality, etc.)</li>
+                  <li>• Deployed via Cloudflare Workers for maximum performance</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setIsCloakedModalOpen(false);
+                  setCloakedName('');
+                  setCloakedSubdomain('');
+                  setMoneyUrl('');
+                  setTargetCountries(['Germany']);
+                  setExcludeCountries([]);
+                  setSelectedDomainForCloaked('');
+                  setNewTargetCountry('');
+                  setNewExcludeCountry('');
+                }}
+                className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createCloakedLandingPage}
+                disabled={cloakedLoading}
+                className={`px-4 py-2 rounded-md text-white font-medium ${
+                  cloakedLoading 
+                    ? 'bg-primary-light/50 cursor-not-allowed' 
+                    : 'bg-red-600 hover:bg-red-700 transition-colors duration-200'
+                }`}
+              >
+                {cloakedLoading ? 'Creating...' : '🎭 Create Cloaked Landing Page'}
               </button>
             </div>
           </div>

