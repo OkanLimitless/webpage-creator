@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { LandingPage } from '@/lib/models/LandingPage';
 import { Domain } from '@/lib/models/Domain';
-import { createCloakedLandingPage, generateComingSoonPage } from '@/lib/cloudflare';
-import { addDomainToVercel } from '@/lib/vercel';
+import { createCloakedLandingPage, generateComingSoonPage, createDnsRecord } from '@/lib/cloudflare';
+import { addDomainToVercel, addDomainAndSubdomainToVercel } from '@/lib/vercel';
 
 // POST /api/landing-pages/create-cloaked
 export async function POST(request: NextRequest) {
@@ -50,6 +50,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Subdomain is required for regular domains' }, { status: 400 });
       }
       finalSubdomain = subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      
+      // Check if subdomain is already in use for this domain
+      const existingPage = await LandingPage.findOne({
+        domainId,
+        subdomain: finalSubdomain,
+      });
+      
+      if (existingPage) {
+        return NextResponse.json(
+          { error: 'Subdomain already in use for this domain' },
+          { status: 400 }
+        );
+      }
     }
     
     // Generate safe page HTML content
@@ -75,22 +88,84 @@ export async function POST(request: NextRequest) {
       await landingPage.save();
       console.log(`Cloaked landing page record created: ${landingPage._id}`);
       
-      // Step 2: Deploy safe page to Vercel first
-      const safePageDomain = isExternal ? domain.name : `${finalSubdomain}.${domain.name}`;
-      
-      try {
-        // Add domain to Vercel
-        if (isExternal) {
+      // Handle external domains (like regular landing pages do)
+      if (isExternal) {
+        console.log(`External domain detected: ${domain.name}. Adding domain to Vercel but skipping Cloudflare DNS operations.`);
+        
+        const safePageDomain = domain.name;
+        
+        try {
+          // Add the external domain to Vercel
           console.log(`Adding external domain ${domain.name} to Vercel for safe page`);
-          await addDomainToVercel(domain.name);
-        } else {
-          console.log(`Adding subdomain ${finalSubdomain}.${domain.name} to Vercel for safe page`);
-          await addDomainToVercel(`${finalSubdomain}.${domain.name}`);
+          const vercelResult = await addDomainToVercel(domain.name);
+          console.log(`External domain ${domain.name} added to Vercel successfully`);
+          
+          // Wait a moment for the domain to be configured
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          return NextResponse.json({
+            success: true,
+            landingPage: {
+              _id: landingPage._id,
+              name: landingPage.name,
+              domain: domain.name,
+              subdomain: '',
+              fullDomain: safePageDomain,
+              moneyUrl,
+              targetCountries,
+              excludeCountries
+            },
+            vercelStatus: vercelResult ? 'domain_added' : 'failed',
+            dnsConfiguration: {
+              message: 'External domain - DNS managed externally',
+              requiredRecord: `CNAME ${domain.name} → cname.vercel-dns.com`,
+              vercelStatus: vercelResult ? 'added' : 'failed'
+            },
+            message: `Cloaked landing page created for external domain ${domain.name}. Domain added to Vercel. Make sure DNS record is configured: CNAME ${domain.name} → cname.vercel-dns.com. Note: Cloudflare Workers cloaking will not work for external domains.`,
+            warning: 'External domains cannot use Cloudflare Workers for cloaking. Only the safe page will be served.'
+          });
+          
+        } catch (vercelError) {
+          console.error('Vercel deployment error for external domain:', vercelError);
+          return NextResponse.json({
+            success: false,
+            error: `Failed to add external domain to Vercel: ${vercelError instanceof Error ? vercelError.message : 'Unknown error'}`
+          }, { status: 500 });
+        }
+      }
+      
+      // For regular domains, continue with Cloudflare-managed flow
+      if (!domain.cloudflareZoneId) {
+        return NextResponse.json(
+          { error: 'Domain is not properly configured with Cloudflare. Please update domain settings first.' },
+          { status: 400 }
+        );
+      }
+      
+      const safePageDomain = `${finalSubdomain}.${domain.name}`;
+      
+      // Step 2: Add subdomain to Vercel and create DNS records (same as regular landing pages)
+      try {
+        console.log(`Adding subdomain ${finalSubdomain}.${domain.name} to Vercel for safe page`);
+        const vercelResult = await addDomainAndSubdomainToVercel(domain.name, finalSubdomain, false);
+        console.log(`Subdomain added to Vercel: ${finalSubdomain}.${domain.name}`);
+        
+        // Extract the required DNS record information
+        const subdomainDnsRecords = vercelResult.dnsRecords?.subdomain || [];
+        
+        // Get the Vercel DNS target - default to cname.vercel-dns.com if not provided
+        let vercelDnsTarget = 'cname.vercel-dns.com';
+        const cnameRecord = subdomainDnsRecords.find((record: { type: string; value?: string }) => record.type === 'CNAME');
+        if (cnameRecord && cnameRecord.value) {
+          vercelDnsTarget = cnameRecord.value;
         }
         
-        console.log(`Safe page domain added to Vercel: https://${safePageDomain}`);
+        // Create DNS record in Cloudflare using Vercel's recommended value
+        console.log(`Creating DNS record in Cloudflare for ${finalSubdomain}.${domain.name} pointing to ${vercelDnsTarget}`);
+        await createDnsRecord(finalSubdomain, domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId);
+        console.log(`DNS record created successfully for ${finalSubdomain}.${domain.name}`);
         
-        // Wait a moment for the domain to be configured
+        // Wait a moment for DNS to propagate
         await new Promise(resolve => setTimeout(resolve, 3000));
         
       } catch (vercelError) {
@@ -98,7 +173,7 @@ export async function POST(request: NextRequest) {
         // Continue with worker creation even if Vercel deployment fails
       }
       
-      // Step 3: Create Cloudflare Worker with cloaking logic
+      // Step 3: Create Cloudflare Worker with cloaking logic (only for Cloudflare-managed domains)
       try {
         const cloakResult = await createCloakedLandingPage({
           domain,
@@ -132,7 +207,13 @@ export async function POST(request: NextRequest) {
             safeUrl: cloakResult.safeUrl,
             routePattern: cloakResult.routePattern
           },
-          message: `Cloaked landing page created successfully! Visit https://${safePageDomain} to test.`
+          vercelStatus: 'subdomain_added',
+          dnsConfiguration: {
+            target: 'cname.vercel-dns.com',
+            type: 'CNAME',
+            proxied: false
+          },
+          message: `Cloaked landing page created successfully! Visit https://${safePageDomain} to test. DNS record created and Cloudflare Worker deployed for cloaking functionality.`
         });
         
       } catch (workerError) {
@@ -152,7 +233,13 @@ export async function POST(request: NextRequest) {
             targetCountries,
             excludeCountries
           },
-          message: `Landing page record created and safe page deployed to Vercel. Worker creation failed: ${errorMessage}`,
+          vercelStatus: 'subdomain_added',
+          dnsConfiguration: {
+            target: 'cname.vercel-dns.com',
+            type: 'CNAME',
+            proxied: false
+          },
+          message: `Landing page record created and safe page deployed to Vercel with DNS record. Worker creation failed: ${errorMessage}`,
           warning: 'Cloudflare Worker creation failed. The landing page is deployed but without cloaking functionality.'
         });
       }
