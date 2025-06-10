@@ -321,6 +321,26 @@ const cf = {
       },
     });
     return response.json();
+  },
+
+  async listZones() {
+    // In development with missing credentials, return mock data
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return {
+        success: true,
+        result: [
+          { id: 'mock-zone-1', name: 'example.com', status: 'active' },
+          { id: 'mock-zone-2', name: 'test.com', status: 'pending' }
+        ]
+      };
+    }
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/zones`, {
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    return response.json();
   }
 };
 
@@ -879,7 +899,33 @@ export async function createCloakedLandingPage(options: {
       zoneId = await getZoneIdByName(rootDomain);
       
       if (!zoneId) {
-        throw new Error(`Could not find Cloudflare zone for root domain: ${rootDomain} (from ${domain.name}). Make sure the root domain is properly configured in Cloudflare.`);
+        // Get list of available domains in Cloudflare account for better error message
+        try {
+          const zonesResponse = await cf.listZones();
+          let availableDomains: string[] = [];
+          
+          if (zonesResponse.success && zonesResponse.result && Array.isArray(zonesResponse.result)) {
+            availableDomains = zonesResponse.result.map((zone: any) => zone.name);
+          }
+          
+          const errorMessage = availableDomains.length > 0 
+            ? `Could not find Cloudflare zone for root domain: ${rootDomain} (from ${domain.name}). 
+
+Available domains in your Cloudflare account:
+${availableDomains.map(d => `- ${d}`).join('\n')}
+
+Please either:
+1. Add ${rootDomain} to your Cloudflare account first, or 
+2. Use one of the existing domains listed above.`
+            : `Could not find Cloudflare zone for root domain: ${rootDomain} (from ${domain.name}). 
+
+No domains found in your Cloudflare account. Please add ${rootDomain} to your Cloudflare account first.`;
+          
+          throw new Error(errorMessage);
+        } catch (listError) {
+          // Fallback to original error if we can't list zones
+          throw new Error(`Could not find Cloudflare zone for root domain: ${rootDomain} (from ${domain.name}). Make sure the root domain is properly configured in Cloudflare.`);
+        }
       }
       
       console.log(`Found zone ID: ${zoneId} for root domain: ${rootDomain}`);
@@ -934,6 +980,37 @@ export async function createCloakedLandingPage(options: {
     
   } catch (error) {
     console.error('Error creating cloaked landing page:', error);
+    throw error;
+  }
+}
+
+// Utility function to list all available domains in Cloudflare account
+export async function listAvailableDomains(): Promise<{ name: string; id: string; status: string }[]> {
+  try {
+    console.log('Fetching available domains from Cloudflare...');
+    const response = await cf.listZones();
+    
+    if (!response.success) {
+      console.error('Failed to fetch domains from Cloudflare:', response.errors || response);
+      throw new Error(`Cloudflare API error: ${JSON.stringify(response.errors || 'Unknown error')}`);
+    }
+    
+    const domains = response.result?.map((zone: any) => ({
+      name: zone.name,
+      id: zone.id,
+      status: zone.status
+    })) || [];
+    
+    console.log(`Found ${domains.length} domains in Cloudflare account:`, domains);
+    return domains;
+  } catch (error) {
+    console.error('Error listing available domains:', error);
+    if (isDevelopment) {
+      return [
+        { name: 'example.com', id: 'mock-zone-1', status: 'active' },
+        { name: 'test.com', id: 'mock-zone-2', status: 'pending' }
+      ];
+    }
     throw error;
   }
 }
