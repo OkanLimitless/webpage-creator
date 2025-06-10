@@ -12,7 +12,8 @@ export async function POST(request: NextRequest) {
     // Extract domain from the request headers or URL
     const referer = request.headers.get('referer') || '';
     const host = request.headers.get('host') || '';
-    const domain = extractDomainFromUrl(referer) || host;
+    const origin = request.headers.get('origin') || '';
+    const domain = extractDomainFromUrl(referer) || extractDomainFromUrl(origin) || host;
     
     // Process and enrich the log data
     const enrichedLogData = {
@@ -39,6 +40,12 @@ export async function POST(request: NextRequest) {
       success: true, 
       message: 'Log saved successfully',
       id: jciLog._id 
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
     });
     
   } catch (error) {
@@ -48,9 +55,28 @@ export async function POST(request: NextRequest) {
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to save log' 
       }, 
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     );
   }
+}
+
+// Handle preflight OPTIONS requests
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
 }
 
 // GET /api/jci-logs - Retrieve logs with filtering and pagination
