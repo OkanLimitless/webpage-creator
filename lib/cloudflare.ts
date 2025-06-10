@@ -712,7 +712,7 @@ export default {
       };
 
       // Step 2: Call the JCI API using the POST method for advanced filtering
-      const jciApiUrl = \`https://jcibj.com/lapi/rest/r/\${JCI_USER_ID}\`;
+      const jciApiUrl = 'https://jcibj.com/lapi/rest/r/' + JCI_USER_ID;
       
       const apiResponse = await fetch(jciApiUrl, {
         method: 'POST',
