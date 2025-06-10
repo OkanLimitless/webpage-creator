@@ -824,6 +824,36 @@ export function generateComingSoonPage(): string {
 </html>`;
 }
 
+// Helper function to extract root domain from a full domain name
+function extractRootDomain(domainName: string): string {
+  // Remove any protocol if present
+  domainName = domainName.replace(/^https?:\/\//, '');
+  
+  // Split by dots and get the last two parts (domain.tld)
+  const parts = domainName.split('.');
+  
+  // Handle cases like domain.co.uk, domain.com.au, etc.
+  // For now, we'll assume the root domain is the last two parts
+  // This covers most common cases like example.com, but might need
+  // adjustment for complex TLDs
+  if (parts.length >= 2) {
+    // Handle common two-part TLDs
+    const twoPartTlds = ['co.uk', 'com.au', 'co.za', 'com.br', 'co.jp'];
+    const lastTwoParts = parts.slice(-2).join('.');
+    
+    if (twoPartTlds.includes(lastTwoParts) && parts.length >= 3) {
+      // Return last 3 parts for two-part TLDs (e.g., example.co.uk)
+      return parts.slice(-3).join('.');
+    } else {
+      // Return last 2 parts for standard TLDs (e.g., example.com)
+      return lastTwoParts;
+    }
+  }
+  
+  // If less than 2 parts, return as is
+  return domainName;
+}
+
 // Main function to create a cloaked landing page with Cloudflare Worker
 export async function createCloakedLandingPage(options: {
   domain: any;
@@ -841,13 +871,18 @@ export async function createCloakedLandingPage(options: {
     
     if (!zoneId) {
       console.log(`Zone ID not found in domain object, looking up zone for domain: ${domain.name}`);
-      zoneId = await getZoneIdByName(domain.name);
+      
+      // Extract root domain for zone lookup
+      const rootDomain = extractRootDomain(domain.name);
+      console.log(`Extracted root domain: ${rootDomain} from full domain: ${domain.name}`);
+      
+      zoneId = await getZoneIdByName(rootDomain);
       
       if (!zoneId) {
-        throw new Error(`Could not find Cloudflare zone for domain: ${domain.name}. Make sure the domain is properly configured in Cloudflare.`);
+        throw new Error(`Could not find Cloudflare zone for root domain: ${rootDomain} (from ${domain.name}). Make sure the root domain is properly configured in Cloudflare.`);
       }
       
-      console.log(`Found zone ID: ${zoneId} for domain: ${domain.name}`);
+      console.log(`Found zone ID: ${zoneId} for root domain: ${rootDomain}`);
     }
     
     // 2. Generate safe page URL (we'll deploy the coming soon page to Vercel first)
