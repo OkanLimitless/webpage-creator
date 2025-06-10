@@ -705,6 +705,67 @@ const SAFE_URL = '${safeUrl}';
 const MONEY_URL = '${moneyUrl}'; 
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountries)};
 const EXCLUDE_COUNTRIES = ${JSON.stringify(excludeCountries)};
+
+// Safe page HTML content (served directly to avoid redirect issues)
+const SAFE_PAGE_HTML = \`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coming Soon</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fff, #f0f0f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
+        .loader {
+            width: 50px; height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @media (max-width: 768px) {
+            h1 { font-size: 2rem; }
+            p { font-size: 1rem; }
+            .container { margin: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Coming Soon</h1>
+        <p>We're working on something amazing. Stay tuned!</p>
+        <div class="loader"></div>
+    </div>
+</body>
+</html>\`;
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
@@ -712,6 +773,9 @@ addEventListener('fetch', event => {
 });
 
 async function handleRequest(request) {
+  const visitorIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const userAgent = request.headers.get('User-Agent') || 'unknown';
+  
   try {
     // Step 1: Gather all visitor data from Cloudflare's request headers
     const data = {
@@ -721,20 +785,29 @@ async function handleRequest(request) {
       ref:      request.headers.get('Referer') || '',
       
       // --- ADVANCED POST FILTERS ---
-      inc_loc:  TARGET_COUNTRIES.join(','), // Target specific countries
-      ex_loc:   EXCLUDE_COUNTRIES.join(','), // Exclude specific countries if needed
-      devices:  '',        // Leave empty to allow all devices (Mobile, Computers, etc.)
-      os:       '',        // Leave empty to allow all OS (Windows, iOS, etc.)
-      lans:     '',        // Leave empty to allow all languages
-      is_geo:   true,      // Enable Geo-location checks
-      is_device:true,      // Enable Device checks
-      is_os:    true,      // Enable OS checks
-      is_lang:  true,      // Enable Language checks
-      is_gclid: true,      // CRITICAL: Set to true to filter for valid Google Ad clicks
-      ipscore:  true       // CRITICAL: Set to true to use their most powerful IP analysis
+      inc_loc:  TARGET_COUNTRIES.join(','),
+      ex_loc:   EXCLUDE_COUNTRIES.join(','),
+      devices:  '',
+      os:       '',
+      lans:     '',
+      is_geo:   true,
+      is_device:true,
+      is_os:    true,
+      is_lang:  true,
+      is_gclid: true,
+      ipscore:  true
     };
 
-    // Step 2: Call the JCI API using the POST method for advanced filtering
+    console.log('🔍 JCI API Call for visitor:', {
+      ip: visitorIP,
+      userAgent: userAgent.substring(0, 100) + '...',
+      referer: data.ref,
+      language: data.lan,
+      targetCountries: TARGET_COUNTRIES,
+      excludeCountries: EXCLUDE_COUNTRIES
+    });
+
+    // Step 2: Call the JCI API
     const jciApiUrl = 'https://jcibj.com/lapi/rest/r/' + JCI_USER_ID;
     
     const apiResponse = await fetch(jciApiUrl, {
@@ -744,27 +817,106 @@ async function handleRequest(request) {
     });
 
     if (!apiResponse.ok) {
-      // If the API call fails, always show the safe page as a fallback
-      return fetch(SAFE_URL);
+      console.error('❌ JCI API call failed:', apiResponse.status, apiResponse.statusText);
+      
+      // Log the failure
+      await logDecision({
+        ip: visitorIP,
+        userAgent: userAgent,
+        decision: 'SAFE_PAGE',
+        reason: 'JCI_API_FAILED',
+        jciResponse: null,
+        error: 'API call failed: ' + apiResponse.status
+      });
+      
+      return new Response(SAFE_PAGE_HTML, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
     }
 
     const jciResult = await apiResponse.json();
+    
+    console.log('📊 JCI API Response:', {
+      type: jciResult.type,
+      status: jciResult.status,
+      country: jciResult.country || 'unknown',
+      device: jciResult.device || 'unknown',
+      os: jciResult.os || 'unknown',
+      browser: jciResult.browser || 'unknown',
+      isp: jciResult.isp || 'unknown',
+      risk_score: jciResult.risk_score || 'unknown',
+      full_response: jciResult
+    });
 
-    // Step 3: Analyze the API response and make the decision
-    // From the docs: 'type' == 'false' means PASS (show Money Page)
-    // 'type' == 'true' means BLOCK (show Safe Page)
+    // Step 3: Make the decision
     if (jciResult.type === 'false' || jciResult.status === 'passed') {
-      // The visitor is clean. Show them the Money Page.
+      console.log('✅ Visitor approved - showing MONEY PAGE');
+      
+      await logDecision({
+        ip: visitorIP,
+        userAgent: userAgent,
+        decision: 'MONEY_PAGE',
+        reason: 'JCI_APPROVED',
+        jciResponse: jciResult
+      });
+      
       return fetch(MONEY_URL);
     } else {
-      // The visitor is a bot/reviewer. Show them the Safe Page.
-      return fetch(SAFE_URL);
+      console.log('🛡️ Visitor blocked - showing SAFE PAGE');
+      
+      await logDecision({
+        ip: visitorIP,
+        userAgent: userAgent,
+        decision: 'SAFE_PAGE',
+        reason: 'JCI_BLOCKED',
+        jciResponse: jciResult
+      });
+      
+      return new Response(SAFE_PAGE_HTML, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
     }
 
   } catch (error) {
-    // If any error occurs during the process, ALWAYS default to showing the Safe Page.
-    // This is your most important safety net.
-    return fetch(SAFE_URL);
+    console.error('💥 Worker error:', error.message);
+    
+    await logDecision({
+      ip: visitorIP,
+      userAgent: userAgent,
+      decision: 'SAFE_PAGE',
+      reason: 'WORKER_ERROR',
+      jciResponse: null,
+      error: error.message
+    });
+    
+    return new Response(SAFE_PAGE_HTML, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    });
+  }
+}
+
+// Function to log decisions to the database
+async function logDecision(logData) {
+  try {
+    const logUrl = 'https://' + new URL(SAFE_URL).hostname + '/api/jci-logs';
+    
+    const response = await fetch(logUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...logData,
+        timestamp: new Date().toISOString(),
+        workerVersion: '1.0'
+      })
+    });
+    
+    if (!response.ok) {
+      console.warn('⚠️ Failed to log decision:', response.status);
+    } else {
+      console.log('📝 Decision logged successfully');
+    }
+  } catch (error) {
+    console.warn('⚠️ Logging error:', error.message);
   }
 }`;
 }
