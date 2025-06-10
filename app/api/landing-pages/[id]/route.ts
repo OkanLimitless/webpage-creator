@@ -202,4 +202,64 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       { status: 500 }
     );
   }
+}
+
+// PUT /api/landing-pages/[id] - Update landing page or fix cloaking DNS
+export async function PUT(request: NextRequest, { params }: Params) {
+  try {
+    await connectToDatabase();
+    
+    const body = await request.json();
+    const { action } = body;
+    
+    // Handle different actions
+    if (action === 'fix-cloaking-dns') {
+      // Fix cloaking DNS records for this landing page
+      const landingPage = await LandingPage.findById(params.id).populate('domainId');
+      
+      if (!landingPage) {
+        return NextResponse.json({ error: 'Landing page not found' }, { status: 404 });
+      }
+      
+      if (landingPage.templateType !== 'cloaked') {
+        return NextResponse.json({ error: 'This is not a cloaked landing page' }, { status: 400 });
+      }
+      
+      const domain = landingPage.domainId as any;
+      
+      if (!domain.cloudflareZoneId) {
+        return NextResponse.json({ error: 'Domain does not have Cloudflare Zone ID' }, { status: 400 });
+      }
+      
+      // Import the fix function
+      const { fixCloakingDnsRecords } = await import('@/lib/cloudflare');
+      
+      const fixResult = await fixCloakingDnsRecords(
+        domain.name,
+        landingPage.subdomain,
+        domain.cloudflareZoneId
+      );
+      
+      return NextResponse.json({
+        success: fixResult.success,
+        message: fixResult.message,
+        results: fixResult.results,
+        landingPageId: landingPage._id,
+        domain: domain.name,
+        subdomain: landingPage.subdomain
+      });
+    }
+    
+    // Handle other update actions here (existing functionality)
+    // ...
+    
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+    
+  } catch (error) {
+    console.error('Error in PUT /api/landing-pages/[id]:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
 } 

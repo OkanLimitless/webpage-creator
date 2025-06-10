@@ -68,7 +68,7 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // State
-  const [activeTab, setActiveTab] = useState<'domains' | 'landingPages' | 'phoneNumbers' | 'jciLogs'>('domains');
+  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'jciLogs'>('landingPages');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [landingPages, setLandingPages] = useState<LandingPage[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
@@ -187,7 +187,7 @@ export default function Home() {
   }>({});
   
   // Landing pages tab state
-  const [landingPageTab, setLandingPageTab] = useState<'all' | 'standard' | 'travel' | 'pest-control'>('all');
+  const [landingPageTab, setLandingPageTab] = useState<'all' | 'standard' | 'travel' | 'pest-control' | 'cloaked'>('all');
   
   // Phone numbers state
   const [isPhoneNumberModalOpen, setIsPhoneNumberModalOpen] = useState(false);
@@ -949,6 +949,10 @@ export default function Home() {
     );
   };
   
+  const getCloakedLandingPages = (): LandingPage[] => {
+    return landingPages.filter(page => page.templateType === 'cloaked');
+  };
+  
   const getFilteredLandingPages = (): LandingPage[] => {
     switch (landingPageTab) {
       case 'standard':
@@ -957,6 +961,8 @@ export default function Home() {
         return getTravelLandingPages();
       case 'pest-control':
         return getPestControlLandingPages();
+      case 'cloaked':
+        return getCloakedLandingPages();
       default:
         return landingPages;
     }
@@ -1668,6 +1674,40 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
       // No landing pages at all
       (domain.landingPageCount || 0) === 0
     );
+  };
+
+  // Fix cloaking DNS for existing cloaked pages
+  const fixCloakingDns = async (landingPageId: string) => {
+    if (!confirm('Fix DNS settings for this cloaked page? This will enable Cloudflare proxying so the worker can intercept requests.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/landing-pages/${landingPageId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'fix-cloaking-dns'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.success) {
+          alert(`✅ DNS fixed successfully!\n\n${data.message}\n\nThe cloaked page should now work properly. Please test it after a few minutes.`);
+        } else {
+          alert(`❌ DNS fix failed: ${data.message}`);
+        }
+      } else {
+        alert(`Error: ${data.error || 'Failed to fix DNS'}`);
+      }
+    } catch (error) {
+      console.error('Error fixing cloaking DNS:', error);
+      alert('An error occurred while fixing DNS settings');
+    }
   };
 
   // Fetch JCI logs function
@@ -2830,6 +2870,16 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               >
                 🐛 Pest Control ({getPestControlLandingPages().length})
               </div>
+              <div 
+                className={`px-4 py-3 cursor-pointer mr-2 ${
+                  landingPageTab === 'cloaked'
+                    ? 'border-b-2 border-primary text-white font-semibold'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+                onClick={() => setLandingPageTab('cloaked')}
+              >
+                🎭 Cloaked ({getCloakedLandingPages().length})
+              </div>
             </div>
             
             {landingPages.length === 0 ? (
@@ -2879,10 +2929,14 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             page.templateType === 'call-ads' 
                               ? 'bg-orange-900 text-orange-300' 
+                              : page.templateType === 'cloaked'
+                              ? 'bg-red-900 text-red-300'
                               : 'bg-blue-900 text-blue-300'
                           }`}>
                             {page.templateType === 'call-ads' 
                               ? `📞 ${page.callAdsTemplateType === 'pest-control' ? '🐛 Pest Control' : '✈️ Travel'}`
+                              : page.templateType === 'cloaked'
+                              ? '🎭 Cloaked'
                               : '🌐 Standard'
                             }
                           </span>
@@ -2944,6 +2998,15 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
+                            {page.templateType === 'cloaked' && (
+                              <button 
+                                className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                                onClick={() => fixCloakingDns(page._id)}
+                                title="Fix DNS settings to enable Cloudflare Workers"
+                              >
+                                🔧 Fix DNS
+                              </button>
+                            )}
                             <button 
                               className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => deleteLandingPage(page._id)}

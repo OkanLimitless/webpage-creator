@@ -442,7 +442,8 @@ export async function createDnsRecord(
   type: 'CNAME' | 'A' | 'AAAA' | 'TXT' | 'MX' | 'NS', 
   content: string = 'cname.vercel-dns.com',
   zoneId?: string,
-  proxied: boolean = false // Default to false which is required for Vercel SSL to work properly
+  proxied: boolean = false, // Default to false which is required for Vercel SSL to work properly
+  forceProxied?: boolean // New parameter to override Vercel detection for cloaking
 ) {
   try {
     // Trim whitespace from domain and subdomain
@@ -453,17 +454,26 @@ export async function createDnsRecord(
     const name = subdomain;
     const effectiveZoneId = getEffectiveZoneId(zoneId);
     console.log(`[${new Date().toISOString()}] createDnsRecord: Creating DNS record for ${name} in domain ${domain} with zone ID: ${effectiveZoneId}`);
-    console.log(`[${new Date().toISOString()}] createDnsRecord: Type: ${type}, Content: ${content}, Proxied: ${proxied}`);
+    console.log(`[${new Date().toISOString()}] createDnsRecord: Type: ${type}, Content: ${content}, Proxied: ${proxied}, ForceProxied: ${forceProxied}`);
     
     // Check if this is a record pointing to Vercel
     const isVercelRecord = content.includes('vercel') || content === '76.76.21.21';
     
-    // Force proxied to false if this is a Vercel record to prevent redirect loops
-    // Vercel requires DNS-only mode for its SSL to work properly
-    const shouldProxy = isVercelRecord ? false : proxied;
+    // Determine final proxied value
+    let shouldProxy: boolean;
     
-    if (isVercelRecord && proxied) {
+    if (forceProxied !== undefined) {
+      // If forceProxied is explicitly set, use that value (for cloaking)
+      shouldProxy = forceProxied;
+      console.log(`[${new Date().toISOString()}] createDnsRecord: Using forceProxied=${forceProxied} for cloaking`);
+    } else if (isVercelRecord) {
+      // Force proxied to false if this is a Vercel record to prevent redirect loops
+      // Vercel requires DNS-only mode for its SSL to work properly
+      shouldProxy = false;
       console.log(`[${new Date().toISOString()}] createDnsRecord: Detected Vercel record, forcing proxied=false to prevent redirect loops`);
+    } else {
+      // Use the provided proxied value for non-Vercel records
+      shouldProxy = proxied;
     }
     
     const response = await cf.createDnsRecord({
@@ -471,7 +481,7 @@ export async function createDnsRecord(
       name,
       content,
       ttl: 1, // Auto TTL
-      proxied: shouldProxy, // Explicitly set proxied value - for Vercel domains this should ALWAYS be false
+      proxied: shouldProxy, // Use the determined proxied value
     }, effectiveZoneId);
     
     console.log(`[${new Date().toISOString()}] createDnsRecord: DNS record creation response:`, JSON.stringify(response));
@@ -1085,5 +1095,131 @@ export async function listAvailableDomains(): Promise<{ name: string; id: string
       ];
     }
     throw error;
+  }
+}
+
+// Update DNS record proxying status (useful for fixing cloaking issues)
+export async function updateDnsRecordProxying(recordId: string, proxied: boolean, zoneId?: string) {
+  try {
+    const effectiveZoneId = getEffectiveZoneId(zoneId);
+    
+    console.log(`[${new Date().toISOString()}] updateDnsRecordProxying: Updating DNS record ${recordId} proxying to ${proxied} in zone ${effectiveZoneId}`);
+    
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN)) {
+      return {
+        success: true,
+        result: {
+          id: recordId,
+          proxied: proxied
+        }
+      };
+    }
+
+    // First get the current record details
+    const getResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${effectiveZoneId}/dns_records/${recordId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+    });
+    
+    const getCurrentRecord = await getResponse.json();
+    
+    if (!getCurrentRecord.success) {
+      console.error(`[${new Date().toISOString()}] updateDnsRecordProxying: Failed to get current record:`, getCurrentRecord.errors);
+      return getCurrentRecord;
+    }
+    
+    const currentRecord = getCurrentRecord.result;
+    
+    // Update the record with new proxying status
+    const updateResponse = await fetch(`https://api.cloudflare.com/client/v4/zones/${effectiveZoneId}/dns_records/${recordId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+      body: JSON.stringify({
+        type: currentRecord.type,
+        name: currentRecord.name,
+        content: currentRecord.content,
+        ttl: currentRecord.ttl,
+        proxied: proxied
+      }),
+    });
+    
+    const updateResult = await updateResponse.json();
+    
+    console.log(`[${new Date().toISOString()}] updateDnsRecordProxying: Update response:`, JSON.stringify(updateResult));
+    
+    return updateResult;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] updateDnsRecordProxying: Error updating DNS record:`, error);
+    return { success: false, error };
+  }
+}
+
+// Helper function to fix cloaking DNS records (enable proxying for existing records)
+export async function fixCloakingDnsRecords(domainName: string, subdomain: string, zoneId?: string) {
+  try {
+    const effectiveZoneId = getEffectiveZoneId(zoneId);
+    const recordName = `${subdomain}.${domainName}`;
+    
+    console.log(`[${new Date().toISOString()}] fixCloakingDnsRecords: Fixing DNS records for ${recordName}`);
+    
+    // Get all DNS records for this subdomain
+    const records = await getDnsRecords(recordName, effectiveZoneId);
+    
+    if (!records || records.length === 0) {
+      return {
+        success: false,
+        message: `No DNS records found for ${recordName}`
+      };
+    }
+    
+    const results = [];
+    
+    for (const record of records) {
+      if ((record.type === 'CNAME' || record.type === 'A') && !record.proxied) {
+        console.log(`[${new Date().toISOString()}] fixCloakingDnsRecords: Enabling proxying for ${record.type} record ${record.id}`);
+        
+        const updateResult = await updateDnsRecordProxying(record.id, true, effectiveZoneId);
+        
+        results.push({
+          recordId: record.id,
+          type: record.type,
+          name: record.name,
+          content: record.content,
+          success: updateResult.success,
+          error: updateResult.error
+        });
+      } else {
+        results.push({
+          recordId: record.id,
+          type: record.type,
+          name: record.name,
+          content: record.content,
+          success: true,
+          message: record.proxied ? 'Already proxied' : 'Not a CNAME/A record'
+        });
+      }
+    }
+    
+    const successCount = results.filter(r => r.success).length;
+    
+    return {
+      success: successCount > 0,
+      message: `Updated ${successCount}/${results.length} DNS records for ${recordName}`,
+      results
+    };
+    
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] fixCloakingDnsRecords: Error:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      message: 'Failed to fix cloaking DNS records'
+    };
   }
 }

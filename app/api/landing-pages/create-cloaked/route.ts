@@ -162,8 +162,8 @@ export async function POST(request: NextRequest) {
         
         // Create DNS record in Cloudflare using Vercel's recommended value
         console.log(`Creating DNS record in Cloudflare for ${finalSubdomain}.${domain.name} pointing to ${vercelDnsTarget}`);
-        await createDnsRecord(finalSubdomain, domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId);
-        console.log(`DNS record created successfully for ${finalSubdomain}.${domain.name}`);
+        await createDnsRecord(finalSubdomain, domain.name, 'CNAME', vercelDnsTarget, domain.cloudflareZoneId, false, true);
+        console.log(`DNS record created successfully for ${finalSubdomain}.${domain.name} (proxied for worker routing)`);
         
         // Wait a moment for DNS to propagate
         await new Promise(resolve => setTimeout(resolve, 3000));
