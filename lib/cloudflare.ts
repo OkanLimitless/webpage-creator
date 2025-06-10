@@ -698,6 +698,7 @@ export function generateJciWorkerScript(options: {
   
   return `// JCI API Cloaking Script for Cloudflare Workers
 // Generated automatically by Webpage Creator
+// TESTING MODE: Always shows safe page to verify worker deployment
 
 // --- CONFIGURATION ---
 const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr'; 
@@ -712,7 +713,7 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coming Soon</title>
+    <title>Coming Soon - Testing Worker</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -732,6 +733,7 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
         }
         h1 {
             font-size: 3rem;
@@ -742,6 +744,14 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
             background-clip: text;
         }
         p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
+        .status {
+            background: rgba(0, 255, 0, 0.2);
+            color: #90EE90;
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
         .loader {
             width: 50px; height: 50px;
             border: 3px solid rgba(255, 255, 255, 0.3);
@@ -760,8 +770,12 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
 </head>
 <body>
     <div class="container">
+        <div class="status">
+            ✅ Cloudflare Worker is Active
+        </div>
         <h1>Coming Soon</h1>
         <p>We're working on something amazing. Stay tuned!</p>
+        <p style="font-size: 0.9rem; opacity: 0.7;">This page is served directly by Cloudflare Workers</p>
         <div class="loader"></div>
     </div>
 </body>
@@ -773,126 +787,33 @@ addEventListener('fetch', event => {
 });
 
 async function handleRequest(request) {
-  const visitorIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const userAgent = request.headers.get('User-Agent') || 'unknown';
+  console.log('🔍 Worker handling request for:', request.url);
+  
+  // TESTING MODE: Always return safe page to verify worker is working
+  console.log('🧪 TESTING MODE: Always showing safe page');
   
   try {
-    // Step 1: Gather all visitor data from Cloudflare's request headers
-    const data = {
-      ip:       request.headers.get('CF-Connecting-IP') || '',
-      ua:       request.headers.get('User-Agent') || '',
-      lan:      request.headers.get('Accept-Language') || '',
-      ref:      request.headers.get('Referer') || '',
-      
-      // --- ADVANCED POST FILTERS ---
-      inc_loc:  TARGET_COUNTRIES.join(','),
-      ex_loc:   EXCLUDE_COUNTRIES.join(','),
-      devices:  '',
-      os:       '',
-      lans:     '',
-      is_geo:   true,
-      is_device:true,
-      is_os:    true,
-      is_lang:  true,
-      is_gclid: true,
-      ipscore:  true
-    };
-
-    console.log('🔍 JCI API Call for visitor:', {
-      ip: visitorIP,
-      userAgent: userAgent.substring(0, 100) + '...',
-      referer: data.ref,
-      language: data.lan,
-      targetCountries: TARGET_COUNTRIES,
-      excludeCountries: EXCLUDE_COUNTRIES
-    });
-
-    // Step 2: Call the JCI API
-    const jciApiUrl = 'https://jcibj.com/lapi/rest/r/' + JCI_USER_ID;
-    
-    const apiResponse = await fetch(jciApiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(data).toString()
-    });
-
-    if (!apiResponse.ok) {
-      console.error('❌ JCI API call failed:', apiResponse.status, apiResponse.statusText);
-      
-      // Log the failure
-      await logDecision({
-        ip: visitorIP,
-        userAgent: userAgent,
-        decision: 'SAFE_PAGE',
-        reason: 'JCI_API_FAILED',
-        jciResponse: null,
-        error: 'API call failed: ' + apiResponse.status
-      });
-      
-      return new Response(SAFE_PAGE_HTML, {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
-      });
-    }
-
-    const jciResult = await apiResponse.json();
-    
-    console.log('📊 JCI API Response:', {
-      type: jciResult.type,
-      status: jciResult.status,
-      country: jciResult.country || 'unknown',
-      device: jciResult.device || 'unknown',
-      os: jciResult.os || 'unknown',
-      browser: jciResult.browser || 'unknown',
-      isp: jciResult.isp || 'unknown',
-      risk_score: jciResult.risk_score || 'unknown',
-      full_response: jciResult
-    });
-
-    // Step 3: Make the decision
-    if (jciResult.type === 'false' || jciResult.status === 'passed') {
-      console.log('✅ Visitor approved - showing MONEY PAGE');
-      
-      await logDecision({
-        ip: visitorIP,
-        userAgent: userAgent,
-        decision: 'MONEY_PAGE',
-        reason: 'JCI_APPROVED',
-        jciResponse: jciResult
-      });
-      
-      return fetch(MONEY_URL);
-    } else {
-      console.log('🛡️ Visitor blocked - showing SAFE PAGE');
-      
-      await logDecision({
-        ip: visitorIP,
-        userAgent: userAgent,
-        decision: 'SAFE_PAGE',
-        reason: 'JCI_BLOCKED',
-        jciResponse: jciResult
-      });
-      
-      return new Response(SAFE_PAGE_HTML, {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
-      });
-    }
-
-  } catch (error) {
-    console.error('💥 Worker error:', error.message);
-    
+    // Log the request
     await logDecision({
-      ip: visitorIP,
-      userAgent: userAgent,
+      ip: request.headers.get('CF-Connecting-IP') || 'unknown',
+      userAgent: request.headers.get('User-Agent') || 'unknown',
       decision: 'SAFE_PAGE',
-      reason: 'WORKER_ERROR',
+      reason: 'TESTING_MODE',
       jciResponse: null,
-      error: error.message
+      error: null
     });
-    
-    return new Response(SAFE_PAGE_HTML, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    });
+  } catch (error) {
+    console.warn('⚠️ Logging failed:', error.message);
   }
+  
+  // Always return the safe page HTML directly
+  return new Response(SAFE_PAGE_HTML, {
+    headers: { 
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'X-Worker-Status': 'active'
+    }
+  });
 }
 
 // Function to log decisions to the database
@@ -906,7 +827,7 @@ async function logDecision(logData) {
       body: JSON.stringify({
         ...logData,
         timestamp: new Date().toISOString(),
-        workerVersion: '1.0'
+        workerVersion: 'testing-1.0'
       })
     });
     
