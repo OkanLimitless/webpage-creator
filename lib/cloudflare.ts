@@ -836,16 +836,30 @@ export async function createCloakedLandingPage(options: {
   const { domain, subdomain, moneyUrl, targetCountries, excludeCountries, safePageContent } = options;
   
   try {
-    // 1. Generate safe page URL (we'll deploy the coming soon page to Vercel first)
+    // 1. Get or find the Cloudflare Zone ID
+    let zoneId = domain.cloudflareZoneId;
+    
+    if (!zoneId) {
+      console.log(`Zone ID not found in domain object, looking up zone for domain: ${domain.name}`);
+      zoneId = await getZoneIdByName(domain.name);
+      
+      if (!zoneId) {
+        throw new Error(`Could not find Cloudflare zone for domain: ${domain.name}. Make sure the domain is properly configured in Cloudflare.`);
+      }
+      
+      console.log(`Found zone ID: ${zoneId} for domain: ${domain.name}`);
+    }
+    
+    // 2. Generate safe page URL (we'll deploy the coming soon page to Vercel first)
     const safePageDomain = subdomain && domain.dnsManagement !== 'external' 
       ? `${subdomain}.${domain.name}` 
       : domain.name;
     const safeUrl = `https://${safePageDomain}`;
     
-    // 2. Generate unique worker script name
+    // 3. Generate unique worker script name
     const scriptName = `cloak-${domain.name.replace(/\./g, '-')}-${Date.now()}`;
     
-    // 3. Generate JCI worker script
+    // 4. Generate JCI worker script
     const workerScript = generateJciWorkerScript({
       safeUrl,
       moneyUrl,
@@ -853,7 +867,7 @@ export async function createCloakedLandingPage(options: {
       excludeCountries
     });
     
-    // 4. Deploy worker to Cloudflare
+    // 5. Deploy worker to Cloudflare
     console.log(`Creating worker script: ${scriptName}`);
     const workerResult = await cf.createWorker(scriptName, workerScript);
     
@@ -861,13 +875,13 @@ export async function createCloakedLandingPage(options: {
       throw new Error(`Failed to create worker: ${JSON.stringify(workerResult.errors)}`);
     }
     
-    // 5. Create worker route
+    // 6. Create worker route
     const routePattern = subdomain && domain.dnsManagement !== 'external'
       ? `${subdomain}.${domain.name}/*`
       : `${domain.name}/*`;
       
-    console.log(`Creating worker route: ${routePattern} -> ${scriptName}`);
-    const routeResult = await cf.createWorkerRoute(domain.cloudflareZoneId, routePattern, scriptName);
+    console.log(`Creating worker route: ${routePattern} -> ${scriptName} (Zone ID: ${zoneId})`);
+    const routeResult = await cf.createWorkerRoute(zoneId, routePattern, scriptName);
     
     if (!routeResult.success) {
       throw new Error(`Failed to create worker route: ${JSON.stringify(routeResult.errors)}`);
@@ -879,6 +893,7 @@ export async function createCloakedLandingPage(options: {
       workerRouteId: routeResult.result.id,
       safeUrl,
       routePattern,
+      zoneId,
       message: `Cloaked landing page deployed successfully. Worker route: ${routePattern}`
     };
     
