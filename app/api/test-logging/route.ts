@@ -11,9 +11,9 @@ export async function GET() {
       ip: '127.0.0.1',
       userAgent: 'Test-Agent/1.0',
       decision: 'SAFE_PAGE',
-      reason: 'API_TEST',
+      reason: 'WORKER_ERROR',
       jciResponse: null,
-      error: null,
+      error: 'API Test - This is a test log entry',
       timestamp: new Date().toISOString(),
       workerVersion: 'api-test-1.0'
     };

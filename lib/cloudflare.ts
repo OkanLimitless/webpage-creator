@@ -807,7 +807,7 @@ async function handleRequest(request) {
       ip: request.headers.get('CF-Connecting-IP') || 'unknown',
       userAgent: request.headers.get('User-Agent') || 'unknown',
       decision: 'SAFE_PAGE',
-      reason: 'TESTING_MODE',
+      reason: 'WORKER_ERROR',
       jciResponse: null,
       error: null
     });

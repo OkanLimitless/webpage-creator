@@ -62,9 +62,9 @@ async function handleRequest(request) {
       ip: request.headers.get('CF-Connecting-IP') || 'unknown',
       userAgent: request.headers.get('User-Agent') || 'unknown',
       decision: 'SAFE_PAGE',
-      reason: 'TESTING_MODE',
+      reason: 'WORKER_ERROR', // Valid enum value - using as test marker
       jciResponse: null,
-      error: null
+      error: 'DEBUG MODE: Worker is functioning and logging successfully'
     });
   } catch (error) {
     console.warn('⚠️ Logging failed:', error.message);
