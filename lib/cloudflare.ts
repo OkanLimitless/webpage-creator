@@ -697,7 +697,7 @@ export async function checkAndFixDnsSettings(domainName: string, zoneId?: string
   }
 }
 
-// Helper function to generate JCI API worker script
+// Helper function to generate reverse proxy worker script (without JCI for now)
 export function generateJciWorkerScript(options: {
   safeUrl: string;
   moneyUrl: string;
@@ -705,20 +705,16 @@ export function generateJciWorkerScript(options: {
   targetCountries: string[];
   excludeCountries?: string[];
 }): string {
-  const { safeUrl, moneyUrl, whitePageUrl, targetCountries, excludeCountries = [] } = options;
+  const { moneyUrl, whitePageUrl } = options;
   
-  // Use white page URL if provided, otherwise use safe URL
-  const safePageUrl = whitePageUrl || safeUrl;
+  // Use white page URL if provided, otherwise use money URL as the target
+  const targetUrl = whitePageUrl || moneyUrl;
   
-  return `// JCI API Cloaking Script for Cloudflare Workers - PROFESSIONAL GRADE
+  return `// Simple Reverse Proxy Script for Cloudflare Workers - PROFESSIONAL GRADE
 // Generated automatically by Webpage Creator
 // Uses HTMLRewriter for bulletproof URL rewriting - fixes all 404 errors
 
-const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr';
-const MONEY_URL = '${moneyUrl}';
-const SAFE_URL = '${safePageUrl}';
-const TARGET_COUNTRIES = ${JSON.stringify(targetCountries)};
-const EXCLUDE_COUNTRIES = ${JSON.stringify(excludeCountries)};
+const TARGET_URL = '${targetUrl}';
 
 addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request));
@@ -955,78 +951,25 @@ async function handleRequest(request) {
     }
   }
   
-  // Call JCI API for click validation
-  console.log('Calling JCI API...');
-  const userId = 'e68rqs0to5i24lfzpov5je9mr';
-  
-  // Get client IP with proper null handling
-  const clientIP = 
-    request.headers.get('CF-Connecting-IP') || 
-    (request.headers.get('X-Forwarded-For') || '').split(',')[0] || 
-    request.headers.get('X-Real-IP') || 
-    '127.0.0.1';
-  
-  const userAgent = request.headers.get('User-Agent') || 'Unknown';
-  
-  // JCI API call with simplified user agent to avoid encoding issues
-  const cleanUserAgent = userAgent.split(' ')[0] || 'Mozilla';
-  const jciUrl = 'https://jcibj.com/lapi/rest/r/' + userId + '/' + clientIP + '/' + cleanUserAgent;
-  
-  console.log('JCI API URL: ' + jciUrl);
+  // Simple reverse proxy - always serve the target URL
+  console.log('Serving target URL: ' + TARGET_URL);
   
   try {
-    const jciResponse = await fetch(jciUrl, {
-      method: 'GET',
+    return await proxyContent(TARGET_URL, request, currentDomain);
+  } catch (error) {
+    console.error('Proxy failed:', error.message);
+    return new Response('Service temporarily unavailable. Please try again later.', {
+      status: 503,
       headers: {
-        'User-Agent': userAgent,
-        'Accept': 'application/json'
+        'Content-Type': 'text/plain',
+        'X-Worker-Status': 'total-failure'
       }
     });
-    
-    if (!jciResponse.ok) {
-      const errorText = await jciResponse.text();
-      console.log('JCI API Error - Status: ' + jciResponse.status + ', Response: ' + errorText);
-      throw new Error('JCI API returned status ' + jciResponse.status + ': ' + errorText);
-    }
-    
-    const jciData = await jciResponse.json();
-    console.log('JCI API Response:', JSON.stringify(jciData));
-    
-    if (jciData.error) {
-      console.log('JCI API Error: ' + jciData.error);
-      throw new Error('JCI API Error: ' + jciData.error);
-    }
-    
-    // JCI API Logic: type="false" = PASS (money page), type="true" = BLOCK (safe page)
-    if (jciData.type === 'false') {
-      console.log('Visitor approved - serving money page with HTMLRewriter');
-      return await proxyContent(MONEY_URL, request, currentDomain);
-    } else {
-      console.log('Visitor blocked - serving safe page with HTMLRewriter');
-      return await proxyContent(SAFE_URL, request, currentDomain);
-    }
-    
-  } catch (error) {
-    console.error('JCI API Error:', error.message);
-    console.log('Error occurred - serving safe page with HTMLRewriter');
-    
-    try {
-      return await proxyContent(SAFE_URL, request, currentDomain);
-    } catch (proxyError) {
-      console.error('HTMLRewriter proxy failed:', proxyError.message);
-      return new Response('Service temporarily unavailable. Please try again later.', {
-        status: 503,
-        headers: {
-          'Content-Type': 'text/plain',
-          'X-Worker-Status': 'total-failure'
-        }
-      });
-    }
   }
 }
+
 `;
 }
-
 
 // Helper function to create a simple "Coming Soon" page
 export function generateComingSoonPage(): string {
