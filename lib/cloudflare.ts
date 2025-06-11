@@ -899,6 +899,21 @@ async function handleRequest(request) {
   const url = new URL(request.url);
   const currentDomain = url.hostname;
   
+  // Block service worker requests to prevent MIME type errors
+  if (url.pathname.includes('service-worker') || 
+      url.pathname.includes('sw.js') || 
+      url.pathname.includes('workbox') ||
+      url.pathname.endsWith('.worker.js')) {
+    console.log('Blocking service worker request: ' + url.pathname);
+    return new Response('// Service worker blocked by proxy', {
+      status: 404,
+      headers: {
+        'Content-Type': 'application/javascript',
+        'X-Worker-Status': 'service-worker-blocked'
+      }
+    });
+  }
+  
   // Handle resource proxy requests (from rewritten URLs)
   if (url.pathname.startsWith('/proxy-resource/')) {
     const encodedResourceUrl = url.pathname.replace('/proxy-resource/', '');
@@ -951,7 +966,19 @@ async function handleRequest(request) {
     }
   }
   
-  // Simple reverse proxy - always serve the target URL
+  // Handle manifest.json requests to prevent errors
+  if (url.pathname.includes('manifest.json')) {
+    console.log('Blocking manifest.json request');
+    return new Response('{}', {
+      status: 404,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Worker-Status': 'manifest-blocked'
+      }
+    });
+  }
+  
+  // Simple reverse proxy - always serve the target URL for main content
   console.log('Serving target URL: ' + TARGET_URL);
   
   try {
@@ -966,9 +993,6 @@ async function handleRequest(request) {
       }
     });
   }
-}
-
-`;
 }
 
 // Helper function to create a simple "Coming Soon" page
