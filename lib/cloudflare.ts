@@ -707,16 +707,81 @@ export function generateJciWorkerScript(options: {
 }): string {
   const { safeUrl, moneyUrl, whitePageUrl, targetCountries, excludeCountries = [] } = options;
   
+  // Generate the reverse proxy function if whitePageUrl is provided
+  const reverseProxyFunction = whitePageUrl ? `
+// Reverse proxy function to fetch content from white page URL
+async function serveWhitePage() {
+  try {
+    console.log('Fetching content from white page URL: ${whitePageUrl}');
+    
+    const response = await fetch('${whitePageUrl}', {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(\`White page returned status \${response.status}\`);
+    }
+    
+    const content = await response.text();
+    const contentType = response.headers.get('content-type') || 'text/html; charset=utf-8';
+    
+    console.log('Successfully fetched white page content');
+    
+    return new Response(content, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'X-Worker-Status': 'reverse-proxy',
+        'X-Proxy-Source': '${whitePageUrl}'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching white page:', error.message);
+    throw error; // Re-throw to be handled by caller
+  }
+}` : '';
+
+  // Determine the safe page logic based on whether whitePageUrl is provided
+  const safePageLogic = whitePageUrl 
+    ? `return await serveWhitePage();` 
+    : `return new Response(SAFE_PAGE_HTML, {
+        headers: { 
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'X-Worker-Status': 'jci-blocked'
+        }
+      });`;
+
+  const errorPageLogic = whitePageUrl 
+    ? `return await serveWhitePage();` 
+    : `return new Response(SAFE_PAGE_HTML, {
+        headers: { 
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'X-Worker-Status': 'api-error'
+        }
+      });`;
+  
   return `// JCI API Cloaking Script for Cloudflare Workers - PRODUCTION READY
 // Generated automatically by Webpage Creator
 // Uses CORRECT JCI API format from documentation
+${whitePageUrl ? '// REVERSE PROXY MODE: Using white page URL instead of static content' : '// STATIC MODE: Using static "Coming Soon" page'}
 
 const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr';
 const MONEY_URL = '${moneyUrl}';
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountries)};
 const EXCLUDE_COUNTRIES = ${JSON.stringify(excludeCountries)};
+${whitePageUrl ? `const WHITE_PAGE_URL = '${whitePageUrl}';` : ''}
 
-const SAFE_PAGE_HTML = \`<!DOCTYPE html>
+${!whitePageUrl ? `const SAFE_PAGE_HTML = \`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -775,7 +840,9 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
         <div class="loader"></div>
     </div>
 </body>
-</html>\`;
+</html>\`;` : ''}
+
+${reverseProxyFunction}
 
 addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request));
@@ -833,25 +900,14 @@ async function handleRequest(request) {
       // Visitor approved - redirect to money page
       return Response.redirect(MONEY_URL, 302);
     } else {
-      // Visitor blocked - show safe page
-      return new Response(SAFE_PAGE_HTML, {
-        headers: { 
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'X-Worker-Status': 'jci-blocked'
-        }
-      });
+      // Visitor blocked - show safe page ${whitePageUrl ? '(reverse proxy)' : '(static)'}
+      ${safePageLogic}
     }
     
   } catch (error) {
-    // On any error, show safe page
-    return new Response(SAFE_PAGE_HTML, {
-      headers: { 
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'X-Worker-Status': 'api-error'
-      }
-    });
+    // On any error, show safe page ${whitePageUrl ? '(reverse proxy)' : '(static)'}
+    console.error('JCI API Error:', error.message);
+    ${errorPageLogic}
   }
 }`;
 }
