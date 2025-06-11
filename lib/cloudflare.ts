@@ -706,24 +706,21 @@ export function generateJciWorkerScript(options: {
 }): string {
   const { safeUrl, moneyUrl, targetCountries, excludeCountries = [] } = options;
   
-  return `// JCI API Cloaking Script for Cloudflare Workers
+  return `// JCI API Cloaking Script for Cloudflare Workers - PRODUCTION READY
 // Generated automatically by Webpage Creator
-// TESTING MODE: Always shows safe page to verify worker deployment
+// Uses CORRECT JCI API format from documentation
 
-// --- CONFIGURATION ---
-const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr'; 
-const SAFE_URL = '${safeUrl}'; 
-const MONEY_URL = '${moneyUrl}'; 
+const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr';
+const MONEY_URL = '${moneyUrl}';
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountries)};
 const EXCLUDE_COUNTRIES = ${JSON.stringify(excludeCountries)};
 
-// Safe page HTML content (served directly to avoid redirect issues)
 const SAFE_PAGE_HTML = \`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coming Soon - Testing Worker</title>
+    <title>Coming Soon</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -754,14 +751,6 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
             background-clip: text;
         }
         p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
-        .status {
-            background: rgba(0, 255, 0, 0.2);
-            color: #90EE90;
-            padding: 1rem;
-            border-radius: 10px;
-            margin-bottom: 2rem;
-            border: 1px solid rgba(0, 255, 0, 0.3);
-        }
         .loader {
             width: 50px; height: 50px;
             border: 3px solid rgba(255, 255, 255, 0.3);
@@ -780,12 +769,8 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
 </head>
 <body>
     <div class="container">
-        <div class="status">
-            ✅ Cloudflare Worker is Active - JS Working!
-        </div>
         <h1>Coming Soon</h1>
         <p>We're working on something amazing. Stay tuned!</p>
-        <p style="font-size: 0.9rem; opacity: 0.7;">This page is served directly by Cloudflare Workers</p>
         <div class="loader"></div>
     </div>
 </body>
@@ -796,59 +781,53 @@ addEventListener('fetch', event => {
 });
 
 async function handleRequest(request) {
-  console.log('🔍 Worker handling request for:', request.url);
-  
-  // TESTING MODE: Always return safe page to verify worker is working
-  console.log('🧪 TESTING MODE: Always showing safe page');
+  const visitorIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const userAgent = request.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; CloudflareWorker/1.0)';
+  const requestUrl = new URL(request.url);
+  const domain = requestUrl.hostname;
   
   try {
-    // Log the request
-    await logDecision({
-      ip: request.headers.get('CF-Connecting-IP') || 'unknown',
-      userAgent: request.headers.get('User-Agent') || 'unknown',
-      decision: 'SAFE_PAGE',
-      reason: 'WORKER_ERROR',
-      jciResponse: null,
-      error: null
+    // Call JCI API using CORRECT format from documentation
+    const jciUrl = \`https://jcibj.com/lapi/rest/r/\${JCI_USER_ID}/\${encodeURIComponent(visitorIP)}/\${encodeURIComponent(userAgent)}\`;
+    
+    const jciResponse = await fetch(jciUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': userAgent,
+        'Accept': 'application/json'
+      }
     });
-  } catch (error) {
-    console.warn('⚠️ Logging failed:', error.message);
-  }
-  
-  // Always return the safe page HTML directly
-  return new Response(SAFE_PAGE_HTML, {
-    headers: { 
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'X-Worker-Status': 'active-js-working'
+    
+    if (!jciResponse.ok) {
+      throw new Error(\`JCI API returned status \${jciResponse.status}\`);
     }
-  });
-}
-
-// Function to log decisions to the database
-async function logDecision(logData) {
-  try {
-    const logUrl = 'https://webpage-creator.vercel.app/api/jci-logs';
     
-    console.log('📡 Logging to external API:', logUrl);
+    const jciData = await jciResponse.json();
     
-    const response = await fetch(logUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...logData,
-        timestamp: new Date().toISOString(),
-        workerVersion: 'testing-fixed-1.1'
-      })
-    });
-    
-    if (!response.ok) {
-      console.warn('⚠️ Failed to log decision:', response.status);
+    // JCI API Logic: type="false" = PASS (money page), type="true" = BLOCK (safe page)
+    if (jciData.type === 'false') {
+      // Visitor approved - redirect to money page
+      return Response.redirect(MONEY_URL, 302);
     } else {
-      console.log('📝 Decision logged successfully');
+      // Visitor blocked - show safe page
+      return new Response(SAFE_PAGE_HTML, {
+        headers: { 
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'X-Worker-Status': 'jci-blocked'
+        }
+      });
     }
+    
   } catch (error) {
-    console.warn('⚠️ Logging error:', error.message);
+    // On any error, show safe page
+    return new Response(SAFE_PAGE_HTML, {
+      headers: { 
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'X-Worker-Status': 'api-error'
+      }
+    });
   }
 }`;
 }
