@@ -727,11 +727,11 @@ addEventListener('fetch', event => {
 // Advanced reverse proxy function with URL rewriting
 async function proxyContent(targetUrl, originalRequest, currentDomain) {
   try {
-    console.log(\`Proxying content from: \${targetUrl}\`);
+    console.log('Proxying content from: ' + targetUrl);
     
     // Parse the target URL to get the base domain
     const targetUrlObj = new URL(targetUrl);
-    const targetDomain = targetUrlObj.origin;
+    const targetOrigin = targetUrlObj.origin;
     
     // Make request to target URL
     const response = await fetch(targetUrl, {
@@ -741,12 +741,12 @@ async function proxyContent(targetUrl, originalRequest, currentDomain) {
         'Accept': originalRequest.headers.get('Accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': originalRequest.headers.get('Accept-Language') || 'en-US,en;q=0.5',
         'Cache-Control': 'no-cache',
-        'Referer': targetDomain
+        'Referer': targetOrigin
       }
     });
     
     if (!response.ok) {
-      throw new Error(\`Target returned status \${response.status}\`);
+      throw new Error('Target returned status ' + response.status);
     }
     
     const contentType = response.headers.get('content-type') || '';
@@ -755,7 +755,7 @@ async function proxyContent(targetUrl, originalRequest, currentDomain) {
     if (contentType.includes('text/html')) {
       // For HTML content, rewrite URLs
       let content = await response.text();
-      content = rewriteUrls(content, targetDomain, currentDomain);
+      content = rewriteUrls(content, targetOrigin, currentDomain);
       
       return new Response(content, {
         status: response.status,
@@ -789,30 +789,40 @@ async function proxyContent(targetUrl, originalRequest, currentDomain) {
   }
 }
 
-// URL rewriting function to fix relative URLs
-function rewriteUrls(html, targetDomain, currentDomain) {
+// Simplified URL rewriting function to avoid regex complexity
+function rewriteUrls(html, targetOrigin, currentDomain) {
   try {
-    // Rewrite various URL patterns to go through our proxy
+    // Simple string replacements to fix most common URL patterns
     
-    // Rewrite relative URLs in src attributes
-    html = html.replace(/src=["']\/([^"']*?)["']/gi, 'src="https://' + currentDomain + '/proxy-resource/' + targetDomain + '/$1"');
+    // Replace relative URLs starting with / 
+    html = html.split('src="/').join('src="https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
+    html = html.split("src='/").join("src='https://" + currentDomain + '/proxy-resource/' + targetOrigin + '/');
     
-    // Rewrite relative URLs in href attributes (but not # anchors)
-    html = html.replace(/href=["']\/([^"'#]*?)["']/gi, 'href="https://' + currentDomain + '/proxy-resource/' + targetDomain + '/$1"');
+    html = html.split('href="/').join('href="https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
+    html = html.split("href='/").join("href='https://" + currentDomain + '/proxy-resource/' + targetOrigin + '/');
     
-    // Rewrite protocol-relative URLs
-    html = html.replace(/src=["']\/\/([^"']*?)["']/gi, 'src="https://' + currentDomain + '/proxy-resource/https://$1"');
-    html = html.replace(/href=["']\/\/([^"']*?)["']/gi, 'href="https://' + currentDomain + '/proxy-resource/https://$1"');
+    // Replace protocol-relative URLs
+    html = html.split('src="//').join('src="https://' + currentDomain + '/proxy-resource/https://');
+    html = html.split("src='//").join("src='https://" + currentDomain + '/proxy-resource/https://');
     
-    // Rewrite CSS url() references for relative URLs
-    html = html.replace(/url\\(["']?\/([^"')]*?)["']?\\)/gi, 'url("https://' + currentDomain + '/proxy-resource/' + targetDomain + '/$1")');
+    html = html.split('href="//').join('href="https://' + currentDomain + '/proxy-resource/https://');
+    html = html.split("href='//").join("href='https://" + currentDomain + '/proxy-resource/https://');
     
-    // Remove or modify problematic security headers in any inline scripts
-    html = html.replace(/Content-Security-Policy/gi, 'X-Disabled-CSP');
-    html = html.replace(/X-Frame-Options/gi, 'X-Disabled-Frame-Options');
+    // Replace CSS url() references - simplified approach
+    html = html.split('url("/').join('url("https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
+    html = html.split("url('/").join("url('https://" + currentDomain + '/proxy-resource/' + targetOrigin + '/');
+    html = html.split('url(/').join('url(https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
+    
+    // Remove problematic security headers
+    html = html.split('Content-Security-Policy').join('X-Disabled-CSP');
+    html = html.split('X-Frame-Options').join('X-Disabled-Frame-Options');
     
     // Add base tag to help with remaining relative URLs
-    html = html.replace(/<head[^>]*>/i, '$&<base href="' + targetDomain + '/">');
+    if (html.includes('<head>')) {
+      html = html.replace('<head>', '<head><base href="' + targetOrigin + '/">');
+    } else if (html.includes('<head ')) {
+      html = html.replace(/<head[^>]*>/, '$&<base href="' + targetOrigin + '/">');
+    }
     
     return html;
   } catch (error) {
@@ -828,7 +838,7 @@ async function handleRequest(request) {
   // Handle resource proxy requests
   if (url.pathname.startsWith('/proxy-resource/')) {
     const resourceUrl = url.pathname.replace('/proxy-resource/', '');
-    console.log(\`Proxying resource: \${resourceUrl}\`);
+    console.log('Proxying resource: ' + resourceUrl);
     
     try {
       return await proxyContent(resourceUrl, request, currentDomain);
@@ -845,7 +855,7 @@ async function handleRequest(request) {
   // Get client IP (try Cloudflare headers first, then fallback)
   const clientIP = 
     request.headers.get('CF-Connecting-IP') || 
-    request.headers.get('X-Forwarded-For')?.split(',')[0] || 
+    request.headers.get('X-Forwarded-For') ? request.headers.get('X-Forwarded-For').split(',')[0] : 
     request.headers.get('X-Real-IP') || 
     '127.0.0.1';
   
@@ -853,9 +863,9 @@ async function handleRequest(request) {
   
   // JCI API URL format from docs: https://jcibj.com/lapi/rest/r/USER_ID/IP/USERAGENT
   const cleanUserAgent = userAgent.split(' ')[0] || 'Mozilla';
-  const jciUrl = \`https://jcibj.com/lapi/rest/r/\${userId}/\${clientIP}/\${cleanUserAgent}\`;
+  const jciUrl = 'https://jcibj.com/lapi/rest/r/' + userId + '/' + clientIP + '/' + cleanUserAgent;
   
-  console.log(\`JCI API URL: \${jciUrl}\`);
+  console.log('JCI API URL: ' + jciUrl);
   
   try {
     // Call JCI API using CORRECT format from documentation
@@ -869,8 +879,8 @@ async function handleRequest(request) {
     
     if (!jciResponse.ok) {
       const errorText = await jciResponse.text();
-      console.log(\`JCI API Error - Status: \${jciResponse.status}, Response: \${errorText}\`);
-      throw new Error(\`JCI API returned status \${jciResponse.status}: \${errorText}\`);
+      console.log('JCI API Error - Status: ' + jciResponse.status + ', Response: ' + errorText);
+      throw new Error('JCI API returned status ' + jciResponse.status + ': ' + errorText);
     }
     
     const jciData = await jciResponse.json();
@@ -878,8 +888,8 @@ async function handleRequest(request) {
     
     // Check for API errors in the response
     if (jciData.error) {
-      console.log(\`JCI API Error: \${jciData.error}\`);
-      throw new Error(\`JCI API Error: \${jciData.error}\`);
+      console.log('JCI API Error: ' + jciData.error);
+      throw new Error('JCI API Error: ' + jciData.error);
     }
     
     // JCI API Logic: type="false" = PASS (money page), type="true" = BLOCK (safe page)
