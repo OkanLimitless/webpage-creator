@@ -737,17 +737,31 @@ class AttributeRewriter {
     
     for (const attr of attributes) {
       const originalUrl = element.getAttribute(attr);
-      if (originalUrl) {
+      if (originalUrl && originalUrl.trim()) {
         try {
+          // Skip data URLs, javascript URLs, and fragment URLs
+          if (originalUrl.startsWith('data:') || 
+              originalUrl.startsWith('javascript:') || 
+              originalUrl.startsWith('#') ||
+              originalUrl.startsWith('mailto:') ||
+              originalUrl.startsWith('tel:')) {
+            continue;
+          }
+
           // Handle srcset attribute specially (contains multiple URLs)
           if (attr === 'srcset') {
             const rewrittenSrcset = originalUrl
               .split(',')
               .map(srcsetItem => {
                 const parts = srcsetItem.trim().split(/\\s+/);
-                if (parts[0]) {
-                  const absoluteUrl = new URL(parts[0], this.targetOrigin).href;
-                  parts[0] = 'https://' + this.currentDomain + '/proxy-resource/' + absoluteUrl;
+                if (parts[0] && parts[0].trim()) {
+                  try {
+                    const absoluteUrl = new URL(parts[0].trim(), this.targetOrigin).href;
+                    // Encode the full URL to prevent parsing issues
+                    parts[0] = 'https://' + this.currentDomain + '/proxy-resource/' + encodeURIComponent(absoluteUrl);
+                  } catch (e) {
+                    // Keep original if URL parsing fails
+                  }
                 }
                 return parts.join(' ');
               })
@@ -756,7 +770,8 @@ class AttributeRewriter {
           } else {
             // Handle single URL attributes
             const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
-            const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + absoluteUrl;
+            // Encode the full URL to prevent parsing issues
+            const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + encodeURIComponent(absoluteUrl);
             element.setAttribute(attr, proxyUrl);
           }
         } catch (error) {
@@ -796,8 +811,12 @@ class StyleRewriter {
     // Simple but effective CSS url() rewriting
     return cssText.replace(/url\\((['"]?)([^'"\\)]+)\\1\\)/g, (match, quote, url) => {
       try {
+        // Skip data URLs and other non-http URLs
+        if (url.startsWith('data:') || url.startsWith('#')) {
+          return match;
+        }
         const absoluteUrl = new URL(url, this.targetOrigin).href;
-        const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + absoluteUrl;
+        const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + encodeURIComponent(absoluteUrl);
         return 'url(' + quote + proxyUrl + quote + ')';
       } catch (error) {
         return match; // Return original if URL parsing fails
@@ -886,22 +905,38 @@ async function handleRequest(request) {
   
   // Handle resource proxy requests (from rewritten URLs)
   if (url.pathname.startsWith('/proxy-resource/')) {
-    const resourceUrl = url.pathname.replace('/proxy-resource/', '');
-    console.log('Proxying resource: ' + resourceUrl);
+    const encodedResourceUrl = url.pathname.replace('/proxy-resource/', '');
+    console.log('Proxying encoded resource: ' + encodedResourceUrl);
     
     try {
+      // Decode the URL that was encoded by HTMLRewriter
+      const resourceUrl = decodeURIComponent(encodedResourceUrl);
+      console.log('Decoded resource URL: ' + resourceUrl);
+      
+      // Validate that it's a proper URL
+      const parsedUrl = new URL(resourceUrl);
+      
       // Direct fetch for resources - HTMLRewriter already handled the HTML
       const response = await fetch(resourceUrl, {
         headers: {
           'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0',
           'Accept': request.headers.get('Accept') || '*/*',
-          'Referer': new URL(resourceUrl).origin
+          'Referer': parsedUrl.origin
         }
       });
       
       // Return with permissive CORS headers for assets
-      const newHeaders = new Headers(response.headers);
+      const newHeaders = new Headers();
+      
+      // Copy important headers from the original response
+      if (response.headers.get('content-type')) {
+        newHeaders.set('Content-Type', response.headers.get('content-type'));
+      }
+      
       newHeaders.set('Access-Control-Allow-Origin', '*');
+      newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      newHeaders.set('Access-Control-Allow-Headers', '*');
+      newHeaders.set('Cache-Control', 'public, max-age=3600');
       newHeaders.set('X-Worker-Status', 'direct-resource');
       
       return new Response(response.body, {
@@ -910,9 +945,12 @@ async function handleRequest(request) {
       });
     } catch (error) {
       console.error('Resource proxy error:', error.message);
-      return new Response('Resource not found', { 
+      return new Response('Resource not found: ' + error.message, { 
         status: 404,
-        headers: { 'X-Worker-Status': 'resource-error' }
+        headers: { 
+          'Content-Type': 'text/plain',
+          'X-Worker-Status': 'resource-error' 
+        }
       });
     }
   }
@@ -985,7 +1023,6 @@ async function handleRequest(request) {
       });
     }
   }
-}`;
 }
 
 // Helper function to create a simple "Coming Soon" page
