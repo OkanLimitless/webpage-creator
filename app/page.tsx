@@ -223,6 +223,7 @@ export default function Home() {
   const [cloakedName, setCloakedName] = useState('');
   const [cloakedSubdomain, setCloakedSubdomain] = useState('');
   const [moneyUrl, setMoneyUrl] = useState('');
+  const [whitePageUrl, setWhitePageUrl] = useState(''); // New state for white page URL
   const [targetCountries, setTargetCountries] = useState<string[]>(['Germany']);
   const [excludeCountries, setExcludeCountries] = useState<string[]>([]);
   const [selectedDomainForCloaked, setSelectedDomainForCloaked] = useState('');
@@ -1602,6 +1603,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
         domainId: selectedDomainForCloaked,
         subdomain: isExternal ? '' : cloakedSubdomain,
         moneyUrl,
+        whitePageUrl: whitePageUrl || undefined, // Add white page URL if provided
         targetCountries,
         excludeCountries: excludeCountries.length > 0 ? excludeCountries : undefined
       };
@@ -1623,6 +1625,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
         setCloakedName('');
         setCloakedSubdomain('');
         setMoneyUrl('');
+        setWhitePageUrl(''); // Reset white page URL
         setTargetCountries(['Germany']);
         setExcludeCountries([]);
         setSelectedDomainForCloaked('');
@@ -3858,6 +3861,14 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 onChange={(e) => setMoneyUrl(e.target.value)}
               />
               
+              <input
+                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+                type="url"
+                placeholder="White Page URL (optional - for reverse proxy instead of static safe page)"
+                value={whitePageUrl}
+                onChange={(e) => setWhitePageUrl(e.target.value)}
+              />
+              
               {/* Target Countries */}
               <div>
                 <label className="block text-sm font-medium text-white mb-2">Target Countries (Whitelist)</label>
@@ -3941,7 +3952,8 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 <h4 className="font-medium text-blue-300 mb-2">🎭 How Cloaking Works</h4>
                 <ul className="text-blue-200 text-sm space-y-1">
                   <li>• <strong>Qualified visitors</strong> (from target countries, real users) → Money Page</li>
-                  <li>• <strong>Bots & reviewers</strong> (suspicious traffic) → Safe Page (Coming Soon)</li>
+                  <li>• <strong>Bots & reviewers</strong> (suspicious traffic) → Safe Page</li>
+                  <li>• Safe page can be static "Coming Soon" or reverse proxy to any URL</li>
                   <li>• Uses JCI API with advanced filtering (geo, device, IP quality, etc.)</li>
                   <li>• Deployed via Cloudflare Workers for maximum performance</li>
                 </ul>
@@ -3955,6 +3967,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   setCloakedName('');
                   setCloakedSubdomain('');
                   setMoneyUrl('');
+                  setWhitePageUrl(''); // Reset white page URL
                   setTargetCountries(['Germany']);
                   setExcludeCountries([]);
                   setSelectedDomainForCloaked('');

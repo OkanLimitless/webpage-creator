@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
       domainId, 
       subdomain, 
       moneyUrl,
+      whitePageUrl,
       targetCountries,
       excludeCountries = []
     } = body;
@@ -179,6 +180,7 @@ export async function POST(request: NextRequest) {
           domain,
           subdomain: finalSubdomain,
           moneyUrl,
+          whitePageUrl,
           targetCountries,
           excludeCountries,
           safePageContent
