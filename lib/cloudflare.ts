@@ -701,10 +701,11 @@ export async function checkAndFixDnsSettings(domainName: string, zoneId?: string
 export function generateJciWorkerScript(options: {
   safeUrl: string;
   moneyUrl: string;
+  whitePageUrl?: string;
   targetCountries: string[];
   excludeCountries?: string[];
 }): string {
-  const { safeUrl, moneyUrl, targetCountries, excludeCountries = [] } = options;
+  const { safeUrl, moneyUrl, whitePageUrl, targetCountries, excludeCountries = [] } = options;
   
   return `// JCI API Cloaking Script for Cloudflare Workers - PRODUCTION READY
 // Generated automatically by Webpage Creator
@@ -965,11 +966,12 @@ export async function createCloakedLandingPage(options: {
   domain: any;
   subdomain?: string;
   moneyUrl: string;
+  whitePageUrl?: string;
   targetCountries: string[];
   excludeCountries?: string[];
   safePageContent?: string;
 }) {
-  const { domain, subdomain, moneyUrl, targetCountries, excludeCountries, safePageContent } = options;
+  const { domain, subdomain, moneyUrl, whitePageUrl, targetCountries, excludeCountries, safePageContent } = options;
   
   try {
     // 1. Get or find the Cloudflare Zone ID
@@ -1030,6 +1032,7 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
     const workerScript = generateJciWorkerScript({
       safeUrl,
       moneyUrl,
+      whitePageUrl,
       targetCountries,
       excludeCountries
     });
