@@ -781,15 +781,29 @@ addEventListener('fetch', event => {
 });
 
 async function handleRequest(request) {
-  const visitorIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const userAgent = request.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; CloudflareWorker/1.0)';
-  const requestUrl = new URL(request.url);
-  const domain = requestUrl.hostname;
+  // Call JCI API for click validation
+  console.log('Calling JCI API...');
+  const userId = 'e68rqs0to5i24lfzpov5je9mr';
+  
+  // Get client IP (try Cloudflare headers first, then fallback)
+  const clientIP = 
+    request.headers.get('CF-Connecting-IP') || 
+    request.headers.get('X-Forwarded-For')?.split(',')[0] || 
+    request.headers.get('X-Real-IP') || 
+    '127.0.0.1';
+  
+  const userAgent = request.headers.get('User-Agent') || 'Unknown';
+  
+  // JCI API URL format from docs: https://jcibj.com/lapi/rest/r/USER_ID/IP/USERAGENT
+  // NOTE: API expects unencoded user agent (URL encoding causes 404)
+  // We'll use a simplified user agent to avoid URL issues
+  const cleanUserAgent = userAgent.split(' ')[0] || 'Mozilla';
+  const jciUrl = \`https://jcibj.com/lapi/rest/r/\${userId}/\${clientIP}/\${cleanUserAgent}\`;
+  
+  console.log(\`JCI API URL: \${jciUrl}\`);
   
   try {
     // Call JCI API using CORRECT format from documentation
-    const jciUrl = \`https://jcibj.com/lapi/rest/r/\${JCI_USER_ID}/\${encodeURIComponent(visitorIP)}/\${encodeURIComponent(userAgent)}\`;
-    
     const jciResponse = await fetch(jciUrl, {
       method: 'GET',
       headers: {
@@ -799,10 +813,19 @@ async function handleRequest(request) {
     });
     
     if (!jciResponse.ok) {
-      throw new Error(\`JCI API returned status \${jciResponse.status}\`);
+      const errorText = await jciResponse.text();
+      console.log(\`JCI API Error - Status: \${jciResponse.status}, Response: \${errorText}\`);
+      throw new Error(\`JCI API returned status \${jciResponse.status}: \${errorText}\`);
     }
     
     const jciData = await jciResponse.json();
+    console.log('JCI API Response:', JSON.stringify(jciData));
+    
+    // Check for API errors in the response
+    if (jciData.error) {
+      console.log(\`JCI API Error: \${jciData.error}\`);
+      throw new Error(\`JCI API Error: \${jciData.error}\`);
+    }
     
     // JCI API Logic: type="false" = PASS (money page), type="true" = BLOCK (safe page)
     if (jciData.type === 'false') {
