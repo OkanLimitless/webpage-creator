@@ -712,8 +712,7 @@ export function generateJciWorkerScript(options: {
   
   return `// JCI API Cloaking Script for Cloudflare Workers - PRODUCTION READY
 // Generated automatically by Webpage Creator
-// Uses CORRECT JCI API format from documentation
-// REVERSE PROXY MODE: Fetches and serves content on same URL (no redirects)
+// Advanced Reverse Proxy with URL rewriting and resource handling
 
 const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr';
 const MONEY_URL = '${moneyUrl}';
@@ -725,7 +724,120 @@ addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request));
 });
 
+// Advanced reverse proxy function with URL rewriting
+async function proxyContent(targetUrl, originalRequest, currentDomain) {
+  try {
+    console.log(\`Proxying content from: \${targetUrl}\`);
+    
+    // Parse the target URL to get the base domain
+    const targetUrlObj = new URL(targetUrl);
+    const targetDomain = targetUrlObj.origin;
+    
+    // Make request to target URL
+    const response = await fetch(targetUrl, {
+      method: originalRequest.method,
+      headers: {
+        'User-Agent': originalRequest.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': originalRequest.headers.get('Accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': originalRequest.headers.get('Accept-Language') || 'en-US,en;q=0.5',
+        'Cache-Control': 'no-cache',
+        'Referer': targetDomain
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(\`Target returned status \${response.status}\`);
+    }
+    
+    const contentType = response.headers.get('content-type') || '';
+    
+    // Handle different content types
+    if (contentType.includes('text/html')) {
+      // For HTML content, rewrite URLs
+      let content = await response.text();
+      content = rewriteUrls(content, targetDomain, currentDomain);
+      
+      return new Response(content, {
+        status: response.status,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'X-Worker-Status': 'reverse-proxy-html',
+          'X-Proxy-Source': targetUrl
+        }
+      });
+    } else {
+      // For other content (CSS, JS, images, fonts), proxy as-is
+      const content = await response.arrayBuffer();
+      
+      // Create new headers, stripping problematic ones
+      const newHeaders = new Headers();
+      newHeaders.set('Content-Type', contentType);
+      newHeaders.set('Cache-Control', 'public, max-age=86400');
+      newHeaders.set('Access-Control-Allow-Origin', '*');
+      newHeaders.set('X-Worker-Status', 'reverse-proxy-resource');
+      
+      return new Response(content, {
+        status: response.status,
+        headers: newHeaders
+      });
+    }
+    
+  } catch (error) {
+    console.error('Proxy error:', error.message);
+    throw error;
+  }
+}
+
+// URL rewriting function to fix relative URLs
+function rewriteUrls(html, targetDomain, currentDomain) {
+  try {
+    // Rewrite various URL patterns to go through our proxy
+    
+    // Rewrite relative URLs in src attributes
+    html = html.replace(/src=["']\/([^"']*?)["']/gi, 'src="https://' + currentDomain + '/proxy-resource/' + targetDomain + '/$1"');
+    
+    // Rewrite relative URLs in href attributes (but not # anchors)
+    html = html.replace(/href=["']\/([^"'#]*?)["']/gi, 'href="https://' + currentDomain + '/proxy-resource/' + targetDomain + '/$1"');
+    
+    // Rewrite protocol-relative URLs
+    html = html.replace(/src=["']\/\/([^"']*?)["']/gi, 'src="https://' + currentDomain + '/proxy-resource/https://$1"');
+    html = html.replace(/href=["']\/\/([^"']*?)["']/gi, 'href="https://' + currentDomain + '/proxy-resource/https://$1"');
+    
+    // Rewrite CSS url() references for relative URLs
+    html = html.replace(/url\\(["']?\/([^"')]*?)["']?\\)/gi, 'url("https://' + currentDomain + '/proxy-resource/' + targetDomain + '/$1")');
+    
+    // Remove or modify problematic security headers in any inline scripts
+    html = html.replace(/Content-Security-Policy/gi, 'X-Disabled-CSP');
+    html = html.replace(/X-Frame-Options/gi, 'X-Disabled-Frame-Options');
+    
+    // Add base tag to help with remaining relative URLs
+    html = html.replace(/<head[^>]*>/i, '$&<base href="' + targetDomain + '/">');
+    
+    return html;
+  } catch (error) {
+    console.error('URL rewriting error:', error.message);
+    return html; // Return original on error
+  }
+}
+
 async function handleRequest(request) {
+  const url = new URL(request.url);
+  const currentDomain = url.hostname;
+  
+  // Handle resource proxy requests
+  if (url.pathname.startsWith('/proxy-resource/')) {
+    const resourceUrl = url.pathname.replace('/proxy-resource/', '');
+    console.log(\`Proxying resource: \${resourceUrl}\`);
+    
+    try {
+      return await proxyContent(resourceUrl, request, currentDomain);
+    } catch (error) {
+      console.error('Resource proxy error:', error.message);
+      return new Response('Resource not found', { status: 404 });
+    }
+  }
+  
   // Call JCI API for click validation
   console.log('Calling JCI API...');
   const userId = 'e68rqs0to5i24lfzpov5je9mr';
@@ -740,8 +852,6 @@ async function handleRequest(request) {
   const userAgent = request.headers.get('User-Agent') || 'Unknown';
   
   // JCI API URL format from docs: https://jcibj.com/lapi/rest/r/USER_ID/IP/USERAGENT
-  // NOTE: API expects unencoded user agent (URL encoding causes 404)
-  // We'll use a simplified user agent to avoid URL issues
   const cleanUserAgent = userAgent.split(' ')[0] || 'Mozilla';
   const jciUrl = \`https://jcibj.com/lapi/rest/r/\${userId}/\${clientIP}/\${cleanUserAgent}\`;
   
@@ -774,96 +884,30 @@ async function handleRequest(request) {
     
     // JCI API Logic: type="false" = PASS (money page), type="true" = BLOCK (safe page)
     if (jciData.type === 'false') {
-      // Visitor approved - fetch and serve money page content (reverse proxy)
-      console.log('Visitor approved - serving money page');
-      const moneyResponse = await fetch(MONEY_URL, {
-        method: request.method,
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': request.headers.get('Accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': request.headers.get('Accept-Language') || 'en-US,en;q=0.5',
-          'Cache-Control': 'no-cache'
-        }
-      });
-      
-      // Return the money page content with proper headers
-      const moneyContent = await moneyResponse.text();
-      const contentType = moneyResponse.headers.get('content-type') || 'text/html; charset=utf-8';
-      
-      return new Response(moneyContent, {
-        status: moneyResponse.status,
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'X-Worker-Status': 'money-page',
-          'X-JCI-Result': 'approved'
-        }
-      });
+      // Visitor approved - serve money page content with advanced proxy
+      console.log('Visitor approved - serving money page via advanced proxy');
+      return await proxyContent(MONEY_URL, request, currentDomain);
     } else {
-      // Visitor blocked - fetch and serve safe page content (reverse proxy)
-      console.log('Visitor blocked - serving safe page');
-      const safeResponse = await fetch(SAFE_URL, {
-        method: request.method,
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': request.headers.get('Accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': request.headers.get('Accept-Language') || 'en-US,en;q=0.5',
-          'Cache-Control': 'no-cache'
-        }
-      });
-      
-      // Return the safe page content with proper headers
-      const safeContent = await safeResponse.text();
-      const contentType = safeResponse.headers.get('content-type') || 'text/html; charset=utf-8';
-      
-      return new Response(safeContent, {
-        status: safeResponse.status,
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'X-Worker-Status': 'safe-page',
-          'X-JCI-Result': 'blocked'
-        }
-      });
+      // Visitor blocked - serve safe page content with advanced proxy
+      console.log('Visitor blocked - serving safe page via advanced proxy');
+      return await proxyContent(SAFE_URL, request, currentDomain);
     }
     
   } catch (error) {
-    // On any error, fetch and serve safe page content (reverse proxy)
+    // On any error, serve safe page content with advanced proxy
     console.error('JCI API Error:', error.message);
-    console.log('Error occurred - serving safe page');
+    console.log('Error occurred - serving safe page via advanced proxy');
     
     try {
-      const safeResponse = await fetch(SAFE_URL, {
-        method: request.method,
-        headers: {
-          'User-Agent': userAgent || 'Mozilla/5.0',
-          'Accept': request.headers.get('Accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': request.headers.get('Accept-Language') || 'en-US,en;q=0.5',
-          'Cache-Control': 'no-cache'
-        }
-      });
-      
-      const safeContent = await safeResponse.text();
-      const contentType = safeResponse.headers.get('content-type') || 'text/html; charset=utf-8';
-      
-      return new Response(safeContent, {
-        status: safeResponse.status,
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'X-Worker-Status': 'safe-page',
-          'X-JCI-Result': 'api-error',
-          'X-Error': error.message
-        }
-      });
-    } catch (fetchError) {
-      // If even the safe page fetch fails, return a minimal fallback
-      console.error('Safe page fetch failed:', fetchError.message);
-      return new Response('Service temporarily unavailable', {
+      return await proxyContent(SAFE_URL, request, currentDomain);
+    } catch (proxyError) {
+      // If even the safe page proxy fails, return a minimal fallback
+      console.error('Advanced proxy failed:', proxyError.message);
+      return new Response('Service temporarily unavailable. Please try again later.', {
         status: 503,
         headers: {
           'Content-Type': 'text/plain',
-          'X-Worker-Status': 'fetch-error'
+          'X-Worker-Status': 'proxy-error'
         }
       });
     }
