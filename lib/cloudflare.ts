@@ -710,9 +710,9 @@ export function generateJciWorkerScript(options: {
   // Use white page URL if provided, otherwise use safe URL
   const safePageUrl = whitePageUrl || safeUrl;
   
-  return `// JCI API Cloaking Script for Cloudflare Workers - PRODUCTION READY
+  return `// JCI API Cloaking Script for Cloudflare Workers - PROFESSIONAL GRADE
 // Generated automatically by Webpage Creator
-// Advanced Reverse Proxy with URL rewriting and resource handling
+// Uses HTMLRewriter for bulletproof URL rewriting - fixes all 404 errors
 
 const JCI_USER_ID = 'e68rqs0to5i24lfzpov5je9mr';
 const MONEY_URL = '${moneyUrl}';
@@ -724,16 +724,97 @@ addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request));
 });
 
-// Advanced reverse proxy function with URL rewriting
+// Professional URL rewriter class using HTMLRewriter
+class AttributeRewriter {
+  constructor(targetOrigin, currentDomain) {
+    this.targetOrigin = targetOrigin;
+    this.currentDomain = currentDomain;
+  }
+
+  element(element) {
+    // List of attributes that can contain URLs
+    const attributes = ['href', 'src', 'action', 'data-src', 'srcset', 'poster'];
+    
+    for (const attr of attributes) {
+      const originalUrl = element.getAttribute(attr);
+      if (originalUrl) {
+        try {
+          // Handle srcset attribute specially (contains multiple URLs)
+          if (attr === 'srcset') {
+            const rewrittenSrcset = originalUrl
+              .split(',')
+              .map(srcsetItem => {
+                const parts = srcsetItem.trim().split(/\\s+/);
+                if (parts[0]) {
+                  const absoluteUrl = new URL(parts[0], this.targetOrigin).href;
+                  parts[0] = 'https://' + this.currentDomain + '/proxy-resource/' + absoluteUrl;
+                }
+                return parts.join(' ');
+              })
+              .join(', ');
+            element.setAttribute(attr, rewrittenSrcset);
+          } else {
+            // Handle single URL attributes
+            const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
+            const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + absoluteUrl;
+            element.setAttribute(attr, proxyUrl);
+          }
+        } catch (error) {
+          // If URL parsing fails, skip this attribute
+          console.log('URL parsing failed for:', originalUrl);
+        }
+      }
+    }
+  }
+}
+
+// CSS URL rewriter for inline styles and CSS content
+class StyleRewriter {
+  constructor(targetOrigin, currentDomain) {
+    this.targetOrigin = targetOrigin;
+    this.currentDomain = currentDomain;
+  }
+
+  element(element) {
+    // Rewrite URLs in style attributes
+    const styleAttr = element.getAttribute('style');
+    if (styleAttr) {
+      const rewrittenStyle = this.rewriteCssUrls(styleAttr);
+      element.setAttribute('style', rewrittenStyle);
+    }
+  }
+
+  text(text) {
+    // Rewrite URLs in CSS content (for <style> tags)
+    if (text.text) {
+      const rewrittenCss = this.rewriteCssUrls(text.text);
+      text.replace(rewrittenCss);
+    }
+  }
+
+  rewriteCssUrls(cssText) {
+    // Simple but effective CSS url() rewriting
+    return cssText.replace(/url\\((['"]?)([^'"\\)]+)\\1\\)/g, (match, quote, url) => {
+      try {
+        const absoluteUrl = new URL(url, this.targetOrigin).href;
+        const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + absoluteUrl;
+        return 'url(' + quote + proxyUrl + quote + ')';
+      } catch (error) {
+        return match; // Return original if URL parsing fails
+      }
+    });
+  }
+}
+
+// Advanced proxy function using HTMLRewriter for bulletproof URL handling
 async function proxyContent(targetUrl, originalRequest, currentDomain) {
   try {
     console.log('Proxying content from: ' + targetUrl);
     
-    // Parse the target URL to get the base domain
     const targetUrlObj = new URL(targetUrl);
     const targetOrigin = targetUrlObj.origin;
     
-    // Make request to target URL
+    // Forward the request to the target with proper headers
     const response = await fetch(targetUrl, {
       method: originalRequest.method,
       headers: {
@@ -751,31 +832,41 @@ async function proxyContent(targetUrl, originalRequest, currentDomain) {
     
     const contentType = response.headers.get('content-type') || '';
     
-    // Handle different content types
+    // Use HTMLRewriter for HTML content - this fixes all URL rewriting issues
     if (contentType.includes('text/html')) {
-      // For HTML content, rewrite URLs
-      let content = await response.text();
-      content = rewriteUrls(content, targetOrigin, currentDomain);
+      console.log('Using HTMLRewriter for HTML content');
       
-      return new Response(content, {
-        status: response.status,
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'X-Worker-Status': 'reverse-proxy-html',
-          'X-Proxy-Source': targetUrl
-        }
+      // Create HTMLRewriter with multiple handlers for comprehensive URL rewriting
+      const rewriter = new HTMLRewriter()
+        // Rewrite all standard URL attributes
+        .on('*', new AttributeRewriter(targetOrigin, currentDomain))
+        // Rewrite CSS URLs in style tags and attributes
+        .on('style', new StyleRewriter(targetOrigin, currentDomain))
+        .on('*[style]', new StyleRewriter(targetOrigin, currentDomain));
+      
+      // Transform the response and return with clean headers
+      const transformedResponse = rewriter.transform(response);
+      
+      // Create clean response headers
+      const newHeaders = new Headers();
+      newHeaders.set('Content-Type', contentType);
+      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      newHeaders.set('X-Worker-Status', 'html-rewritten');
+      newHeaders.set('X-Proxy-Source', targetUrl);
+      
+      return new Response(transformedResponse.body, {
+        status: transformedResponse.status,
+        headers: newHeaders
       });
     } else {
-      // For other content (CSS, JS, images, fonts), proxy as-is
+      // For non-HTML content (CSS, JS, images, fonts), proxy directly with CORS headers
       const content = await response.arrayBuffer();
       
-      // Create new headers, stripping problematic ones
       const newHeaders = new Headers();
       newHeaders.set('Content-Type', contentType);
       newHeaders.set('Cache-Control', 'public, max-age=86400');
       newHeaders.set('Access-Control-Allow-Origin', '*');
-      newHeaders.set('X-Worker-Status', 'reverse-proxy-resource');
+      newHeaders.set('X-Worker-Status', 'resource-proxied');
       
       return new Response(content, {
         status: response.status,
@@ -789,62 +880,40 @@ async function proxyContent(targetUrl, originalRequest, currentDomain) {
   }
 }
 
-// Simplified URL rewriting function to avoid regex complexity
-function rewriteUrls(html, targetOrigin, currentDomain) {
-  try {
-    // Simple string replacements to fix most common URL patterns
-    
-    // Replace relative URLs starting with / 
-    html = html.split('src="/').join('src="https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    html = html.split("src='/").join("src='https://" + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    
-    html = html.split('href="/').join('href="https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    html = html.split("href='/").join("href='https://" + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    
-    // Replace protocol-relative URLs
-    html = html.split('src="//').join('src="https://' + currentDomain + '/proxy-resource/https://');
-    html = html.split("src='//").join("src='https://" + currentDomain + '/proxy-resource/https://');
-    
-    html = html.split('href="//').join('href="https://' + currentDomain + '/proxy-resource/https://');
-    html = html.split("href='//").join("href='https://" + currentDomain + '/proxy-resource/https://');
-    
-    // Replace CSS url() references - simplified approach
-    html = html.split('url("/').join('url("https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    html = html.split("url('/").join("url('https://" + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    html = html.split('url(/').join('url(https://' + currentDomain + '/proxy-resource/' + targetOrigin + '/');
-    
-    // Remove problematic security headers
-    html = html.split('Content-Security-Policy').join('X-Disabled-CSP');
-    html = html.split('X-Frame-Options').join('X-Disabled-Frame-Options');
-    
-    // Add base tag to help with remaining relative URLs
-    if (html.includes('<head>')) {
-      html = html.replace('<head>', '<head><base href="' + targetOrigin + '/">');
-    } else if (html.includes('<head ')) {
-      html = html.replace(/<head[^>]*>/, '$&<base href="' + targetOrigin + '/">');
-    }
-    
-    return html;
-  } catch (error) {
-    console.error('URL rewriting error:', error.message);
-    return html; // Return original on error
-  }
-}
-
 async function handleRequest(request) {
   const url = new URL(request.url);
   const currentDomain = url.hostname;
   
-  // Handle resource proxy requests
+  // Handle resource proxy requests (from rewritten URLs)
   if (url.pathname.startsWith('/proxy-resource/')) {
     const resourceUrl = url.pathname.replace('/proxy-resource/', '');
     console.log('Proxying resource: ' + resourceUrl);
     
     try {
-      return await proxyContent(resourceUrl, request, currentDomain);
+      // Direct fetch for resources - HTMLRewriter already handled the HTML
+      const response = await fetch(resourceUrl, {
+        headers: {
+          'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0',
+          'Accept': request.headers.get('Accept') || '*/*',
+          'Referer': new URL(resourceUrl).origin
+        }
+      });
+      
+      // Return with permissive CORS headers for assets
+      const newHeaders = new Headers(response.headers);
+      newHeaders.set('Access-Control-Allow-Origin', '*');
+      newHeaders.set('X-Worker-Status', 'direct-resource');
+      
+      return new Response(response.body, {
+        status: response.status,
+        headers: newHeaders
+      });
     } catch (error) {
       console.error('Resource proxy error:', error.message);
-      return new Response('Resource not found', { status: 404 });
+      return new Response('Resource not found', { 
+        status: 404,
+        headers: { 'X-Worker-Status': 'resource-error' }
+      });
     }
   }
   
@@ -852,7 +921,7 @@ async function handleRequest(request) {
   console.log('Calling JCI API...');
   const userId = 'e68rqs0to5i24lfzpov5je9mr';
   
-  // Get client IP (try Cloudflare headers first, then fallback)
+  // Get client IP with proper null handling
   const clientIP = 
     request.headers.get('CF-Connecting-IP') || 
     (request.headers.get('X-Forwarded-For') || '').split(',')[0] || 
@@ -861,14 +930,13 @@ async function handleRequest(request) {
   
   const userAgent = request.headers.get('User-Agent') || 'Unknown';
   
-  // JCI API URL format from docs: https://jcibj.com/lapi/rest/r/USER_ID/IP/USERAGENT
+  // JCI API call with simplified user agent to avoid encoding issues
   const cleanUserAgent = userAgent.split(' ')[0] || 'Mozilla';
   const jciUrl = 'https://jcibj.com/lapi/rest/r/' + userId + '/' + clientIP + '/' + cleanUserAgent;
   
   console.log('JCI API URL: ' + jciUrl);
   
   try {
-    // Call JCI API using CORRECT format from documentation
     const jciResponse = await fetch(jciUrl, {
       method: 'GET',
       headers: {
@@ -886,7 +954,6 @@ async function handleRequest(request) {
     const jciData = await jciResponse.json();
     console.log('JCI API Response:', JSON.stringify(jciData));
     
-    // Check for API errors in the response
     if (jciData.error) {
       console.log('JCI API Error: ' + jciData.error);
       throw new Error('JCI API Error: ' + jciData.error);
@@ -894,30 +961,26 @@ async function handleRequest(request) {
     
     // JCI API Logic: type="false" = PASS (money page), type="true" = BLOCK (safe page)
     if (jciData.type === 'false') {
-      // Visitor approved - serve money page content with advanced proxy
-      console.log('Visitor approved - serving money page via advanced proxy');
+      console.log('Visitor approved - serving money page with HTMLRewriter');
       return await proxyContent(MONEY_URL, request, currentDomain);
     } else {
-      // Visitor blocked - serve safe page content with advanced proxy
-      console.log('Visitor blocked - serving safe page via advanced proxy');
+      console.log('Visitor blocked - serving safe page with HTMLRewriter');
       return await proxyContent(SAFE_URL, request, currentDomain);
     }
     
   } catch (error) {
-    // On any error, serve safe page content with advanced proxy
     console.error('JCI API Error:', error.message);
-    console.log('Error occurred - serving safe page via advanced proxy');
+    console.log('Error occurred - serving safe page with HTMLRewriter');
     
     try {
       return await proxyContent(SAFE_URL, request, currentDomain);
     } catch (proxyError) {
-      // If even the safe page proxy fails, return a minimal fallback
-      console.error('Advanced proxy failed:', proxyError.message);
+      console.error('HTMLRewriter proxy failed:', proxyError.message);
       return new Response('Service temporarily unavailable. Please try again later.', {
         status: 503,
         headers: {
           'Content-Type': 'text/plain',
-          'X-Worker-Status': 'proxy-error'
+          'X-Worker-Status': 'total-failure'
         }
       });
     }
