@@ -855,7 +855,7 @@ async function handleRequest(request) {
   // Get client IP (try Cloudflare headers first, then fallback)
   const clientIP = 
     request.headers.get('CF-Connecting-IP') || 
-    request.headers.get('X-Forwarded-For') ? request.headers.get('X-Forwarded-For').split(',')[0] : 
+    (request.headers.get('X-Forwarded-For') || '').split(',')[0] || 
     request.headers.get('X-Real-IP') || 
     '127.0.0.1';
   
