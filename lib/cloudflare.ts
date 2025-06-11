@@ -828,7 +828,7 @@ async function handleRequest(request) {
 // Function to log decisions to the database
 async function logDecision(logData) {
   try {
-    const logUrl = 'https://webpage-creator-okans-projects-6fb1aba6.vercel.app/api/jci-logs';
+    const logUrl = 'https://webpage-creator.vercel.app/api/jci-logs';
     
     console.log('📡 Logging to external API:', logUrl);
     
@@ -838,7 +838,7 @@ async function logDecision(logData) {
       body: JSON.stringify({
         ...logData,
         timestamp: new Date().toISOString(),
-        workerVersion: 'testing-fixed-1.0'
+        workerVersion: 'testing-fixed-1.1'
       })
     });
     

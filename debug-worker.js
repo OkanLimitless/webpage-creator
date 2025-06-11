@@ -44,7 +44,7 @@ const SAFE_PAGE_HTML = `<!DOCTYPE html>
     <div class="container">
         <div class="status">✅ Debug Worker Active - Logging Fixed</div>
         <h1>Coming Soon</h1>
-        <p>Worker is now logging to external API successfully!</p>
+        <p>Worker is now logging to correct API successfully!</p>
     </div>
 </body>
 </html>`;
@@ -57,7 +57,7 @@ async function handleRequest(request) {
   console.log('🔍 Debug Worker handling request for:', request.url);
   
   try {
-    // Log the request using external API
+    // Log the request using external API - CORRECTED URL
     await logDecision({
       ip: request.headers.get('CF-Connecting-IP') || 'unknown',
       userAgent: request.headers.get('User-Agent') || 'unknown',
@@ -81,10 +81,10 @@ async function handleRequest(request) {
 
 async function logDecision(logData) {
   try {
-    // Use external API endpoint to avoid worker interception
-    const logUrl = 'https://webpage-creator-okans-projects-6fb1aba6.vercel.app/api/jci-logs';
+    // Use correct external API endpoint
+    const logUrl = 'https://webpage-creator.vercel.app/api/jci-logs';
     
-    console.log('📡 Logging to external API:', logUrl);
+    console.log('📡 Logging to correct API:', logUrl);
     console.log('📡 Log data:', JSON.stringify(logData));
     
     const response = await fetch(logUrl, {
@@ -96,7 +96,7 @@ async function logDecision(logData) {
       body: JSON.stringify({
         ...logData,
         timestamp: new Date().toISOString(),
-        workerVersion: 'debug-external-1.0'
+        workerVersion: 'debug-corrected-url-1.0'
       })
     });
     
