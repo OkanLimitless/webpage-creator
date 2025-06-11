@@ -710,289 +710,113 @@ export function generateJciWorkerScript(options: {
   // Use white page URL if provided, otherwise use money URL as the target
   const targetUrl = whitePageUrl || moneyUrl;
   
-  return `// Simple Reverse Proxy Script for Cloudflare Workers - PROFESSIONAL GRADE
-// Generated automatically by Webpage Creator
-// Uses HTMLRewriter for bulletproof URL rewriting - fixes all 404 errors
+  return `// --- MODIE's Final Build: Corrected High-Fidelity Reverse Proxy ---
+// This version fixes the "target is not defined" ReferenceError.
 
+// --- CONFIGURATION ---
 const TARGET_URL = '${targetUrl}';
+// --- END CONFIGURATION ---
 
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
-});
-
-// Professional URL rewriter class using HTMLRewriter
-class AttributeRewriter {
-  constructor(targetOrigin, currentDomain) {
-    this.targetOrigin = targetOrigin;
-    this.currentDomain = currentDomain;
-  }
-
-  element(element) {
-    // List of attributes that can contain URLs
-    const attributes = ['href', 'src', 'action', 'data-src', 'srcset', 'poster'];
+export default {
+  async fetch(request, env) {
+    // Handle CORS pre-flight OPTIONS requests first to solve cross-origin issues.
+    if (request.method === 'OPTIONS') {
+      return handleOptions(request);
+    }
     
+    const url = new URL(request.url);
+    const proxyUrl = url.origin;
+    
+    // The origin of the target website (e.g., https://www.dw.com)
+    const targetOrigin = new URL(TARGET_URL).origin;
+
+    // Create the new URL by replacing the proxy's hostname with the target's.
+    // e.g., https://my-proxy.com/path -> https://www.dw.com/path
+    const targetRequestUrl = new URL(request.url);
+    targetRequestUrl.hostname = new URL(targetOrigin).hostname;
+
+    // Create a new request object to forward to the target.
+    // We pass the original request's headers and body to be as transparent as possible.
+    const targetRequest = new Request(targetRequestUrl, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      redirect: 'follow' // Automatically follow redirects from the target server.
+    });
+
+    // --- THIS IS THE CRITICAL FIX ---
+    // Set the 'Host' header to the target's hostname. This makes our request look legitimate.
+    targetRequest.headers.set('Host', targetRequestUrl.hostname);
+    // --------------------------------
+
+    const response = await fetch(targetRequest);
+
+    // Clone the response to make its headers mutable.
+    let newResponse = new Response(response.body, response);
+
+    // Set permissive CORS headers on the response we send back to the browser.
+    newResponse.headers.set('Access-Control-Allow-Origin', '*');
+    newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, HEAD, OPTIONS');
+    newResponse.headers.set('Access-Control-Allow-Headers', '*');
+
+    // If the content is HTML, rewrite all internal links to also use the proxy.
+    const contentType = newResponse.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const rewriter = new HTMLRewriter().on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(proxyUrl, targetOrigin));
+      return rewriter.transform(newResponse);
+    }
+
+    // For all other content types (CSS, JS, images), return the response directly with the added CORS headers.
+    return newResponse;
+  }
+};
+
+// This class rewrites all URLs in the HTML to point back to our proxy.
+class AttributeRewriter {
+  constructor(proxyUrl, targetOrigin) {
+    this.proxyUrl = proxyUrl;
+    this.targetOrigin = targetOrigin;
+  }
+  
+  element(element) {
+    const attributes = ['href', 'src', 'action', 'data-src', 'srcset'];
     for (const attr of attributes) {
       const originalUrl = element.getAttribute(attr);
-      if (originalUrl && originalUrl.trim()) {
+      if (originalUrl) {
         try {
-          // Skip data URLs, javascript URLs, and fragment URLs
-          if (originalUrl.startsWith('data:') || 
-              originalUrl.startsWith('javascript:') || 
-              originalUrl.startsWith('#') ||
-              originalUrl.startsWith('mailto:') ||
-              originalUrl.startsWith('tel:')) {
-            continue;
-          }
-
-          // Handle srcset attribute specially (contains multiple URLs)
-          if (attr === 'srcset') {
-            const rewrittenSrcset = originalUrl
-              .split(',')
-              .map(srcsetItem => {
-                const parts = srcsetItem.trim().split(/\\s+/);
-                if (parts[0] && parts[0].trim()) {
-                  try {
-                    const absoluteUrl = new URL(parts[0].trim(), this.targetOrigin).href;
-                    // Encode the full URL to prevent parsing issues
-                    parts[0] = 'https://' + this.currentDomain + '/proxy-resource/' + encodeURIComponent(absoluteUrl);
-                  } catch (e) {
-                    // Keep original if URL parsing fails
-                  }
-                }
-                return parts.join(' ');
-              })
-              .join(', ');
-            element.setAttribute(attr, rewrittenSrcset);
-          } else {
-            // Handle single URL attributes
-            const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
-            // Encode the full URL to prevent parsing issues
-            const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + encodeURIComponent(absoluteUrl);
-            element.setAttribute(attr, proxyUrl);
-          }
-        } catch (error) {
-          // If URL parsing fails, skip this attribute
-          console.log('URL parsing failed for:', originalUrl);
-        }
+          // Create an absolute URL to handle all relative paths like /path or ../path
+          const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
+          
+          // Rewrite the URL to point back to our proxy, preserving the path and query string.
+          const proxiedUrl = new URL(absoluteUrl);
+          proxiedUrl.hostname = new URL(this.proxyUrl).hostname;
+          
+          element.setAttribute(attr, proxiedUrl.href);
+        } catch (e) { /* Ignore invalid URLs */ }
       }
     }
   }
 }
 
-// CSS URL rewriter for inline styles and CSS content
-class StyleRewriter {
-  constructor(targetOrigin, currentDomain) {
-    this.targetOrigin = targetOrigin;
-    this.currentDomain = currentDomain;
+// Handles CORS pre-flight OPTIONS requests.
+function handleOptions(request) {
+  let headers = request.headers;
+  if (
+    headers.get('Origin') !== null &&
+    headers.get('Access-Control-Request-Method') !== null &&
+    headers.get('Access-Control-Request-Headers') !== null
+  ) {
+    let respHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
+      'Access-Control-Max-Age': '86400',
+      'Access-Control-Allow-Headers': request.headers.get('Access-Control-Request-Headers'),
+    };
+    return new Response(null, { headers: respHeaders });
   }
-
-  element(element) {
-    // Rewrite URLs in style attributes
-    const styleAttr = element.getAttribute('style');
-    if (styleAttr) {
-      const rewrittenStyle = this.rewriteCssUrls(styleAttr);
-      element.setAttribute('style', rewrittenStyle);
-    }
-  }
-
-  text(text) {
-    // Rewrite URLs in CSS content (for <style> tags)
-    if (text.text) {
-      const rewrittenCss = this.rewriteCssUrls(text.text);
-      text.replace(rewrittenCss);
-    }
-  }
-
-  rewriteCssUrls(cssText) {
-    // Simple but effective CSS url() rewriting
-    return cssText.replace(/url\\((['"]?)([^'"\\)]+)\\1\\)/g, (match, quote, url) => {
-      try {
-        // Skip data URLs and other non-http URLs
-        if (url.startsWith('data:') || url.startsWith('#')) {
-          return match;
-        }
-        const absoluteUrl = new URL(url, this.targetOrigin).href;
-        const proxyUrl = 'https://' + this.currentDomain + '/proxy-resource/' + encodeURIComponent(absoluteUrl);
-        return 'url(' + quote + proxyUrl + quote + ')';
-      } catch (error) {
-        return match; // Return original if URL parsing fails
-      }
-    });
-  }
+  return new Response(null, { headers: { Allow: 'GET, HEAD, POST, OPTIONS' } });
 }
-
-// Advanced proxy function using HTMLRewriter for bulletproof URL handling
-async function proxyContent(targetUrl, originalRequest, currentDomain) {
-  try {
-    console.log('Proxying content from: ' + targetUrl);
-    
-    const targetUrlObj = new URL(targetUrl);
-    const targetOrigin = targetUrlObj.origin;
-    
-    // Forward the request to the target with proper headers
-    const response = await fetch(targetUrl, {
-      method: originalRequest.method,
-      headers: {
-        'User-Agent': originalRequest.headers.get('User-Agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': originalRequest.headers.get('Accept') || 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': originalRequest.headers.get('Accept-Language') || 'en-US,en;q=0.5',
-        'Cache-Control': 'no-cache',
-        'Referer': targetOrigin
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error('Target returned status ' + response.status);
-    }
-    
-    const contentType = response.headers.get('content-type') || '';
-    
-    // Use HTMLRewriter for HTML content - this fixes all URL rewriting issues
-    if (contentType.includes('text/html')) {
-      console.log('Using HTMLRewriter for HTML content');
-      
-      // Create HTMLRewriter with multiple handlers for comprehensive URL rewriting
-      const rewriter = new HTMLRewriter()
-        // Rewrite all standard URL attributes
-        .on('*', new AttributeRewriter(targetOrigin, currentDomain))
-        // Rewrite CSS URLs in style tags and attributes
-        .on('style', new StyleRewriter(targetOrigin, currentDomain))
-        .on('*[style]', new StyleRewriter(targetOrigin, currentDomain));
-      
-      // Transform the response and return with clean headers
-      const transformedResponse = rewriter.transform(response);
-      
-      // Create clean response headers
-      const newHeaders = new Headers();
-      newHeaders.set('Content-Type', contentType);
-      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-      newHeaders.set('X-Worker-Status', 'html-rewritten');
-      newHeaders.set('X-Proxy-Source', targetUrl);
-      
-      return new Response(transformedResponse.body, {
-        status: transformedResponse.status,
-        headers: newHeaders
-      });
-    } else {
-      // For non-HTML content (CSS, JS, images, fonts), proxy directly with CORS headers
-      const content = await response.arrayBuffer();
-      
-      const newHeaders = new Headers();
-      newHeaders.set('Content-Type', contentType);
-      newHeaders.set('Cache-Control', 'public, max-age=86400');
-      newHeaders.set('Access-Control-Allow-Origin', '*');
-      newHeaders.set('X-Worker-Status', 'resource-proxied');
-      
-      return new Response(content, {
-        status: response.status,
-        headers: newHeaders
-      });
-    }
-    
-  } catch (error) {
-    console.error('Proxy error:', error.message);
-    throw error;
-  }
-}
-
-async function handleRequest(request) {
-  const url = new URL(request.url);
-  const currentDomain = url.hostname;
-  
-  // Block service worker requests to prevent MIME type errors
-  if (url.pathname.includes('service-worker') || 
-      url.pathname.includes('sw.js') || 
-      url.pathname.includes('workbox') ||
-      url.pathname.endsWith('.worker.js')) {
-    console.log('Blocking service worker request: ' + url.pathname);
-    return new Response('// Service worker blocked by proxy', {
-      status: 404,
-      headers: {
-        'Content-Type': 'application/javascript',
-        'X-Worker-Status': 'service-worker-blocked'
-      }
-    });
-  }
-  
-  // Handle resource proxy requests (from rewritten URLs)
-  if (url.pathname.startsWith('/proxy-resource/')) {
-    const encodedResourceUrl = url.pathname.replace('/proxy-resource/', '');
-    console.log('Proxying encoded resource: ' + encodedResourceUrl);
-    
-    try {
-      // Decode the URL that was encoded by HTMLRewriter
-      const resourceUrl = decodeURIComponent(encodedResourceUrl);
-      console.log('Decoded resource URL: ' + resourceUrl);
-      
-      // Validate that it's a proper URL
-      const parsedUrl = new URL(resourceUrl);
-      
-      // Direct fetch for resources - HTMLRewriter already handled the HTML
-      const response = await fetch(resourceUrl, {
-        headers: {
-          'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0',
-          'Accept': request.headers.get('Accept') || '*/*',
-          'Referer': parsedUrl.origin
-        }
-      });
-      
-      // Return with permissive CORS headers for assets
-      const newHeaders = new Headers();
-      
-      // Copy important headers from the original response
-      if (response.headers.get('content-type')) {
-        newHeaders.set('Content-Type', response.headers.get('content-type'));
-      }
-      
-      newHeaders.set('Access-Control-Allow-Origin', '*');
-      newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      newHeaders.set('Access-Control-Allow-Headers', '*');
-      newHeaders.set('Cache-Control', 'public, max-age=3600');
-      newHeaders.set('X-Worker-Status', 'direct-resource');
-      
-      return new Response(response.body, {
-        status: response.status,
-        headers: newHeaders
-      });
-    } catch (error) {
-      console.error('Resource proxy error:', error.message);
-      return new Response('Resource not found: ' + error.message, { 
-        status: 404,
-        headers: { 
-          'Content-Type': 'text/plain',
-          'X-Worker-Status': 'resource-error' 
-        }
-      });
-    }
-  }
-  
-  // Handle manifest.json requests to prevent errors
-  if (url.pathname.includes('manifest.json')) {
-    console.log('Blocking manifest.json request');
-    return new Response('{}', {
-      status: 404,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Worker-Status': 'manifest-blocked'
-      }
-    });
-  }
-  
-  // Simple reverse proxy - always serve the target URL for main content
-  console.log('Serving target URL: ' + TARGET_URL);
-  
-  try {
-    return await proxyContent(TARGET_URL, request, currentDomain);
-  } catch (error) {
-    console.error('Proxy failed:', error.message);
-    return new Response('Service temporarily unavailable. Please try again later.', {
-      status: 503,
-      headers: {
-        'Content-Type': 'text/plain',
-        'X-Worker-Status': 'total-failure'
-      }
-    });
-  }
+`;
 }
 
 // Helper function to create a simple "Coming Soon" page
