@@ -1024,6 +1024,9 @@ async function handleRequest(request) {
     }
   }
 }
+`;
+}
+
 
 // Helper function to create a simple "Coming Soon" page
 export function generateComingSoonPage(): string {
