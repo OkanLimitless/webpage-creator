@@ -781,7 +781,7 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="status">
-            ✅ Cloudflare Worker is Active
+            ✅ Cloudflare Worker is Active - JS Working!
         </div>
         <h1>Coming Soon</h1>
         <p>We're working on something amazing. Stay tuned!</p>
@@ -790,7 +790,6 @@ const SAFE_PAGE_HTML = \`<!DOCTYPE html>
     </div>
 </body>
 </html>\`;
-// --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request));
@@ -821,7 +820,7 @@ async function handleRequest(request) {
     headers: { 
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'X-Worker-Status': 'active'
+      'X-Worker-Status': 'active-js-working'
     }
   });
 }
@@ -829,7 +828,9 @@ async function handleRequest(request) {
 // Function to log decisions to the database
 async function logDecision(logData) {
   try {
-    const logUrl = 'https://' + new URL(SAFE_URL).hostname + '/api/jci-logs';
+    const logUrl = 'https://webpage-creator-okans-projects-6fb1aba6.vercel.app/api/jci-logs';
+    
+    console.log('📡 Logging to external API:', logUrl);
     
     const response = await fetch(logUrl, {
       method: 'POST',
@@ -837,7 +838,7 @@ async function logDecision(logData) {
       body: JSON.stringify({
         ...logData,
         timestamp: new Date().toISOString(),
-        workerVersion: 'testing-1.0'
+        workerVersion: 'testing-fixed-1.0'
       })
     });
     
