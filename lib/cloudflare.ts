@@ -807,30 +807,85 @@ self.addEventListener('fetch', event => {
 
 // --- CORE FUNCTIONS ---
 
-// Decides if a visitor is a bot using country check + proxycheck.io
+/**
+ * The brain of the operation. Calls the proxycheck.io API and decides if a visitor is a threat.
+ * Uses multi-layered filtering for resilient bot detection and Google Ads protection.
+ * @param {Request} request The incoming request object from the Cloudflare Worker.
+ * @param {Object} env Environment variables containing API keys.
+ * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
+ */
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-
-  // Step 1: Country Check (ip-api.com)
+  const apiKey = env?.PROXYCHECK_API_KEY || PROXYCHECK_API_KEY;
+  const riskThreshold = 75; // Block visitors with risk score >= 75
+  
+  // Step 1: Country Check (ip-api.com) - Quick pre-filter
   const ipApiUrl = \`http://ip-api.com/json/\${clientIP}?fields=countryCode,isp\`;
-  const ipApiResponse = await fetch(ipApiUrl);
-  if (ipApiResponse.ok) {
-    const ipApiData = await ipApiResponse.json();
-    if (!TARGET_COUNTRIES.includes(ipApiData.countryCode) || ['google', 'amazon', 'microsoft'].some(b => ipApiData.isp.toLowerCase().includes(b))) {
-      return true; // Block traffic from non-target countries or known datacenter ISPs
+  try {
+    const ipApiResponse = await fetch(ipApiUrl);
+    if (ipApiResponse.ok) {
+      const ipApiData = await ipApiResponse.json();
+      if (!TARGET_COUNTRIES.includes(ipApiData.countryCode)) {
+        return true; // Block traffic from non-target countries
+      }
     }
+  } catch (error) {
+    console.error('ip-api.com check failed:', error.message);
+    // Continue to proxycheck.io even if country check fails
   }
 
-  // Step 2: Fraud Check with proxycheck.io
-  const proxyCheckKey = env?.PROXYCHECK_API_KEY || PROXYCHECK_API_KEY;
-  const proxyCheckUrl = \`http://proxycheck.io/v2/\${clientIP}?key=\${proxyCheckKey}&vpn=1\`;
-  
-  const response = await fetch(proxyCheckUrl);
-  if (!response.ok) return true; // Fail safe (block)
-  const data = await response.json();
+  // Step 2: Comprehensive proxycheck.io Analysis
+  // Construct the API URL with all flags enabled for the most detailed response.
+  // vpn=1 (check for VPNs), asn=1 (get ISP data), risk=1 (get the risk score)
+  const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&asn=1&risk=1\`;
 
-  // Check if proxycheck.io detected proxy/VPN
-  return data[clientIP]?.proxy === 'yes';
+  try {
+    const response = await fetch(apiUrl);
+    if (!response.ok) {
+      console.error('proxycheck.io API request failed.');
+      return true; // FAIL SAFE: If the API fails, we block the visitor to protect the money page.
+    }
+
+    const data = await response.json();
+    const ipData = data[clientIP];
+
+    if (!ipData) {
+      console.error('Unexpected API response format from proxycheck.io.');
+      return true; // FAIL SAFE: If the response is weird, we block.
+    }
+
+    // --- The Multi-Layered Filtering Logic ---
+
+    // RULE 1: Block known proxies and VPNs explicitly.
+    if (ipData.proxy === 'yes') {
+      return true;
+    }
+
+    // RULE 2: Block based on type. This is how we catch Googlebots and other crawlers.
+    // The 'type' can be 'VPN', 'Proxy', 'Hosting', 'Search Engine Bot', etc.
+    const forbiddenTypes = ['hosting', 'search engine bot'];
+    if (ipData.type && forbiddenTypes.includes(ipData.type.toLowerCase())) {
+        return true;
+    }
+
+    // RULE 3: Block based on the risk score.
+    if (ipData.risk && parseInt(ipData.risk, 10) >= riskThreshold) {
+      return true;
+    }
+    
+    // RULE 4: Block based on the organization name. This is a final safety net.
+    const bannedOrgs = ['google', 'amazon', 'microsoft', 'ovh', 'hetzner', 'cloudflare'];
+    if (ipData.organisation && bannedOrgs.some(org => ipData.organisation.toLowerCase().includes(org))) {
+        return true;
+    }
+
+    // If the visitor passes ALL checks, they are clean.
+    return false;
+
+  } catch (error) {
+    console.error(\`Error during proxycheck.io check: \${error.message}\`);
+    return true; // FAIL SAFE: On any unexpected error, we block.
+  }
 }
 
 // Proxies the main HTML page and rewrites its content.
