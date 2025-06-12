@@ -764,12 +764,12 @@ async function handleRequest(request) {
 
   // ROUTE 1: Serve the service worker script itself when the browser requests it.
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`/proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
+    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const encoded = btoa(url.href); const proxyUrl = \\\`/cdn/\\\${encoded}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
     return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
   }
 
   // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
-  if (url.pathname.startsWith('/proxy-resource/')) {
+  if (url.pathname.startsWith('/cdn/')) {
     return handleResourceRequest(request);
   }
   
@@ -835,7 +835,10 @@ async function handleMainRequest(request) {
 // Proxies all other resources (CSS, JS, images, fonts).
 async function handleResourceRequest(request) {
   try {
-    const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
+    // Decode base64 encoded URL
+    const encodedUrl = new URL(request.url).pathname.replace('/cdn/', '');
+    const resourceUrl = atob(encodedUrl);
+    
     const resourceRequest = new Request(resourceUrl, request);
     const response = await fetch(resourceRequest);
     
@@ -877,9 +880,9 @@ class AttributeRewriter {
           // Create an absolute URL to handle all relative paths like /path or ../path
           const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
           
-          // Rewrite the URL to go through our proxy route
-          const encoded = encodeURIComponent(absoluteUrl);
-          element.setAttribute(attr, \`/proxy-resource/\${encoded}\`);
+          // Rewrite the URL to go through our obfuscated CDN route
+          const encoded = btoa(absoluteUrl);
+          element.setAttribute(attr, \`/cdn/\${encoded}\`);
         } catch (e) { /* Ignore invalid URLs */ }
       }
     }
