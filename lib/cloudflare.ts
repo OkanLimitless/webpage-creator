@@ -804,7 +804,6 @@ self.addEventListener('fetch', event => {
     
     // ROUTE 3: Handle the initial page load with cloaking logic.
     return handleMainRequest(request);
-  }
 }
 
 // --- CORE FUNCTIONS ---
