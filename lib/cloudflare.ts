@@ -764,32 +764,7 @@ async function handleRequest(request, event) {
 
   // ROUTE 1: Serve the service worker script itself when the browser requests it.
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`const TRACKER_BLACKLIST = [
-  'doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com', 
-  'googletagmanager.com', 'scorecardresearch.com', 'adnxs.com', 
-  'rubiconproject.com', 'krxd.net', 'criteo.com', 'pubmatic.com'
-];
-
-self.addEventListener('fetch', event => {
-  const request = event.request;
-  const url = new URL(request.url);
-
-  // If the request is already trying to access our proxy, let it pass through to prevent loops.
-  if (url.pathname.startsWith('/proxy-resource/')) {
-    return;
-  }
-  
-  // RULE 1: Neutralize keepalive beacons and blacklisted trackers cleanly.
-  if (request.keepalive || TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {
-    // Respond with "204 No Content" to successfully "eat" the request without error.
-    return event.respondWith(new Response(null, { status: 204 }));
-  }
-
-  // RULE 2: For all other outgoing requests, proxy them using a relative path.
-  const proxyUrl = \\\`/proxy-resource/\\\${encodeURIComponent(url.href)}\\\`;
-  
-  event.respondWith(fetch(proxyUrl, request));
-});\`;
+    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
     return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
   }
 
