@@ -755,25 +755,27 @@ const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request, event));
+});
 
-    // ROUTE 1: Serve the service worker script itself when the browser requests it.
-    if (url.pathname === '/service-worker.js') {
-      const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
-      return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
-    }
+async function handleRequest(request, event) {
+  const url = new URL(request.url);
 
-    // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
-    if (url.pathname.startsWith('/proxy-resource/')) {
-      return handleResourceRequest(request);
-    }
-    
-    // ROUTE 3: Handle the initial page load with cloaking logic.
-    return handleMainRequest(request, env);
+  // ROUTE 1: Serve the service worker script itself when the browser requests it.
+  if (url.pathname === '/service-worker.js') {
+    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
+    return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
   }
-};
+
+  // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
+  if (url.pathname.startsWith('/proxy-resource/')) {
+    return handleResourceRequest(request);
+  }
+  
+  // ROUTE 3: Handle the initial page load with cloaking logic.
+  return handleMainRequest(request, event.env);
+}
 
 // --- CORE FUNCTIONS ---
 
