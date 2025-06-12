@@ -793,8 +793,8 @@ async function handleRequest(request, env) {
 // --- MODIE's FINAL, Hardened "isVisitorABot" Function ---
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  // Use real API key from Cloudflare Worker environment variables
-  const apiKey = env?.PROXYCHECK_API_KEY || 'demo';
+  // Use real API key for proxycheck.io
+  const apiKey = '235570-278538-1m4693-m16027';
   const RISK_SCORE_THRESHOLD = 65; // Block IPs with a risk score >= this value.
 
   // --- Stage 1: Basic Geo/ISP Check (ip-api.com) ---
