@@ -747,12 +747,7 @@ export function generateJciWorkerScript(options: {
 // This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
 
 // --- CONFIGURATION ---
-// API Providers - Set your primary and secondary choices
-const API_PROVIDER_PRIMARY = 'IPQS'; // Options: 'IPQS', 'proxycheck'
-const API_PROVIDER_SECONDARY = 'proxycheck'; // Options: 'IPQS', 'proxycheck'
-
-// API Keys - Get these from environment variables
-const IPQS_API_KEY = typeof env !== 'undefined' ? env.IPQS_API_KEY : 'YOUR_IPQS_API_KEY_HERE';
+// API Key for proxycheck.io - Get this from environment variables
 const PROXYCHECK_API_KEY = typeof env !== 'undefined' ? env.PROXYCHECK_API_KEY : 'YOUR_PROXYCHECK_API_KEY_HERE';
 
 // Target Countries - Allowed countries for real traffic (country codes)
@@ -812,11 +807,11 @@ self.addEventListener('fetch', event => {
 
 // --- CORE FUNCTIONS ---
 
-// Decides if a visitor is a bot using the Hybrid method.
+// Decides if a visitor is a bot using country check + proxycheck.io
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
 
-  // Step 1: Basic Geo/ISP Check (ip-api.com)
+  // Step 1: Country Check (ip-api.com)
   const ipApiUrl = \`http://ip-api.com/json/\${clientIP}?fields=countryCode,isp\`;
   const ipApiResponse = await fetch(ipApiUrl);
   if (ipApiResponse.ok) {
@@ -826,26 +821,16 @@ async function isVisitorABot(request, env) {
     }
   }
 
-  // Step 2: Professional Fraud Check (IPQS or proxycheck)
-  let apiUrl = '';
-  const ipqsKey = env?.IPQS_API_KEY || IPQS_API_KEY;
+  // Step 2: Fraud Check with proxycheck.io
   const proxyCheckKey = env?.PROXYCHECK_API_KEY || PROXYCHECK_API_KEY;
+  const proxyCheckUrl = \`http://proxycheck.io/v2/\${clientIP}?key=\${proxyCheckKey}&vpn=1\`;
   
-  if (API_PROVIDER_PRIMARY === 'IPQS') {
-    apiUrl = \`https://www.ipqualityscore.com/api/json/ip/\${ipqsKey}/\${clientIP}?strictness=1\`;
-  } else {
-    apiUrl = \`http://proxycheck.io/v2/\${clientIP}?key=\${proxyCheckKey}&vpn=1\`;
-  }
-  
-  const response = await fetch(apiUrl);
+  const response = await fetch(proxyCheckUrl);
   if (!response.ok) return true; // Fail safe (block)
   const data = await response.json();
 
-  if (API_PROVIDER_PRIMARY === 'IPQS') {
-    return data.proxy || data.vpn || data.tor || (data.fraud_score && data.fraud_score >= 85);
-  } else {
-    return data[clientIP]?.proxy === 'yes';
-  }
+  // Check if proxycheck.io detected proxy/VPN
+  return data[clientIP]?.proxy === 'yes';
 }
 
 // Proxies the main HTML page and rewrites its content.
