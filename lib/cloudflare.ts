@@ -759,11 +759,11 @@ const SAFE_URL = '${safePageUrl}';
 // --- END CONFIGURATION ---
 
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
+  async fetch(request, env, ctx) {
+  const url = new URL(request.url);
 
-    // ROUTE 1: Serve the service worker script itself when the browser requests it.
-    if (url.pathname === '/service-worker.js') {
+  // ROUTE 1: Serve the service worker script itself when the browser requests it.
+  if (url.pathname === '/service-worker.js') {
       const swCode = \`const TRACKER_BLACKLIST = [
   // Expanded list of common trackers to neutralize
   'doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com', 
