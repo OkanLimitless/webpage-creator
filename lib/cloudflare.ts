@@ -762,39 +762,12 @@ addEventListener('fetch', event => {
 async function handleRequest(request, event) {
   const url = new URL(request.url);
 
-  // ROUTE 1: Serve the service worker script itself when the browser requests it.
+  // ROUTE 1: Block service worker requests to prevent issues
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`const TRACKER_BLACKLIST = [
-  'doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com', 
-  'googletagmanager.com', 'scorecardresearch.com', 'adnxs.com', 
-  'rubiconproject.com', 'krxd.net', 'criteo.com', 'pubmatic.com'
-];
-
-self.addEventListener('fetch', event => {
-  const request = event.request;
-  const url = new URL(request.url);
-  const selfOrigin = self.registration.scope;
-  
-  // If same origin, let it pass through normally
-  if (new URL(selfOrigin).origin === url.origin) return;
-  
-  // If the request is already trying to access our proxy, let it pass through to prevent loops.
-  if (url.pathname.startsWith('/proxy-resource/')) {
-    return;
-  }
-  
-  // RULE 1: Neutralize keepalive beacons and blacklisted trackers cleanly.
-  if (request.keepalive || TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {
-    // Respond with "204 No Content" to successfully "eat" the request without error.
-    return event.respondWith(new Response(null, { status: 204 }));
-  }
-
-  // RULE 2: For all other outgoing requests, proxy them using the full selfOrigin path.
-  const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`;
-  const newRequest = new Request(request);
-  event.respondWith(fetch(proxyUrl, newRequest));
-});\`;
-    return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
+    return new Response('// Service worker disabled', { 
+      status: 404,
+      headers: { 'Content-Type': 'application/javascript' } 
+    });
   }
 
   // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
@@ -908,12 +881,35 @@ async function handleMainRequest(request, env) {
 
 // Proxies all other resources (CSS, JS, images, fonts).
 async function handleResourceRequest(request) {
-  const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
-  const resourceRequest = new Request(resourceUrl, request);
-  const response = await fetch(resourceRequest);
-  let newResponse = new Response(response.body, response);
-  newResponse.headers.set('Access-Control-Allow-Origin', '*');
-  return newResponse;
+  try {
+    const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
+    
+    // Create a new request with proper headers
+    const resourceRequest = new Request(resourceUrl, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body
+    });
+    
+    const response = await fetch(resourceRequest);
+    
+    // Create new response with CORS headers
+    const newResponse = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+    
+    // Add CORS headers
+    newResponse.headers.set('Access-Control-Allow-Origin', '*');
+    newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    newResponse.headers.set('Access-Control-Allow-Headers', '*');
+    
+    return newResponse;
+  } catch (error) {
+    console.error('Resource request failed:', error);
+    return new Response('Resource not found', { status: 404 });
+  }
 }
 
 // Rewrites URLs in HTML attributes.
@@ -943,10 +939,11 @@ class AttributeRewriter {
   }
 }
 
-// Injects the service worker into the HTML head.
+// Injects any necessary scripts into the HTML head.
 class HeadRewriter {
   element(head) {
-    head.append(\`<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/service-worker.js').catch(e => console.error(e)); }</script>\`, { html: true });
+    // Add any necessary head modifications here
+    // Service worker removed to simplify proxy logic
   }
 }
 `;
