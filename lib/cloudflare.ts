@@ -832,7 +832,16 @@ async function handleResourceRequest(request) {
   const resourceRequest = new Request(resourceUrl, request);
   const response = await fetch(resourceRequest);
   let newResponse = new Response(response.body, response);
+  
+  // Set CORS headers
   newResponse.headers.set('Access-Control-Allow-Origin', '*');
+  
+  // Preserve original MIME type
+  const contentType = response.headers.get('Content-Type');
+  if (contentType) {
+    newResponse.headers.set('Content-Type', contentType);
+  }
+  
   return newResponse;
 }
 
@@ -852,11 +861,9 @@ class AttributeRewriter {
           // Create an absolute URL to handle all relative paths like /path or ../path
           const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
           
-          // Rewrite the URL to point back to our proxy, preserving the path and query string.
-          const proxiedUrl = new URL(absoluteUrl);
-          proxiedUrl.hostname = this.proxyDomain;
-          
-          element.setAttribute(attr, proxiedUrl.href);
+          // Rewrite the URL to go through our proxy route
+          const encoded = encodeURIComponent(absoluteUrl);
+          element.setAttribute(attr, \`/proxy-resource/\${encoded}\`);
         } catch (e) { /* Ignore invalid URLs */ }
       }
     }
