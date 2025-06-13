@@ -789,90 +789,84 @@ async function handleRequest(request, env) {
 
   // ROUTE 1: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`
-// Service Worker Configuration - CDN_PATH must be defined here
-const CDN_PATH = '${selectedCdnPath}';
-
-const TRACKER_BLACKLIST = [
-  // Analytics & Tracking
-  'google-analytics.com', 'googletagmanager.com', 'googleadservices.com',
-  'doubleclick.net', 'googlesyndication.com', 'doubleverify.com',
-  'facebook.com', 'facebook.net', 'fbcdn.net', 'connect.facebook.net',
-  'analytics.twitter.com', 'ads-twitter.com', 't.co',
-  'linkedin.com', 'ads.linkedin.com', 'snap.licdn.com',
-  'analytics.tiktok.com', 'ads.tiktok.com',
-  'analytics.optidigital.com', 'outbrain.com', 'taboola.com',
-  // Anti-bot services
-  'recaptcha.net', 'gstatic.com',
-  'akamai.com', 'fastly.com', 'imperva.com',
-  'distilnetworks.com', 'perimeterx.com',
-  // Bot detection
-  'datadome.co', 'shape.com', 'kasada.io',
-  'fingerprintjs.com', 'trustpilot.com',
-  // Security scanners
-  'qualys.com', 'nessus.org', 'rapid7.com'
-];
-
-const SEARCH_ENGINE_PATTERNS = [
-  /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i,
-  /crawler/i, /spider/i, /scraper/i
-];
-
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('fetch', event => {
-  const request = event.request;
-  const url = new URL(request.url);
-  const selfOrigin = new URL(self.registration.scope).origin;
-  
-  // Don't intercept same-origin requests
-  if (url.origin === selfOrigin) return;
-  
-  // Block keepalive requests (often used for tracking)
-  if (request.keepalive) {
-    event.respondWith(new Response(null, { status: 204 }));
-    return;
-  }
-  
-  // Block known trackers and analytics
-  if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {
-    console.log('🚫 Blocked tracker:', url.hostname);
-    event.respondWith(new Response(null, { status: 204 }));
-    return;
-  }
-  
-  // Block suspicious user agents at service worker level
-  const userAgent = request.headers.get('User-Agent') || '';
-  if (SEARCH_ENGINE_PATTERNS.some(pattern => pattern.test(userAgent))) {
-    console.log('🤖 Blocked bot request:', userAgent);
-    event.respondWith(new Response(null, { status: 204 }));
-    return;
-  }
-  
-  // Proxy remaining external requests through our CDN path
-  try {
-    const encoded = btoa(url.href);
-    const proxyUrl = \`/\${CDN_PATH}/\${encoded}\`;
-    const proxyRequest = new Request(proxyUrl, {
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      mode: 'cors',
-      credentials: 'omit'
-    });
-    event.respondWith(fetch(proxyRequest));
-  } catch (error) {
-    console.error('SW proxy error:', error);
-    event.respondWith(new Response(null, { status: 204 }));
-  }
-});
-\`;
+    const swCode = '// Service Worker Configuration - CDN_PATH must be defined here\\n' +
+      'const CDN_PATH = \\'' + selectedCdnPath + '\\';\\n\\n' +
+      'const TRACKER_BLACKLIST = [\\n' +
+      '  // Analytics & Tracking\\n' +
+      '  \\'google-analytics.com\\', \\'googletagmanager.com\\', \\'googleadservices.com\\',\\n' +
+      '  \\'doubleclick.net\\', \\'googlesyndication.com\\', \\'doubleverify.com\\',\\n' +
+      '  \\'facebook.com\\', \\'facebook.net\\', \\'fbcdn.net\\', \\'connect.facebook.net\\',\\n' +
+      '  \\'analytics.twitter.com\\', \\'ads-twitter.com\\', \\'t.co\\',\\n' +
+      '  \\'linkedin.com\\', \\'ads.linkedin.com\\', \\'snap.licdn.com\\',\\n' +
+      '  \\'analytics.tiktok.com\\', \\'ads.tiktok.com\\',\\n' +
+      '  \\'analytics.optidigital.com\\', \\'outbrain.com\\', \\'taboola.com\\',\\n' +
+      '  // Anti-bot services\\n' +
+      '  \\'recaptcha.net\\', \\'gstatic.com\\',\\n' +
+      '  \\'akamai.com\\', \\'fastly.com\\', \\'imperva.com\\',\\n' +
+      '  \\'distilnetworks.com\\', \\'perimeterx.com\\',\\n' +
+      '  // Bot detection\\n' +
+      '  \\'datadome.co\\', \\'shape.com\\', \\'kasada.io\\',\\n' +
+      '  \\'fingerprintjs.com\\', \\'trustpilot.com\\',\\n' +
+      '  // Security scanners\\n' +
+      '  \\'qualys.com\\', \\'nessus.org\\', \\'rapid7.com\\'\\n' +
+      '];\\n\\n' +
+      'const SEARCH_ENGINE_PATTERNS = [\\n' +
+      '  /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i,\\n' +
+      '  /crawler/i, /spider/i, /scraper/i\\n' +
+      '];\\n\\n' +
+      'self.addEventListener(\\'install\\', () => {\\n' +
+      '  self.skipWaiting();\\n' +
+      '});\\n\\n' +
+      'self.addEventListener(\\'activate\\', event => {\\n' +
+      '  event.waitUntil(self.clients.claim());\\n' +
+      '});\\n\\n' +
+      'self.addEventListener(\\'fetch\\', event => {\\n' +
+      '  const request = event.request;\\n' +
+      '  const url = new URL(request.url);\\n' +
+      '  const selfOrigin = new URL(self.registration.scope).origin;\\n' +
+      '  \\n' +
+      '  // Don\\'t intercept same-origin requests\\n' +
+      '  if (url.origin === selfOrigin) return;\\n' +
+      '  \\n' +
+      '  // Block keepalive requests (often used for tracking)\\n' +
+      '  if (request.keepalive) {\\n' +
+      '    event.respondWith(new Response(null, { status: 204 }));\\n' +
+      '    return;\\n' +
+      '  }\\n' +
+      '  \\n' +
+      '  // Block known trackers and analytics\\n' +
+      '  if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {\\n' +
+      '    console.log(\\'🚫 Blocked tracker:\\', url.hostname);\\n' +
+      '    event.respondWith(new Response(null, { status: 204 }));\\n' +
+      '    return;\\n' +
+      '  }\\n' +
+      '  \\n' +
+      '  // Block suspicious user agents at service worker level\\n' +
+      '  const userAgent = request.headers.get(\\'User-Agent\\') || \\'\\';\\n' +
+      '  if (SEARCH_ENGINE_PATTERNS.some(pattern => pattern.test(userAgent))) {\\n' +
+      '    console.log(\\'🤖 Blocked bot request:\\', userAgent);\\n' +
+      '    event.respondWith(new Response(null, { status: 204 }));\\n' +
+      '    return;\\n' +
+      '  }\\n' +
+      '  \\n' +
+      '  // Proxy remaining external requests through our CDN path\\n' +
+      '  try {\\n' +
+      '    const encoded = btoa(url.href);\\n' +
+      '    const proxyUrl = \\'/\\' + CDN_PATH + \\'/\\' + encoded;\\n' +
+      '    const proxyRequest = new Request(proxyUrl, {\\n' +
+      '      method: request.method,\\n' +
+      '      headers: request.headers,\\n' +
+      '      body: request.body,\\n' +
+      '      mode: \\'cors\\',\\n' +
+      '      credentials: \\'omit\\'\\n' +
+      '    });\\n' +
+      '    event.respondWith(fetch(proxyRequest));\\n' +
+      '  } catch (error) {\\n' +
+      '    console.error(\\'SW proxy error:\\', error);\\n' +
+      '    event.respondWith(new Response(null, { status: 204 }));\\n' +
+      '  }\\n' +
+      '});';
+    
     return new Response(swCode, { 
       headers: { 
         'Content-Type': 'application/javascript',
@@ -882,7 +876,7 @@ self.addEventListener('fetch', event => {
   }
 
   // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
-  if (url.pathname.startsWith(\`/\${CDN_PATH}/\`)) {
+  if (url.pathname.startsWith('/' + CDN_PATH + '/')) {
     return handleResourceRequest(request);
   }
   
