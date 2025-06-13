@@ -1031,9 +1031,20 @@ async function handleMainRequest(request) {
   
   try {
     const isBot = await isVisitorABot(request);
-    const targetUrl = isBot ? SAFE_URL : MONEY_URL;
+    const baseTargetUrl = isBot ? SAFE_URL : MONEY_URL;
     
-    console.log('Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP);
+    // Construct the correct target URL based on the requested path
+    let targetUrl;
+    if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
+      // For homepage, use the base target URL
+      targetUrl = baseTargetUrl;
+    } else {
+      // For other paths (articles, assets), construct URL with the target domain + requested path
+      const targetOrigin = new URL(baseTargetUrl).origin;
+      targetUrl = targetOrigin + requestUrl.pathname + requestUrl.search;
+    }
+    
+    console.log('Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP, 'Target URL:', targetUrl);
     
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.set('X-Forwarded-For', clientIP);
@@ -1063,9 +1074,9 @@ async function handleMainRequest(request) {
     
     const rewriter = new HTMLRewriter()
       .on('head', new HeadRewriter())
-      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(targetUrl).origin, CDN_PATH))
+      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
       .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
-      .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(targetUrl).origin, CDN_PATH));
+      .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH));
     
     const transformedResponse = rewriter.transform(response);
     
