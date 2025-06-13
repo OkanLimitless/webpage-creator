@@ -855,19 +855,29 @@ async function handleRequest(request) {
       '    return;\\n' +
       '  }\\n' +
       '  \\n' +
-      '  // Only proxy specific resource types to avoid breaking legitimate content\\n' +
+      '  // Check if this is an asset request that should be proxied\\n' +
       '  const pathname = url.pathname.toLowerCase();\\n' +
-      '  const shouldProxy = pathname.includes(\\'analytics\\') || \\n' +
-      '                     pathname.includes(\\'tracking\\') || \\n' +
-      '                     pathname.includes(\\'ads\\') || \\n' +
-      '                     pathname.includes(\\'metrics\\') || \\n' +
-      '                     url.hostname.includes(\\'google-analytics\\') || \\n' +
-      '                     url.hostname.includes(\\'facebook\\') || \\n' +
-      '                     url.hostname.includes(\\'twitter\\') || \\n' +
-      '                     url.hostname.includes(\\'linkedin\\');\\n' +
+      '  const isAssetRequest = pathname.endsWith(\\'.css\\') || pathname.endsWith(\\'.js\\') || \\n' +
+      '                        pathname.endsWith(\\'.png\\') || pathname.endsWith(\\'.jpg\\') || \\n' +
+      '                        pathname.endsWith(\\'.jpeg\\') || pathname.endsWith(\\'.gif\\') || \\n' +
+      '                        pathname.endsWith(\\'.svg\\') || pathname.endsWith(\\'.woff\\') || \\n' +
+      '                        pathname.endsWith(\\'.woff2\\') || pathname.endsWith(\\'.ttf\\') || \\n' +
+      '                        pathname.endsWith(\\'.ico\\') || pathname.endsWith(\\'.webp\\');\\n' +
+      '  \\n' +
+      '  const isTrackingRequest = pathname.includes(\\'analytics\\') || \\n' +
+      '                           pathname.includes(\\'tracking\\') || \\n' +
+      '                           pathname.includes(\\'ads\\') || \\n' +
+      '                           pathname.includes(\\'metrics\\') || \\n' +
+      '                           url.hostname.includes(\\'google-analytics\\') || \\n' +
+      '                           url.hostname.includes(\\'facebook\\') || \\n' +
+      '                           url.hostname.includes(\\'twitter\\') || \\n' +
+      '                           url.hostname.includes(\\'linkedin\\');\\n' +
+      '  \\n' +
+      '  const shouldProxy = isAssetRequest || isTrackingRequest;\\n' +
       '  \\n' +
       '  // Only proxy suspicious requests, let legitimate content through\\n' +
       '  if (shouldProxy) {\\n' +
+      '    console.log(\\'🔄 SW proxying request:\\', url.href);\\n' +
       '    event.respondWith(\\n' +
       '      (async () => {\\n' +
       '        try {\\n' +
@@ -897,6 +907,8 @@ async function handleRequest(request) {
       '      })()\\n' +
       '    );\\n' +
       '    return;\\n' +
+      '  } else {\\n' +
+      '    console.log(\\'⏭️ SW letting request pass through:\\', url.href);\\n' +
       '  }\\n' +
       '  // Let all other requests pass through normally\\n' +
       '});';
@@ -1333,17 +1345,23 @@ class AttributeRewriter {
             
             // For same-domain resources, check if they should be proxied
             if (urlObj.hostname === targetUrlObj.hostname) {
-              // Check if this is a page/article vs an asset
+              // Check if this is an asset that needs proxying
               const pathname = urlObj.pathname.toLowerCase();
-              const isHtmlPage = pathname === '/' || pathname === '' || pathname.endsWith('.html') || pathname.endsWith('.htm') || (!pathname.includes('.') && !pathname.endsWith('/'));
+              const isAsset = pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') || 
+                             pathname.endsWith('.json') || pathname.endsWith('.png') || pathname.endsWith('.jpg') || 
+                             pathname.endsWith('.jpeg') || pathname.endsWith('.gif') || pathname.endsWith('.svg') || 
+                             pathname.endsWith('.woff') || pathname.endsWith('.woff2') || pathname.endsWith('.ttf') || 
+                             pathname.endsWith('.ico') || pathname.endsWith('.webp') || pathname.endsWith('.xml') ||
+                             pathname.endsWith('.pdf') || pathname.endsWith('.mp4') || pathname.endsWith('.mp3') ||
+                             pathname.endsWith('.zip') || pathname.endsWith('.eot') || pathname.endsWith('.otf');
               
-              if (isHtmlPage) {
-                // For same-domain HTML pages/articles, use relative paths (let main handler route them)
-                element.setAttribute(attr, urlObj.pathname + urlObj.search);
-              } else {
-                // For everything else (assets, files, etc.), ALWAYS proxy through CDN path
+              if (isAsset) {
+                // ALWAYS proxy assets through CDN path to avoid CORS/CSP issues
                 const encoded = btoa(absoluteUrl);
                 element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+              } else {
+                // For same-domain HTML pages/articles, use relative paths (let main handler route them)
+                element.setAttribute(attr, urlObj.pathname + urlObj.search);
               }
             } else {
               // For external domains, always proxy
