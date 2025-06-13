@@ -814,9 +814,11 @@ async function handleRequest(request) {
       '  /crawler/i, /spider/i, /scraper/i\\n' +
       '];\\n\\n' +
       'self.addEventListener(\\'install\\', () => {\\n' +
+      '  console.log(\\'🔧 Service Worker installing\\');\\n' +
       '  self.skipWaiting();\\n' +
       '});\\n\\n' +
       'self.addEventListener(\\'activate\\', event => {\\n' +
+      '  console.log(\\'🚀 Service Worker activated\\');\\n' +
       '  event.waitUntil(self.clients.claim());\\n' +
       '});\\n\\n' +
       'self.addEventListener(\\'fetch\\', event => {\\n' +
@@ -824,8 +826,13 @@ async function handleRequest(request) {
       '  const url = new URL(request.url);\\n' +
       '  const selfOrigin = new URL(self.registration.scope).origin;\\n' +
       '  \\n' +
+      '  console.log(\\'🔍 SW intercepting:\\', url.href, \\'Mode:\\', request.mode);\\n' +
+      '  \\n' +
       '  // Don\\'t intercept same-origin requests or navigation requests\\n' +
-      '  if (url.origin === selfOrigin || request.mode === \\'navigate\\') return;\\n' +
+      '  if (url.origin === selfOrigin || request.mode === \\'navigate\\') {\\n' +
+      '    console.log(\\'⏭️ Skipping same-origin/navigation request\\');\\n' +
+      '    return;\\n' +
+      '  }\\n' +
       '  \\n' +
       '  // Block keepalive requests (often used for tracking)\\n' +
       '  if (request.keepalive) {\\n' +
@@ -1126,8 +1133,11 @@ async function handleResourceRequest(request) {
     const url = new URL(request.url);
     const encodedUrl = url.pathname.replace('/' + CDN_PATH + '/', '');
     
+    console.log('🔗 Resource request for CDN path:', url.pathname);
+    console.log('📦 Encoded URL:', encodedUrl);
+    
     if (!encodedUrl) {
-      console.warn('Empty encoded URL from path:', url.pathname);
+      console.warn('❌ Empty encoded URL from path:', url.pathname);
       return new Response('Empty resource URL', { status: 400 });
     }
     
@@ -1140,8 +1150,9 @@ async function handleResourceRequest(request) {
     let resourceUrl;
     try {
       resourceUrl = atob(encodedUrl);
+      console.log('🎯 Decoded resource URL:', resourceUrl);
     } catch (decodeError) {
-      console.warn('Failed to decode base64 URL:', encodedUrl);
+      console.warn('❌ Failed to decode base64 URL:', encodedUrl);
       return new Response('Malformed resource URL', { status: 400 });
     }
     
@@ -1322,17 +1333,17 @@ class AttributeRewriter {
             
             // For same-domain resources, check if they should be proxied
             if (urlObj.hostname === targetUrlObj.hostname) {
-              // Only proxy actual assets, not HTML pages
+              // Check if this is a page/article vs an asset
               const pathname = urlObj.pathname.toLowerCase();
-              const isAsset = pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') || pathname.endsWith('.json') || pathname.endsWith('.png') || pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') || pathname.endsWith('.gif') || pathname.endsWith('.svg') || pathname.endsWith('.woff') || pathname.endsWith('.woff2') || pathname.endsWith('.ttf') || pathname.endsWith('.ico') || pathname.endsWith('.webp');
+              const isHtmlPage = pathname === '/' || pathname === '' || pathname.endsWith('.html') || pathname.endsWith('.htm') || (!pathname.includes('.') && !pathname.endsWith('/'));
               
-              if (isAsset) {
-                // Proxy assets through CDN path to avoid CORS issues
+              if (isHtmlPage) {
+                // For same-domain HTML pages/articles, use relative paths (let main handler route them)
+                element.setAttribute(attr, urlObj.pathname + urlObj.search);
+              } else {
+                // For everything else (assets, files, etc.), ALWAYS proxy through CDN path
                 const encoded = btoa(absoluteUrl);
                 element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
-              } else {
-                // For same-domain HTML pages, use relative paths
-                element.setAttribute(attr, urlObj.pathname + urlObj.search);
               }
             } else {
               // For external domains, always proxy
@@ -1350,7 +1361,7 @@ class AttributeRewriter {
 
 class HeadRewriter {
   element(head) {
-    const swScript = '<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("/service-worker.js").then(function(reg){console.log("SW registered");}).catch(function(e){console.warn("SW registration failed");});}try{Object.defineProperty(navigator,"webdriver",{get:function(){return undefined;}});window.chrome=window.chrome||{runtime:{}};delete navigator.__proto__.webdriver;delete navigator.webdriver;}catch(e){}</script>';
+    const swScript = '<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("/service-worker.js").then(function(reg){console.log("✅ Service Worker registered successfully");}).catch(function(e){console.warn("❌ Service Worker registration failed:", e);});}else{console.warn("❌ Service Worker not supported");}try{Object.defineProperty(navigator,"webdriver",{get:function(){return undefined;}});window.chrome=window.chrome||{runtime:{}};delete navigator.__proto__.webdriver;delete navigator.webdriver;}catch(e){}</script>';
     head.append(swScript, { html: true });
 
     const metaTags = '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet"><meta name="referrer" content="no-referrer">';
