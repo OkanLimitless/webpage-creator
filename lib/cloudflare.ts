@@ -1197,30 +1197,41 @@ async function handleResourceRequest(request) {
       return new Response('Malformed resource URL', { status: 400 });
     }
 
-    const forwardHeaders = new Headers();
-    const allowedHeaders = ['accept', 'accept-encoding', 'accept-language', 'cache-control', 'user-agent'];
+    // ✅ CRITICAL FIX: Create clean headers with correct Host header
+    const cleanHeaders = new Headers();
     
+    // Forward essential browser headers
+    const allowedHeaders = ['accept', 'accept-encoding', 'accept-language', 'cache-control', 'user-agent', 'referer'];
     for (const headerPair of request.headers) {
-      const key = headerPair[0];
+      const key = headerPair[0].toLowerCase();
       const value = headerPair[1];
-      if (allowedHeaders.includes(key.toLowerCase())) {
-        forwardHeaders.set(key, value);
+      if (allowedHeaders.includes(key)) {
+        cleanHeaders.set(key, value);
       }
     }
     
+    // ✅ CRITICAL: Set correct Host header for target domain
+    cleanHeaders.set('Host', targetUrl.hostname);
+    cleanHeaders.set('Origin', targetUrl.origin);
+    
+    console.log('🏠 Setting Host header to:', targetUrl.hostname);
+    
+    // Create clean request with proper headers
     const resourceRequest = new Request(resourceUrl, {
       method: 'GET',
-      headers: forwardHeaders
+      headers: cleanHeaders,
+      redirect: 'follow'
     });
 
     let response;
     try {
       response = await fetch(resourceRequest);
+      console.log('✅ Resource fetch success:', response.status, 'for', resourceUrl);
     } catch (fetchError) {
-      console.warn('Resource fetch network error:', resourceUrl, fetchError.message);
+      console.warn('❌ Resource fetch network error:', resourceUrl, fetchError.message);
       
       // Return appropriate error response based on expected resource type
-      const pathname = new URL(resourceUrl).pathname.toLowerCase();
+      const pathname = targetUrl.pathname.toLowerCase();
       let errorContent = '';
       let errorContentType = 'text/plain';
       
@@ -1244,10 +1255,10 @@ async function handleResourceRequest(request) {
     }
 
     if (!response.ok) {
-      console.warn('Resource fetch failed:', resourceUrl, response.status);
+      console.warn('❌ Resource fetch failed:', resourceUrl, response.status);
       
       // Return appropriate error response based on expected resource type
-      const pathname = new URL(resourceUrl).pathname.toLowerCase();
+      const pathname = targetUrl.pathname.toLowerCase();
       let errorContent = '';
       let errorContentType = 'text/plain';
       
@@ -1270,12 +1281,14 @@ async function handleResourceRequest(request) {
       });
     }
 
+    // Clone response to make headers mutable
     const newResponse = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers
     });
 
+    // Set permissive CORS headers for browser
     newResponse.headers.set('Access-Control-Allow-Origin', '*');
     newResponse.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1284,8 +1297,7 @@ async function handleResourceRequest(request) {
     
     // Fix MIME type issues by ensuring proper Content-Type headers
     const originalContentType = response.headers.get('Content-Type') || '';
-    const decodedUrl = new URL(resourceUrl);
-    const pathname = decodedUrl.pathname.toLowerCase();
+    const pathname = targetUrl.pathname.toLowerCase();
     
     // Override incorrect MIME types based on file extension
     if (pathname.endsWith('.css') && !originalContentType.includes('text/css')) {
@@ -1317,7 +1329,7 @@ async function handleResourceRequest(request) {
     return newResponse;
 
   } catch (error) {
-    console.error('Resource proxy critical error:', error.message);
+    console.error('❌ Resource proxy critical error:', error.message);
     
     // Return generic error response since we might not have resourceUrl
     return new Response('/* Resource proxy error */', { 
