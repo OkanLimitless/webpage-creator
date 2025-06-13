@@ -789,8 +789,8 @@ async function handleRequest(request) {
 
   // ROUTE 1: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
-    const swCode = '// Service Worker Configuration - CDN_PATH must be defined here\\n' +
-      'const CDN_PATH = \\'' + selectedCdnPath + '\\';\\n\\n' +
+    const swCode = '// Service Worker Configuration - Use the same CDN path as main worker\\n' +
+      'const CDN_PATH = \\'' + CDN_PATH + '\\';\\n\\n' +
       'const TRACKER_BLACKLIST = [\\n' +
       '  // Analytics & Tracking\\n' +
       '  \\'google-analytics.com\\', \\'googletagmanager.com\\', \\'googleadservices.com\\',\\n' +
