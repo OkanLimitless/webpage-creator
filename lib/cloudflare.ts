@@ -1540,28 +1540,55 @@ class StyleRewriter {
     let content = textChunk.text();
 
     // Rewrite url(/images/abc.png) → proxied via /r8/
-    content = content.replace(/url\\(["']?(\/[^"'\\)]+)["']?\\)/g, (match, path) => {
-      try {
-        const fullUrl = new URL(path, this.targetOrigin).href;
-        const encoded = btoa(fullUrl);
-        console.log('🎨 Rewriting CSS asset:', path, '→', '/' + this.cdnPath + '/' + encoded);
-        return 'url(/' + this.cdnPath + '/' + encoded + ')';
-      } catch (e) {
-        console.warn('Failed to rewrite CSS URL:', path, e.message);
-        return match; // Return original if rewriting fails
+    // Use indexOf and substring to avoid complex regex issues
+    let urlIndex = content.indexOf('url(');
+    while (urlIndex !== -1) {
+      let startQuote = content.charAt(urlIndex + 4);
+      let isQuoted = startQuote === '"' || startQuote === "'";
+      let pathStart = isQuoted ? urlIndex + 5 : urlIndex + 4;
+      
+      // Find the end of the URL
+      let pathEnd = pathStart;
+      if (isQuoted) {
+        pathEnd = content.indexOf(startQuote, pathStart);
+      } else {
+        pathEnd = content.indexOf(')', pathStart);
       }
-    });
+      
+      if (pathEnd !== -1) {
+        let path = content.substring(pathStart, pathEnd);
+        if (path.startsWith('/')) {
+          try {
+            const fullUrl = new URL(path, this.targetOrigin).href;
+            const encoded = btoa(fullUrl);
+            const newUrl = '/' + this.cdnPath + '/' + encoded;
+            const replacement = isQuoted ? 
+              'url(' + startQuote + newUrl + startQuote + ')' :
+              'url(' + newUrl + ')';
+            
+            content = content.substring(0, urlIndex) + replacement + 
+                     content.substring(isQuoted ? pathEnd + 2 : pathEnd + 1);
+            console.log('🎨 Rewriting CSS asset:', path, '→', newUrl);
+          } catch (e) {
+            console.warn('Failed to rewrite CSS URL:', path, e.message);
+          }
+        }
+      }
+      
+      urlIndex = content.indexOf('url(', urlIndex + 1);
+    }
 
-    // Also handle @import statements
-    content = content.replace(/@import\\s+["']?(\/[^"']+)["']?/g, (match, path) => {
+    // Handle @import statements with simple string replacement
+    content = content.replace(/@import\\s+["'](\/[^"']+)["']/g, (match, path) => {
       try {
         const fullUrl = new URL(path, this.targetOrigin).href;
         const encoded = btoa(fullUrl);
-        console.log('📥 Rewriting CSS import:', path, '→', '/' + this.cdnPath + '/' + encoded);
-        return '@import "/' + this.cdnPath + '/' + encoded + '"';
+        const newPath = '/' + this.cdnPath + '/' + encoded;
+        console.log('📥 Rewriting CSS import:', path, '→', newPath);
+        return '@import "' + newPath + '"';
       } catch (e) {
         console.warn('Failed to rewrite CSS import:', path, e.message);
-        return match; // Return original if rewriting fails
+        return match;
       }
     });
 
