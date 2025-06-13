@@ -949,138 +949,42 @@ async function handleRequest(request) {
 async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
-  const acceptHeader = request.headers.get('Accept') || '';
-  const acceptLanguage = request.headers.get('Accept-Language') || '';
-  const referer = request.headers.get('Referer') || '';
   
-  let botScore = 0;
-  
-  // ✅ CRITICAL: Check if this is a back button navigation from same domain
-  const requestUrl = new URL(request.url);
-  if (referer && referer.includes(requestUrl.hostname)) {
-    // For back button navigation, maintain the same classification
-    // Check if previous request was classified as bot (more conservative approach)
-    botScore += 0.1; // Slight bias toward maintaining bot classification
-  }
-
   try {
-    // Check user agent for bot patterns
+    // STEP 0: Quick user agent pattern check (fastest)
     const userAgentLower = userAgent.toLowerCase();
     for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
       if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
-        botScore += 0.4;
-        break;
+        return true; // Show safe page for known bot user agents
       }
     }
 
-    // Check browser headers
-    if (!acceptHeader.includes('text/html')) {
-      botScore += 0.3;
-    }
-    
-    if (!acceptLanguage || acceptLanguage.split(',').length < 2) {
-      botScore += 0.2;
-    }
-
-    // Check datacenter ASN if available
-    if (request.cf && request.cf.asn) {
-      if (DATACENTER_ASNS.includes(request.cf.asn)) {
-        botScore += 0.3;
-      }
-    }
-
-    // Request frequency tracking with session consistency
-    const clientKey = clientIP + ':' + userAgent;
-    const now = Date.now();
-    
-    if (requestTracker.has(clientKey)) {
-      const tracker = requestTracker.get(clientKey);
-      const timeDiff = now - tracker.lastSeen;
-      
-      // ✅ CRITICAL: If we've already classified this session, maintain consistency
-      if (tracker.wasClassifiedAsBot !== undefined) {
-        // Strong bias toward maintaining previous classification
-        botScore += tracker.wasClassifiedAsBot ? 0.9 : -0.5;
-      }
-      
-      if (timeDiff < 100) {
-        botScore += 0.5;
-      }
-      
-      tracker.count++;
-      tracker.lastSeen = now;
-      
-      if (tracker.count > 10 && (now - tracker.firstSeen) < 60000) {
-        botScore += 0.4;
-      }
-    } else {
-      const newTracker = {
-        count: 1,
-        firstSeen: now,
-        lastSeen: now,
-        wasClassifiedAsBot: undefined // Will be set after classification
-      };
-      requestTracker.set(clientKey, newTracker);
-    }
-
-    // Geo check
-    const geoRes = await fetch('https://ip-api.com/json/' + clientIP + '?fields=countryCode,org');
+    // STEP 1: Quick geo check with ip-api.com
+    const geoRes = await fetch('https://ip-api.com/json/' + clientIP + '?fields=countryCode');
     if (geoRes.ok) {
       const geo = await geoRes.json();
       
-      // Block high-risk countries
-      if (BLOCKED_COUNTRIES.includes(geo.countryCode)) {
-        botScore += 0.8;
-      }
-      
-      // Check target countries
+      // Check if visitor is from target countries
       if (!TARGET_COUNTRIES.includes(geo.countryCode)) {
-        botScore += 0.6;
-      }
-      
-      // Check hosting providers
-      const org = (geo.org || '').toLowerCase();
-      if (org.includes('hosting') || org.includes('cloud') || org.includes('datacenter') || org.includes('server')) {
-        botScore += 0.3;
+        return true; // Show safe page for non-target countries
       }
     }
 
-    // ProxyCheck.io risk assessment
-    if (botScore < 0.7) {
-      try {
-        const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&vpn=1&risk=1';
-        const response = await fetch(pcUrl);
-        const data = await response.json();
-        const ipData = data[clientIP];
-
-        if (ipData) {
-          const risk = parseInt(ipData.risk || '0', 10);
-          if (risk >= 60) {
-            botScore += 0.4;
-          }
-          
-          if (ipData.proxy === 'yes' || ipData.vpn === 'yes') {
-            botScore += 0.3;
-          }
-        }
-      } catch (pcError) {
-        console.warn('ProxyCheck API error:', pcError.message);
-      }
+    // STEP 2: Risk assessment with proxycheck.io
+    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1';
+    const response = await fetch(pcUrl);
+    const data = await response.json();
+    const ipData = data[clientIP];
+    
+    if (ipData && ipData.risk) {
+      const riskScore = parseInt(ipData.risk) || 0;
+      return riskScore > 60; // Show safe page if risk score > 60
     }
-
-      const isBot = botScore > 0.8; // Made less aggressive - was 0.6
-  
-  // ✅ CRITICAL: Store classification result for session consistency
-  if (requestTracker.has(clientKey)) {
-    const tracker = requestTracker.get(clientKey);
-    tracker.wasClassifiedAsBot = isBot;
-  }
-  
-  return isBot;
+    
+    return false; // Show money page for low risk visitors
 
   } catch (error) {
-    console.error('Bot detection error:', error.message);
-    return true;
+    return true; // Show safe page on any error
   }
 }
 
