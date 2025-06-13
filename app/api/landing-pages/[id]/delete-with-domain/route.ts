@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { LandingPage } from '@/lib/models/LandingPage';
 import { Domain } from '@/lib/models/Domain';
-import { getDnsRecords, deleteDnsRecord } from '@/lib/cloudflare';
+import { getDnsRecords, deleteDnsRecord, deleteWorkerAndRoutes } from '@/lib/cloudflare';
 import { deleteFromVercelBlob } from '@/lib/vercelBlobStorage';
 import { deleteDomainFromVercel } from '@/lib/vercel';
 
@@ -32,7 +32,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       domainDeleted: false,
       dnsRecordsDeleted: false,
       vercelDomainDeleted: false,
-      screenshotsDeleted: false
+      screenshotsDeleted: false,
+      workerDeleted: false
     };
     
     // Get the domain
@@ -131,6 +132,31 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     } catch (blobError) {
       console.error('Error deleting screenshot files:', blobError);
       // Continue with landing page deletion even if blob deletion fails
+    }
+    
+    // Delete Cloudflare Worker if it exists (for cloaked landing pages)
+    if (landingPage.workerScriptName) {
+      try {
+        console.log(`Deleting Cloudflare Worker: ${landingPage.workerScriptName}`);
+        const workerDeletionResult = await deleteWorkerAndRoutes(
+          landingPage.workerScriptName, 
+          domain.cloudflareZoneId
+        );
+        
+        if (workerDeletionResult.workerDeleted) {
+          console.log(`Successfully deleted worker: ${landingPage.workerScriptName}`);
+          deletionResults.workerDeleted = true;
+        } else {
+          console.warn(`Failed to delete worker: ${landingPage.workerScriptName}`, workerDeletionResult.errors);
+        }
+        
+        if (workerDeletionResult.routesDeleted > 0) {
+          console.log(`Successfully deleted ${workerDeletionResult.routesDeleted} worker routes`);
+        }
+      } catch (workerError) {
+        console.error('Error deleting Cloudflare Worker:', workerError);
+        // Continue with landing page deletion even if worker deletion fails
+      }
     }
     
     // 2. Delete the landing page from the database

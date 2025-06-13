@@ -1290,3 +1290,83 @@ export async function fixCloakingDnsRecords(domainName: string, subdomain: strin
     };
   }
 }
+
+// Delete Cloudflare Worker and its routes
+export async function deleteWorkerAndRoutes(workerScriptName: string, zoneId?: string) {
+  try {
+    console.log(`Deleting Cloudflare Worker: ${workerScriptName}`);
+    
+    const deletionResults = {
+      workerDeleted: false,
+      routesDeleted: 0,
+      errors: [] as string[]
+    };
+    
+    // First, try to delete any worker routes if zoneId is provided
+    if (zoneId) {
+      try {
+        console.log(`Listing worker routes for zone: ${zoneId}`);
+        const routesResponse = await cf.listWorkerRoutes(zoneId);
+        
+        if (routesResponse.success && routesResponse.result) {
+          // Filter routes that belong to this worker
+          const workerRoutes = routesResponse.result.filter((route: any) => 
+            route.script === workerScriptName
+          );
+          
+          console.log(`Found ${workerRoutes.length} routes for worker ${workerScriptName}`);
+          
+          // Delete each route
+          for (const route of workerRoutes) {
+            try {
+              console.log(`Deleting worker route: ${route.id} (${route.pattern})`);
+              const deleteRouteResult = await cf.deleteWorkerRoute(zoneId, route.id);
+              
+              if (deleteRouteResult.success) {
+                deletionResults.routesDeleted++;
+                console.log(`Successfully deleted worker route: ${route.id}`);
+              } else {
+                const error = `Failed to delete worker route ${route.id}: ${JSON.stringify(deleteRouteResult.errors)}`;
+                console.error(error);
+                deletionResults.errors.push(error);
+              }
+            } catch (routeError) {
+              const error = `Error deleting worker route ${route.id}: ${(routeError as Error).message}`;
+              console.error(error);
+              deletionResults.errors.push(error);
+            }
+          }
+        }
+      } catch (routesError) {
+        const error = `Error listing worker routes: ${(routesError as Error).message}`;
+        console.error(error);
+        deletionResults.errors.push(error);
+      }
+    }
+    
+    // Delete the worker script itself
+    try {
+      console.log(`Deleting worker script: ${workerScriptName}`);
+      const deleteWorkerResult = await cf.deleteWorker(workerScriptName);
+      
+      if (deleteWorkerResult.success) {
+        deletionResults.workerDeleted = true;
+        console.log(`Successfully deleted worker: ${workerScriptName}`);
+      } else {
+        const error = `Failed to delete worker ${workerScriptName}: ${JSON.stringify(deleteWorkerResult.errors)}`;
+        console.error(error);
+        deletionResults.errors.push(error);
+      }
+    } catch (workerError) {
+      const error = `Error deleting worker ${workerScriptName}: ${(workerError as Error).message}`;
+      console.error(error);
+      deletionResults.errors.push(error);
+    }
+    
+    return deletionResults;
+    
+  } catch (error) {
+    console.error(`Error deleting worker and routes for ${workerScriptName}:`, error);
+    throw error;
+  }
+}
