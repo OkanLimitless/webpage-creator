@@ -1159,25 +1159,23 @@ async function handleMainRequest(request) {
     console.log('🎯 Base target URL:', baseTargetUrl);
     console.log('🏠 Proxy domain:', requestUrl.hostname);
     
-    // TEMPORARY: Disable HTMLRewriter to debug blank page issue
-    console.log('⚠️ DEBUGGING: HTMLRewriter temporarily disabled');
-    const transformedResponse = response;
+    // ✅ FIXED: Re-enable HTMLRewriter with safer, more conservative approach
+    console.log('🔧 Enabling conservative HTMLRewriter');
     
-    // const rewriter = new HTMLRewriter()
-    //   .on('head', new HeadRewriter())
-    //   .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
-    //   .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
-    //   .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
-    //   .on('link[rel="canonical"], meta[property^="og:"], meta[name="twitter:"], script[type="application/ld+json"]', new MetadataStripper())
-    //   .on('base', {
-    //     element(base) {
-    //       console.log('🧱 Stripping <base> tag:', base.getAttribute('href'));
-    //       base.remove();
-    //     }
-    //   })
-    //   .on('style', new StyleRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH));
-    // 
-    // const transformedResponse = rewriter.transform(response);
+    const rewriter = new HTMLRewriter()
+      // Only enable essential rewriters that won't break the page
+      .on('link[rel="canonical"]', new MetadataStripper())
+      .on('meta[property^="og:"]', new MetadataStripper())
+      .on('meta[name="twitter:"]', new MetadataStripper())
+      .on('script[type="application/ld+json"]', new MetadataStripper())
+      .on('base', {
+        element(base) {
+          console.log('🧱 Stripping <base> tag:', base.getAttribute('href'));
+          base.remove();
+        }
+      });
+    
+    const transformedResponse = rewriter.transform(response);
     
     const finalResponse = new Response(transformedResponse.body, {
       status: transformedResponse.status,
