@@ -1057,17 +1057,7 @@ async function handleMainRequest(request, env) {
     const upstreamRequest = new Request(targetUrl, {
       method: request.method,
       headers: upstreamHeaders,
-      body: request.body,
-      cf: {
-        cacheEverything: false, // Don't cache HTML pages
-        scrapeShield: false,
-        apps: false,
-        minify: {
-          javascript: true,
-          css: true,
-          html: true
-        }
-      }
+      body: request.body
     });
     
     const response = await fetch(upstreamRequest);
@@ -1076,10 +1066,7 @@ async function handleMainRequest(request, env) {
       console.error(\`Upstream error: \${response.status} for \${targetUrl}\`);
       
       // Return a generic error page that doesn't reveal the proxy
-      return new Response(\`<!DOCTYPE html>
-<html><head><title>Page Not Found</title></head>
-<body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p></body>
-</html>\`, {
+      return new Response('<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p></body></html>', {
         status: 404,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
@@ -1122,10 +1109,7 @@ async function handleMainRequest(request, env) {
     console.error(\`Main request handler error: \${error.message}\`);
     
     // Generic error response that doesn't reveal proxy details
-    return new Response(\`<!DOCTYPE html>
-<html><head><title>Service Unavailable</title></head>
-<body><h1>503 - Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body>
-</html>\`, {
+    return new Response('<!DOCTYPE html><html><head><title>Service Unavailable</title></head><body><h1>503 - Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body></html>', {
       status: 503,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
@@ -1170,13 +1154,7 @@ async function handleResourceRequest(request) {
     
     const resourceRequest = new Request(resourceUrl, {
       method: 'GET',
-      headers: forwardHeaders,
-      cf: {
-        cacheEverything: true,
-        cacheTtl: 86400, // 24 hours
-        polish: 'lossy',
-        mirage: true
-      }
+      headers: forwardHeaders
     });
 
     const response = await fetch(resourceRequest);
@@ -1254,27 +1232,10 @@ class AttributeRewriter {
 class HeadRewriter {
   element(head) {
     // Inject service worker with error handling
-    head.append(\`<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js')
-    .then(reg => console.log('SW registered'))
-    .catch(e => console.warn('SW registration failed'));
-}
-
-// Basic fingerprinting protection
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-window.chrome = window.chrome || { runtime: {} };
-
-// Hide automation indicators  
-delete navigator.__proto__.webdriver;
-delete navigator.webdriver;
-</script>\`, { html: true });
+    head.append('<script>if(\\'serviceWorker\\' in navigator){navigator.serviceWorker.register(\\'/service-worker.js\\').then(reg=>console.log(\\'SW registered\\')).catch(e=>console.warn(\\'SW registration failed\\'));}Object.defineProperty(navigator,\\'webdriver\\',{get:()=>undefined});window.chrome=window.chrome||{runtime:{}};delete navigator.__proto__.webdriver;delete navigator.webdriver;</script>', { html: true });
 
     // Add meta tags for better stealth
-    head.append(\`<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
-<meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
-<meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet">
-<meta name="referrer" content="no-referrer">\`, { html: true });
+    head.append('<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta name="googlebot" content="noindex,nofollow,noarchive,nosnippet,noimageindex"><meta http-equiv="X-Robots-Tag" content="noindex,nofollow,noarchive,nosnippet"><meta name="referrer" content="no-referrer">', { html: true });
   }
 }
 
