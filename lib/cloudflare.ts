@@ -1579,18 +1579,44 @@ class StyleRewriter {
     }
 
     // Handle @import statements with simple string replacement
-    content = content.replace(/@import\\s+["'](\/[^"']+)["']/g, (match, path) => {
-      try {
-        const fullUrl = new URL(path, this.targetOrigin).href;
-        const encoded = btoa(fullUrl);
-        const newPath = '/' + this.cdnPath + '/' + encoded;
-        console.log('📥 Rewriting CSS import:', path, '→', newPath);
-        return '@import "' + newPath + '"';
-      } catch (e) {
-        console.warn('Failed to rewrite CSS import:', path, e.message);
-        return match;
+    // Use indexOf approach for @import as well to avoid regex issues
+    let importIndex = content.indexOf('@import');
+    while (importIndex !== -1) {
+      let quoteStart = -1;
+      let quote = '';
+      
+      // Find the opening quote after @import
+      for (let i = importIndex + 7; i < content.length; i++) {
+        if (content.charAt(i) === '"' || content.charAt(i) === "'") {
+          quoteStart = i;
+          quote = content.charAt(i);
+          break;
+        }
       }
-    });
+      
+      if (quoteStart !== -1) {
+        let quoteEnd = content.indexOf(quote, quoteStart + 1);
+        if (quoteEnd !== -1) {
+          let path = content.substring(quoteStart + 1, quoteEnd);
+          if (path.startsWith('/')) {
+            try {
+              const fullUrl = new URL(path, this.targetOrigin).href;
+              const encoded = btoa(fullUrl);
+              const newPath = '/' + this.cdnPath + '/' + encoded;
+              const replacement = '@import "' + newPath + '"';
+              
+              content = content.substring(0, importIndex) + replacement + 
+                       content.substring(quoteEnd + 1);
+              console.log('📥 Rewriting CSS import:', path, '→', newPath);
+            } catch (e) {
+              console.warn('Failed to rewrite CSS import:', path, e.message);
+            }
+          }
+        }
+      }
+      
+      importIndex = content.indexOf('@import', importIndex + 1);
+    }
 
     textChunk.replace(content);
   }
