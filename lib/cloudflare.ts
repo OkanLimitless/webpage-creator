@@ -1103,9 +1103,15 @@ async function handleResourceRequest(request) {
     const url = new URL(request.url);
     const encodedUrl = url.pathname.replace('/' + CDN_PATH + '/', '');
     
-    if (!encodedUrl || !encodedUrl.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
-      console.warn('Invalid base64 URL:', encodedUrl);
-      return new Response('Invalid resource URL', { status: 400 });
+    if (!encodedUrl) {
+      console.warn('Empty encoded URL from path:', url.pathname);
+      return new Response('Empty resource URL', { status: 400 });
+    }
+    
+    // More lenient base64 validation - allow URL-safe base64
+    if (!encodedUrl.match(/^[A-Za-z0-9+/_-]*={0,2}$/)) {
+      console.warn('Invalid base64 URL format:', encodedUrl);
+      return new Response('Invalid resource URL format', { status: 400 });
     }
     
     let resourceUrl;
@@ -1244,10 +1250,29 @@ async function handleResourceRequest(request) {
     return newResponse;
 
   } catch (error) {
-    console.error('Resource proxy critical error:', error.message);
-    return new Response('Resource proxy error', { 
+    console.error('Resource proxy critical error for URL:', resourceUrl, 'Error:', error.message);
+    
+    // Return appropriate error response based on expected resource type
+    const pathname = new URL(resourceUrl).pathname.toLowerCase();
+    let errorContent = '';
+    let errorContentType = 'text/plain';
+    
+    if (pathname.endsWith('.css')) {
+      errorContent = '/* Critical error: Resource proxy failed */';
+      errorContentType = 'text/css; charset=utf-8';
+    } else if (pathname.endsWith('.js') || pathname.endsWith('.mjs')) {
+      errorContent = '// Critical error: Resource proxy failed';
+      errorContentType = 'application/javascript; charset=utf-8';
+    } else if (pathname.endsWith('.json')) {
+      errorContent = '{"error": "Critical error", "message": "Resource proxy failed"}';
+      errorContentType = 'application/json; charset=utf-8';
+    } else {
+      errorContent = 'Resource proxy error';
+    }
+    
+    return new Response(errorContent, { 
       status: 502,
-      headers: { 'Content-Type': 'text/plain' }
+      headers: { 'Content-Type': errorContentType }
     });
   }
 }
@@ -1286,8 +1311,27 @@ class AttributeRewriter {
           
           // Only rewrite if it's not already pointing to our proxy domain
           if (!absoluteUrl.includes(this.proxyDomain)) {
-            const encoded = btoa(absoluteUrl);
-            element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+            const urlObj = new URL(absoluteUrl);
+            const targetUrlObj = new URL(this.targetOrigin);
+            
+            // For same-domain resources, check if they should be proxied
+            if (urlObj.hostname === targetUrlObj.hostname) {
+              // Only proxy actual assets, not HTML pages
+              const pathname = urlObj.pathname.toLowerCase();
+              const isAsset = pathname.match(/\\.(css|js|mjs|json|png|jpg|jpeg|gif|svg|woff|woff2|ttf|ico|webp)$/);
+              
+              if (isAsset) {
+                const encoded = btoa(absoluteUrl);
+                element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+              } else {
+                // For HTML pages, use relative path
+                element.setAttribute(attr, urlObj.pathname + urlObj.search);
+              }
+            } else {
+              // For external domains, always proxy
+              const encoded = btoa(absoluteUrl);
+              element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+            }
           }
         } catch (e) {
           console.warn('Failed to rewrite URL:', originalUrl, e.message);
