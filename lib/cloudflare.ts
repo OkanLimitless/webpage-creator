@@ -1356,13 +1356,18 @@ class LinkRewriter {
         
         // Only rewrite if it's not already pointing to our proxy domain
         if (!absoluteUrl.includes(this.proxyDomain)) {
-          const encoded = btoa(absoluteUrl);
-          link.setAttribute('href', '/' + this.cdnPath + '/' + encoded);
-          
-          // Only set target="_blank" for external domains
           const linkDomain = new URL(absoluteUrl).hostname;
           const targetDomain = new URL(this.targetOrigin).hostname;
-          if (linkDomain !== targetDomain) {
+          
+          // For same-domain links (articles), don't proxy them - let them be handled by main request
+          if (linkDomain === targetDomain) {
+            // Keep the original href but make it relative to our proxy domain
+            const linkPath = new URL(absoluteUrl).pathname + new URL(absoluteUrl).search;
+            link.setAttribute('href', linkPath);
+          } else {
+            // For external domains, proxy through CDN path
+            const encoded = btoa(absoluteUrl);
+            link.setAttribute('href', '/' + this.cdnPath + '/' + encoded);
             link.setAttribute('target', '_blank');
             link.setAttribute('rel', 'noopener noreferrer');
           }
