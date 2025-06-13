@@ -849,31 +849,45 @@ async function handleRequest(request) {
       '    return;\\n' +
       '  }\\n' +
       '  \\n' +
-      '  // Proxy remaining external requests through our CDN path\\n' +
-      '  try {\\n' +
-      '    const encoded = btoa(url.href);\\n' +
-      '    const proxyUrl = \\'/\\' + CDN_PATH + \\'/\\' + encoded;\\n' +
-      '    \\n' +
-      '    // Handle streaming body properly\\n' +
-      '    const requestOptions = {\\n' +
-      '      method: request.method,\\n' +
-      '      headers: request.headers,\\n' +
-      '      mode: \\'cors\\',\\n' +
-      '      credentials: \\'omit\\'\\n' +
-      '    };\\n' +
-      '    \\n' +
-      '    // Only add body and duplex for requests that need it\\n' +
-      '    if (request.method !== \\'GET\\' && request.method !== \\'HEAD\\' && request.body) {\\n' +
-      '      requestOptions.body = request.body;\\n' +
-      '      requestOptions.duplex = \\'half\\';\\n' +
+      '  // Only proxy specific resource types to avoid breaking legitimate content\\n' +
+      '  const pathname = url.pathname.toLowerCase();\\n' +
+      '  const shouldProxy = pathname.includes(\\'analytics\\') || \\n' +
+      '                     pathname.includes(\\'tracking\\') || \\n' +
+      '                     pathname.includes(\\'ads\\') || \\n' +
+      '                     pathname.includes(\\'metrics\\') || \\n' +
+      '                     url.hostname.includes(\\'google-analytics\\') || \\n' +
+      '                     url.hostname.includes(\\'facebook\\') || \\n' +
+      '                     url.hostname.includes(\\'twitter\\') || \\n' +
+      '                     url.hostname.includes(\\'linkedin\\');\\n' +
+      '  \\n' +
+      '  // Only proxy suspicious requests, let legitimate content through\\n' +
+      '  if (shouldProxy) {\\n' +
+      '    try {\\n' +
+      '      const encoded = btoa(url.href);\\n' +
+      '      const proxyUrl = \\'/\\' + CDN_PATH + \\'/\\' + encoded;\\n' +
+      '      \\n' +
+      '      // Handle streaming body properly\\n' +
+      '      const requestOptions = {\\n' +
+      '        method: request.method,\\n' +
+      '        headers: request.headers,\\n' +
+      '        mode: \\'cors\\',\\n' +
+      '        credentials: \\'omit\\'\\n' +
+      '      };\\n' +
+      '      \\n' +
+      '      // Only add body and duplex for requests that need it\\n' +
+      '      if (request.method !== \\'GET\\' && request.method !== \\'HEAD\\' && request.body) {\\n' +
+      '        requestOptions.body = request.body;\\n' +
+      '        requestOptions.duplex = \\'half\\';\\n' +
+      '      }\\n' +
+      '      \\n' +
+      '      const proxyRequest = new Request(proxyUrl, requestOptions);\\n' +
+      '      event.respondWith(fetch(proxyRequest));\\n' +
+      '    } catch (error) {\\n' +
+      '      console.error(\\'SW proxy error:\\', error);\\n' +
+      '      event.respondWith(new Response(null, { status: 204 }));\\n' +
       '    }\\n' +
-      '    \\n' +
-      '    const proxyRequest = new Request(proxyUrl, requestOptions);\\n' +
-      '    event.respondWith(fetch(proxyRequest));\\n' +
-      '  } catch (error) {\\n' +
-      '    console.error(\\'SW proxy error:\\', error);\\n' +
-      '    event.respondWith(new Response(null, { status: 204 }));\\n' +
       '  }\\n' +
+      '  // Let all other requests pass through normally\\n' +
       '});';
     
     return new Response(swCode, { 
@@ -1089,12 +1103,18 @@ async function handleResourceRequest(request) {
     const url = new URL(request.url);
     const encodedUrl = url.pathname.replace('/' + CDN_PATH + '/', '');
     
-    if (!encodedUrl.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
+    if (!encodedUrl || !encodedUrl.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
       console.warn('Invalid base64 URL:', encodedUrl);
       return new Response('Invalid resource URL', { status: 400 });
     }
     
-    const resourceUrl = atob(encodedUrl);
+    let resourceUrl;
+    try {
+      resourceUrl = atob(encodedUrl);
+    } catch (decodeError) {
+      console.warn('Failed to decode base64 URL:', encodedUrl);
+      return new Response('Malformed resource URL', { status: 400 });
+    }
     
     let targetUrl;
     try {
@@ -1120,7 +1140,35 @@ async function handleResourceRequest(request) {
       headers: forwardHeaders
     });
 
-    const response = await fetch(resourceRequest);
+    let response;
+    try {
+      response = await fetch(resourceRequest);
+    } catch (fetchError) {
+      console.warn('Resource fetch network error:', resourceUrl, fetchError.message);
+      
+      // Return appropriate error response based on expected resource type
+      const pathname = new URL(resourceUrl).pathname.toLowerCase();
+      let errorContent = '';
+      let errorContentType = 'text/plain';
+      
+      if (pathname.endsWith('.css')) {
+        errorContent = '/* Network error: Resource unavailable */';
+        errorContentType = 'text/css; charset=utf-8';
+      } else if (pathname.endsWith('.js') || pathname.endsWith('.mjs')) {
+        errorContent = '// Network error: Resource unavailable';
+        errorContentType = 'application/javascript; charset=utf-8';
+      } else if (pathname.endsWith('.json')) {
+        errorContent = '{"error": "Network error", "message": "Resource unavailable"}';
+        errorContentType = 'application/json; charset=utf-8';
+      } else {
+        errorContent = 'Network error: Resource unavailable';
+      }
+      
+      return new Response(errorContent, { 
+        status: 502,
+        headers: { 'Content-Type': errorContentType }
+      });
+    }
 
     if (!response.ok) {
       console.warn('Resource fetch failed:', resourceUrl, response.status);
