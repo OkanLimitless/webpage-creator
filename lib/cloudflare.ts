@@ -854,30 +854,31 @@ async function handleMainRequest(request, env) {
 // Proxies all other resources (CSS, JS, images, fonts).
 async function handleResourceRequest(request) {
   try {
-    // Decode base64 encoded URL
     const encodedUrl = new URL(request.url).pathname.replace(\`/\${CDN_PATH}/\`, '');
     const resourceUrl = atob(encodedUrl);
-    
+
     const resourceRequest = new Request(resourceUrl, request);
     const response = await fetch(resourceRequest);
-    
-    // Check if resource request was successful
+
+    // If upstream fails
     if (!response.ok) {
       return new Response(\`Resource not found (\${response.status})\`, { status: response.status });
     }
-    
-    let newResponse = new Response(response.body, response);
-    
-    // Set CORS headers
+
+    // Clone response to make headers mutable
+    const newResponse = new Response(response.body, response);
+
+    // Set permissive CORS headers
     newResponse.headers.set('Access-Control-Allow-Origin', '*');
-    
-    // Preserve original MIME type
+
+    // Preserve original Content-Type
     const contentType = response.headers.get('Content-Type');
     if (contentType) {
       newResponse.headers.set('Content-Type', contentType);
     }
-    
+
     return newResponse;
+
   } catch (error) {
     return new Response('Resource fetch failed', { status: 502 });
   }
