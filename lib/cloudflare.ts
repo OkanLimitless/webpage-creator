@@ -1071,7 +1071,6 @@ async function isVisitorABot(request) {
       const isBot = botScore > 0.8; // Made less aggressive - was 0.6
   
   // ✅ CRITICAL: Store classification result for session consistency
-  const clientKey = clientIP + ':' + userAgent;
   if (requestTracker.has(clientKey)) {
     const tracker = requestTracker.get(clientKey);
     tracker.wasClassifiedAsBot = isBot;
