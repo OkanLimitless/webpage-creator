@@ -1105,6 +1105,10 @@ async function handleMainRequest(request) {
       });
     }
     
+    console.log('🔧 Setting up HTMLRewriter for:', requestUrl.pathname);
+    console.log('🎯 Base target URL:', baseTargetUrl);
+    console.log('🏠 Proxy domain:', requestUrl.hostname);
+    
     const rewriter = new HTMLRewriter()
       .on('head', new HeadRewriter())
       .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
@@ -1126,7 +1130,8 @@ async function handleMainRequest(request) {
     finalResponse.headers.set('X-Content-Type-Options', 'nosniff');
     finalResponse.headers.set('Referrer-Policy', 'no-referrer');
     finalResponse.headers.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-    finalResponse.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'");
+    // Temporarily disable CSP to debug asset loading issues
+    // finalResponse.headers.set('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'");
     
     // Remove identifying headers that could leak source
     finalResponse.headers.delete('Server');
@@ -1374,9 +1379,12 @@ class AttributeRewriter {
               if (isAsset) {
                 // ALWAYS proxy assets through CDN path to avoid CORS/CSP issues
                 const encoded = btoa(absoluteUrl);
-                element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+                const newUrl = '/' + this.cdnPath + '/' + encoded;
+                console.log('🔄 Rewriting asset:', originalUrl, '→', newUrl);
+                element.setAttribute(attr, newUrl);
               } else {
                 // For same-domain HTML pages/articles, use relative paths (let main handler route them)
+                console.log('📄 Keeping relative path for page:', originalUrl, '→', urlObj.pathname + urlObj.search);
                 element.setAttribute(attr, urlObj.pathname + urlObj.search);
               }
             } else {
