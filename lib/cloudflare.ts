@@ -1318,15 +1318,11 @@ class AttributeRewriter {
             if (urlObj.hostname === targetUrlObj.hostname) {
               // Only proxy actual assets, not HTML pages
               const pathname = urlObj.pathname.toLowerCase();
-              const isAsset = pathname.match(/\\.(css|js|mjs|json|png|jpg|jpeg|gif|svg|woff|woff2|ttf|ico|webp)$/);
+              const isAsset = pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') || pathname.endsWith('.json') || pathname.endsWith('.png') || pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') || pathname.endsWith('.gif') || pathname.endsWith('.svg') || pathname.endsWith('.woff') || pathname.endsWith('.woff2') || pathname.endsWith('.ttf') || pathname.endsWith('.ico') || pathname.endsWith('.webp');
               
-              if (isAsset) {
-                const encoded = btoa(absoluteUrl);
-                element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
-              } else {
-                // For HTML pages, use relative path
-                element.setAttribute(attr, urlObj.pathname + urlObj.search);
-              }
+              // Temporarily disable asset proxying to debug
+              // For same-domain resources, use relative paths
+              element.setAttribute(attr, urlObj.pathname + urlObj.search);
             } else {
               // For external domains, always proxy
               const encoded = btoa(absoluteUrl);
