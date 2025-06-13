@@ -1065,7 +1065,7 @@ async function handleMainRequest(request) {
       .on('head', new HeadRewriter())
       .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(targetUrl).origin, CDN_PATH))
       .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
-      .on('a[href]', new LinkRewriter(requestUrl.hostname, CDN_PATH));
+      .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(targetUrl).origin, CDN_PATH));
     
     const transformedResponse = rewriter.transform(response);
     
@@ -1266,11 +1266,31 @@ class AttributeRewriter {
       const originalUrl = element.getAttribute(attr);
       if (originalUrl) {
         try {
-          const absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
-          const encoded = btoa(absoluteUrl);
-          element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+          let absoluteUrl;
+          
+          // Handle relative URLs and absolute URLs
+          if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://')) {
+            // Already absolute URL
+            absoluteUrl = originalUrl;
+          } else if (originalUrl.startsWith('//')) {
+            // Protocol-relative URL
+            absoluteUrl = 'https:' + originalUrl;
+          } else if (originalUrl.startsWith('/')) {
+            // Root-relative URL
+            const targetOriginObj = new URL(this.targetOrigin);
+            absoluteUrl = targetOriginObj.origin + originalUrl;
+          } else {
+            // Relative URL
+            absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
+          }
+          
+          // Only rewrite if it's not already pointing to our proxy domain
+          if (!absoluteUrl.includes(this.proxyDomain)) {
+            const encoded = btoa(absoluteUrl);
+            element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
+          }
         } catch (e) {
-          // Ignore invalid URLs
+          console.warn('Failed to rewrite URL:', originalUrl, e.message);
         }
       }
     }
@@ -1303,18 +1323,53 @@ class FormRewriter {
 }
 
 class LinkRewriter {
-  constructor(proxyDomain, cdnPath) {
+  constructor(proxyDomain, targetOrigin, cdnPath) {
     this.proxyDomain = proxyDomain;
+    this.targetOrigin = targetOrigin;
     this.cdnPath = cdnPath;
   }
   
   element(link) {
     const href = link.getAttribute('href');
-    if (href && href.startsWith('http') && !href.includes(this.proxyDomain)) {
-      const encoded = btoa(href);
-      link.setAttribute('href', '/' + this.cdnPath + '/' + encoded);
-      link.setAttribute('target', '_blank');
-      link.setAttribute('rel', 'noopener noreferrer');
+    if (href) {
+      try {
+        let absoluteUrl;
+        
+        // Handle different types of URLs
+        if (href.startsWith('http://') || href.startsWith('https://')) {
+          // Already absolute URL
+          absoluteUrl = href;
+        } else if (href.startsWith('//')) {
+          // Protocol-relative URL
+          absoluteUrl = 'https:' + href;
+        } else if (href.startsWith('/')) {
+          // Root-relative URL - these are the problematic ones!
+          const targetOriginObj = new URL(this.targetOrigin);
+          absoluteUrl = targetOriginObj.origin + href;
+        } else if (href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+          // Skip anchors and special protocols
+          return;
+        } else {
+          // Relative URL
+          absoluteUrl = new URL(href, this.targetOrigin).href;
+        }
+        
+        // Only rewrite if it's not already pointing to our proxy domain
+        if (!absoluteUrl.includes(this.proxyDomain)) {
+          const encoded = btoa(absoluteUrl);
+          link.setAttribute('href', '/' + this.cdnPath + '/' + encoded);
+          
+          // Only set target="_blank" for external domains
+          const linkDomain = new URL(absoluteUrl).hostname;
+          const targetDomain = new URL(this.targetOrigin).hostname;
+          if (linkDomain !== targetDomain) {
+            link.setAttribute('target', '_blank');
+            link.setAttribute('rel', 'noopener noreferrer');
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to rewrite link:', href, e.message);
+      }
     }
   }
 }
