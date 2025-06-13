@@ -5,6 +5,8 @@ import { promises as dns } from 'dns';
 
 // Set timeout for the function
 export const maxDuration = 60;
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
 
 interface DnsCheckResult {
   domain: string;
