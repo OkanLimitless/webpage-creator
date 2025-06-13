@@ -784,32 +784,46 @@ async function handleRequest(request, env) {
 // --- CORE FUNCTIONS ---
 
 /**
- * The brain of the operation. Calls the proxycheck.io API and decides if a visitor is a threat.
- * Uses multi-layered filtering for resilient bot detection and Google Ads protection.
+ * Two-step optimized bot detection: First check geo, then risk.
+ * Step 1: Use ip-api.com to check country (fast & free)
+ * Step 2: Only if country is allowed, check proxycheck.io for risk/bot detection
  * @param {Request} request The incoming request object from the Cloudflare Worker.
  * @param {Object} env Environment variables containing API keys.
  * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
  */
-// --- SIMPLIFIED Tag-Based Bot Detection ---
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const apiKey = '235570-278538-1m4693-m16027';
 
   try {
-    // Request with tag=1 to get custom tags from proxycheck.io rules
-    const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&asn=1&risk=1&tag=1\`;
-    const response = await fetch(apiUrl);
+    // STEP 1: Fast geo check with ip-api.com (free, no API key needed)
+    const geoRes = await fetch(\`https://ip-api.com/json/\${clientIP}?fields=countryCode\`);
+    if (geoRes.ok) {
+      const geo = await geoRes.json();
+      if (!TARGET_COUNTRIES.includes(geo.countryCode)) {
+        return true; // Block immediately - wrong country
+      }
+    }
+
+    // STEP 2: Only if geo passes, check proxycheck.io for risk/bot detection
+    const pcUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&risk=1\`;
+    const response = await fetch(pcUrl);
     const data = await response.json();
     const ipData = data[clientIP];
 
-    if (!ipData || typeof ipData.tag !== 'string') {
-      return false; // No tag = allowed
+    if (!ipData) {
+      return false; // No data = allowed
     }
 
-    // Single decision point: check if proxycheck.io tagged this IP as 'block'
-    return ipData.tag === 'block';
+    // Check risk score - block if >= 60
+    const risk = parseInt(ipData.risk || '0', 10);
+    if (risk >= 60) {
+      return true; // Block high risk IPs
+    }
+
+    return false; // Passed all checks - show money page
   } catch (error) {
-    console.error(\`proxycheck.io API error: \${error.message}\`);
+    console.error(\`Bot detection API error: \${error.message}\`);
     return true; // FAIL SAFE: block if API fails
   }
 }
