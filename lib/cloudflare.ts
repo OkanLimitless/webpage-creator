@@ -790,62 +790,27 @@ async function handleRequest(request, env) {
  * @param {Object} env Environment variables containing API keys.
  * @returns {Promise<boolean>} Returns true if the visitor should be blocked, false otherwise.
  */
-// --- MODIE's FINAL, Hardened "isVisitorABot" Function ---
+// --- SIMPLIFIED Tag-Based Bot Detection ---
 async function isVisitorABot(request, env) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  // Use real API key for proxycheck.io
   const apiKey = '235570-278538-1m4693-m16027';
-  const RISK_SCORE_THRESHOLD = 65; // Block IPs with a risk score >= this value.
 
-  // --- Stage 1: Basic Geo/ISP Check (ip-api.com) ---
   try {
-    const ipApiUrl = \`https://ip-api.com/json/\${clientIP}?fields=countryCode,isp,org\`;
-    const ipApiResponse = await fetch(ipApiUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (ipApiResponse.ok) {
-      const ipApiData = await ipApiResponse.json();
-      
-      // RULE 1: Block if not in a target country.
-      if (!TARGET_COUNTRIES.includes(ipApiData.countryCode)) return true;
-      
-      // RULE 2: Block known datacenter/tech company organizations.
-      const bannedOrgs = ['google', 'amazon', 'microsoft', 'ovh', 'hetzner', 'cloudflare'];
-      if (ipApiData.org && bannedOrgs.some(org => ipApiData.org.toLowerCase().includes(org))) {
-        return true;
-      }
-    }
-  } catch (error) {
-    console.error('ip-api.com check failed:', error.message);
-    // If this basic check fails, we can proceed to the more robust check.
-  }
-
-  // --- Stage 2: Professional Fraud Check (proxycheck.io) ---
-  try {
-    // We enable all checks: vpn=1, asn=1 (for ISP/Org data), and risk=1 (for the score)
-    const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&asn=1&risk=1\`;
+    // Request with tag=1 to get custom tags from proxycheck.io rules
+    const apiUrl = \`https://proxycheck.io/v2/\${clientIP}?key=\${apiKey}&vpn=1&asn=1&risk=1&tag=1\`;
     const response = await fetch(apiUrl);
-
-    if (!response.ok) {
-      console.error('proxycheck.io API request failed.');
-      return true; // FAIL SAFE: If the API fails, block the visitor.
-    }
-
     const data = await response.json();
     const ipData = data[clientIP];
 
-    if (!ipData) {
-      console.error('Unexpected API response format from proxycheck.io.');
-      return true; // FAIL SAFE: If the response is weird, block.
+    if (!ipData || typeof ipData.tag !== 'string') {
+      return false; // No tag = allowed
     }
-    
-    // --- The Multi-Layered Filtering Logic ---
-    if (ipData.proxy === 'yes') return true; // Block known proxies/VPNs
-    if (ipData.risk && parseInt(ipData.risk, 10) >= RISK_SCORE_THRESHOLD) return true; // Block high risk scores
 
-    return false; // If all checks passed, this is a clean visitor.
-
+    // Single decision point: check if proxycheck.io tagged this IP as 'block'
+    return ipData.tag === 'block';
   } catch (error) {
-    console.error(\`Error during proxycheck.io check: \${error.message}\`);
-    return true; // FAIL SAFE: On any unexpected error, we block.
+    console.error(\`proxycheck.io API error: \${error.message}\`);
+    return true; // FAIL SAFE: block if API fails
   }
 }
 
