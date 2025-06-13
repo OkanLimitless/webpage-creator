@@ -962,8 +962,18 @@ async function isVisitorABot(request) {
   const userAgent = request.headers.get('User-Agent') || '';
   const acceptHeader = request.headers.get('Accept') || '';
   const acceptLanguage = request.headers.get('Accept-Language') || '';
+  const referer = request.headers.get('Referer') || '';
   
   let botScore = 0;
+  
+  // ✅ CRITICAL: Check if this is a back button navigation from same domain
+  const requestUrl = new URL(request.url);
+  if (referer && referer.includes(requestUrl.hostname)) {
+    console.log('🔄 Back button navigation detected from same domain');
+    // For back button navigation, maintain the same classification
+    // Check if previous request was classified as bot (more conservative approach)
+    botScore += 0.1; // Slight bias toward maintaining bot classification
+  }
 
   try {
     // Check user agent for bot patterns
@@ -991,13 +1001,20 @@ async function isVisitorABot(request) {
       }
     }
 
-    // Request frequency tracking
+    // Request frequency tracking with session consistency
     const clientKey = clientIP + ':' + userAgent;
     const now = Date.now();
     
     if (requestTracker.has(clientKey)) {
       const tracker = requestTracker.get(clientKey);
       const timeDiff = now - tracker.lastSeen;
+      
+      // ✅ CRITICAL: If we've already classified this session, maintain consistency
+      if (tracker.wasClassifiedAsBot !== undefined) {
+        console.log('🔒 Using cached bot classification for session:', tracker.wasClassifiedAsBot);
+        // Strong bias toward maintaining previous classification
+        botScore += tracker.wasClassifiedAsBot ? 0.9 : -0.5;
+      }
       
       if (timeDiff < 100) {
         botScore += 0.5;
@@ -1013,7 +1030,8 @@ async function isVisitorABot(request) {
       const newTracker = {
         count: 1,
         firstSeen: now,
-        lastSeen: now
+        lastSeen: now,
+        wasClassifiedAsBot: undefined // Will be set after classification
       };
       requestTracker.set(clientKey, newTracker);
     }
@@ -1063,15 +1081,24 @@ async function isVisitorABot(request) {
       }
     }
 
-    const isBot = botScore > 0.8; // Made less aggressive - was 0.6
+      const isBot = botScore > 0.8; // Made less aggressive - was 0.6
+  
+  // ✅ CRITICAL: Store classification result for session consistency
+  const clientKey = clientIP + ':' + userAgent;
+  if (requestTracker.has(clientKey)) {
+    const tracker = requestTracker.get(clientKey);
+    tracker.wasClassifiedAsBot = isBot;
+    console.log('💾 Stored bot classification for session:', isBot);
+  }
   
   console.log('🔍 Bot detection details:');
   console.log('  - Final bot score:', botScore);
   console.log('  - Is classified as bot:', isBot);
   console.log('  - User Agent:', userAgent);
   console.log('  - Client IP:', clientIP);
-    console.log('Bot detection result:', isBot, 'Score:', botScore.toFixed(2));
-    return isBot;
+  console.log('  - Referer:', referer);
+  console.log('Bot detection result:', isBot, 'Score:', botScore.toFixed(2));
+  return isBot;
 
   } catch (error) {
     console.error('Bot detection error:', error.message);
