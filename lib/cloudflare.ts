@@ -799,6 +799,10 @@ async function handleRequest(request) {
       '  \\'linkedin.com\\', \\'ads.linkedin.com\\', \\'snap.licdn.com\\',\\n' +
       '  \\'analytics.tiktok.com\\', \\'ads.tiktok.com\\',\\n' +
       '  \\'analytics.optidigital.com\\', \\'outbrain.com\\', \\'taboola.com\\',\\n' +
+      '  // Ad Networks & Sync Services (from console errors)\\n' +
+      '  \\'acdn.afnx.com\\', \\'afnx.com\\', \\'stackadapt.com\\', \\'srv.stackadapt.com\\',\\n' +
+      '  \\'sync.srv.stackadapt.com\\', \\'dmp\\', \\'usersync\\', \\'async_usersync\\',\\n' +
+      '  \\'adsystem.com\\', \\'adsystem.net\\', \\'adnxs.com\\', \\'adsystem\\',\\n' +
       '  // Anti-bot services\\n' +
       '  \\'recaptcha.net\\', \\'gstatic.com\\',\\n' +
       '  \\'akamai.com\\', \\'fastly.com\\', \\'imperva.com\\',\\n' +
@@ -841,9 +845,30 @@ async function handleRequest(request) {
       '  }\\n' +
       '  \\n' +
       '  // Block known trackers and analytics\\n' +
-      '  if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker))) {\\n' +
-      '    console.log(\\'🚫 Blocked tracker:\\', url.hostname);\\n' +
-      '    event.respondWith(new Response(null, { status: 204 }));\\n' +
+      '  if (TRACKER_BLACKLIST.some(tracker => url.hostname.includes(tracker) || url.pathname.includes(tracker))) {\\n' +
+      '    console.log(\\'🚫 Blocked tracker:\\', url.hostname, url.pathname);\\n' +
+      '    \\n' +
+      '    // Return appropriate response to minimize console errors\\n' +
+      '    if (url.pathname.endsWith(\\'.js\\')) {\\n' +
+      '      event.respondWith(new Response(\\'// Blocked tracking script\\', { \\n' +
+      '        status: 200, \\n' +
+      '        headers: { \\'Content-Type\\': \\'application/javascript\\' }\\n' +
+      '      }));\\n' +
+      '    } else if (url.pathname.endsWith(\\'.css\\')) {\\n' +
+      '      event.respondWith(new Response(\\'/* Blocked tracking stylesheet */\\', { \\n' +
+      '        status: 200, \\n' +
+      '        headers: { \\'Content-Type\\': \\'text/css\\' }\\n' +
+      '      }));\\n' +
+      '    } else if (url.pathname.includes(\\'pixel\\') || url.pathname.includes(\\'sync\\') || url.pathname.includes(\\'usersync\\')) {\\n' +
+      '      // Return 1x1 transparent GIF for tracking pixels\\n' +
+      '      const pixel = new Uint8Array([71,73,70,56,57,97,1,0,1,0,128,0,0,255,255,255,0,0,0,33,249,4,1,0,0,0,0,44,0,0,0,0,1,0,1,0,0,2,2,4,1,0,59]);\\n' +
+      '      event.respondWith(new Response(pixel, { \\n' +
+      '        status: 200, \\n' +
+      '        headers: { \\'Content-Type\\': \\'image/gif\\' }\\n' +
+      '      }));\\n' +
+      '    } else {\\n' +
+      '      event.respondWith(new Response(null, { status: 204 }));\\n' +
+      '    }\\n' +
       '    return;\\n' +
       '  }\\n' +
       '  \\n' +
