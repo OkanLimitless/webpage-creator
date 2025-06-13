@@ -796,6 +796,9 @@ async function handleRequest(request, env) {
   // ROUTE 1: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
     const swCode = \`
+// Service Worker Configuration - CDN_PATH must be defined here
+const CDN_PATH = '${selectedCdnPath}';
+
 const TRACKER_BLACKLIST = [
   // Analytics & Tracking
   'google-analytics.com', 'googletagmanager.com', 'googleadservices.com',
@@ -806,7 +809,7 @@ const TRACKER_BLACKLIST = [
   'analytics.tiktok.com', 'ads.tiktok.com',
   'analytics.optidigital.com', 'outbrain.com', 'taboola.com',
   // Anti-bot services
-  'recaptcha.net', 'gstatic.com', 'cloudflare.com',
+  'recaptcha.net', 'gstatic.com',
   'akamai.com', 'fastly.com', 'imperva.com',
   'distilnetworks.com', 'perimeterx.com',
   // Bot detection
@@ -861,7 +864,7 @@ self.addEventListener('fetch', event => {
   // Proxy remaining external requests through our CDN path
   try {
     const encoded = btoa(url.href);
-    const proxyUrl = \\\`/\\\${CDN_PATH}/\\\${encoded}\\\`;
+    const proxyUrl = \`/\${CDN_PATH}/\${encoded}\`;
     const proxyRequest = new Request(proxyUrl, {
       method: request.method,
       headers: request.headers,
@@ -1088,9 +1091,9 @@ async function handleMainRequest(request, env) {
     // Enhanced HTML rewriting
     const rewriter = new HTMLRewriter()
       .on('head', new HeadRewriter())
-      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(targetUrl).origin))
-      .on('form', new FormRewriter(requestUrl.hostname))
-      .on('a[href]', new LinkRewriter(requestUrl.hostname));
+      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(targetUrl).origin, CDN_PATH))
+      .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
+      .on('a[href]', new LinkRewriter(requestUrl.hostname, CDN_PATH));
     
     const transformedResponse = rewriter.transform(response);
     
@@ -1223,9 +1226,10 @@ async function handleResourceRequest(request) {
 
 // Rewrites URLs in HTML attributes.
 class AttributeRewriter {
-  constructor(proxyDomain, targetOrigin) {
+  constructor(proxyDomain, targetOrigin, cdnPath) {
     this.proxyDomain = proxyDomain;
     this.targetOrigin = targetOrigin;
+    this.cdnPath = cdnPath;
   }
   
   element(element) {
@@ -1239,7 +1243,7 @@ class AttributeRewriter {
           
           // Rewrite the URL to go through our obfuscated CDN route
           const encoded = btoa(absoluteUrl);
-          element.setAttribute(attr, \`/\${CDN_PATH}/\${encoded}\`);
+          element.setAttribute(attr, \`/\${this.cdnPath}/\${encoded}\`);
         } catch (e) { /* Ignore invalid URLs */ }
       }
     }
@@ -1276,23 +1280,25 @@ delete navigator.webdriver;
 
 // Form rewriter to handle form submissions through proxy
 class FormRewriter {
-  constructor(proxyDomain) {
+  constructor(proxyDomain, cdnPath) {
     this.proxyDomain = proxyDomain;
+    this.cdnPath = cdnPath;
   }
   
   element(form) {
     const action = form.getAttribute('action');
     if (action && !action.startsWith('/') && !action.includes(this.proxyDomain)) {
       const encoded = btoa(action);
-      form.setAttribute('action', \`/\${CDN_PATH}/\${encoded}\`);
+      form.setAttribute('action', \`/\${this.cdnPath}/\${encoded}\`);
     }
   }
 }
 
 // Link rewriter for better navigation handling
 class LinkRewriter {
-  constructor(proxyDomain) {
+  constructor(proxyDomain, cdnPath) {
     this.proxyDomain = proxyDomain;
+    this.cdnPath = cdnPath;
   }
   
   element(link) {
@@ -1300,7 +1306,7 @@ class LinkRewriter {
     if (href && href.startsWith('http') && !href.includes(this.proxyDomain)) {
       // Only rewrite external links that aren't already proxied
       const encoded = btoa(href);
-      link.setAttribute('href', \`/\${CDN_PATH}/\${encoded}\`);
+      link.setAttribute('href', \`/\${this.cdnPath}/\${encoded}\`);
       
       // Add target="_blank" for external links to maintain session
       link.setAttribute('target', '_blank');
