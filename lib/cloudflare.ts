@@ -1063,7 +1063,13 @@ async function isVisitorABot(request) {
       }
     }
 
-    const isBot = botScore > 0.6;
+    const isBot = botScore > 0.8; // Made less aggressive - was 0.6
+  
+  console.log('🔍 Bot detection details:');
+  console.log('  - Final bot score:', botScore);
+  console.log('  - Is classified as bot:', isBot);
+  console.log('  - User Agent:', userAgent);
+  console.log('  - Client IP:', clientIP);
     console.log('Bot detection result:', isBot, 'Score:', botScore.toFixed(2));
     return isBot;
 
@@ -1103,6 +1109,9 @@ async function handleMainRequest(request) {
     console.log('📍 Original URL:', requestUrl.href);
     console.log('🔗 Target URL:', targetUrl);
     console.log('🛡️ Path Parity:', requestUrl.pathname, '→', new URL(targetUrl).pathname);
+    console.log('🤖 Bot detection result:', isBot);
+    console.log('👤 User Agent:', request.headers.get('User-Agent'));
+    console.log('🌍 Accept Header:', request.headers.get('Accept'));
     
     const upstreamHeaders = new Headers(request.headers);
     upstreamHeaders.set('X-Forwarded-For', clientIP);
@@ -1117,11 +1126,21 @@ async function handleMainRequest(request) {
       body: request.body
     });
     
+    console.log('🌐 Fetching upstream URL:', targetUrl);
     const response = await fetch(upstreamRequest);
     
+    console.log('📡 Upstream response status:', response.status);
+    console.log('📋 Upstream response headers:', [...response.headers.entries()]);
+    
     if (!response.ok) {
-      console.error('Upstream error:', response.status, 'for', targetUrl);
-      return new Response('<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p></body></html>', {
+      console.error('❌ Upstream error:', response.status, response.statusText, 'for', targetUrl);
+      console.error('🔍 Response headers:', [...response.headers.entries()]);
+      
+      // Try to get response body for debugging
+      const errorBody = await response.text();
+      console.error('💥 Error response body:', errorBody.substring(0, 500));
+      
+      return new Response('<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p><p>Debug: ' + response.status + ' ' + response.statusText + '</p></body></html>', {
         status: 404,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
@@ -1130,25 +1149,35 @@ async function handleMainRequest(request) {
       });
     }
     
+    // Check if response has content
+    const contentLength = response.headers.get('content-length');
+    const contentType = response.headers.get('content-type');
+    console.log('📏 Content length:', contentLength);
+    console.log('📄 Content type:', contentType);
+    
     console.log('🔧 Setting up HTMLRewriter for:', requestUrl.pathname);
     console.log('🎯 Base target URL:', baseTargetUrl);
     console.log('🏠 Proxy domain:', requestUrl.hostname);
     
-    const rewriter = new HTMLRewriter()
-      .on('head', new HeadRewriter())
-      .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
-      .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
-      .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
-      .on('link[rel="canonical"], meta[property^="og:"], meta[name="twitter:"], script[type="application/ld+json"]', new MetadataStripper())
-      .on('base', {
-        element(base) {
-          console.log('🧱 Stripping <base> tag:', base.getAttribute('href'));
-          base.remove();
-        }
-      })
-      .on('style', new StyleRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH));
+    // TEMPORARY: Disable HTMLRewriter to debug blank page issue
+    console.log('⚠️ DEBUGGING: HTMLRewriter temporarily disabled');
+    const transformedResponse = response;
     
-    const transformedResponse = rewriter.transform(response);
+    // const rewriter = new HTMLRewriter()
+    //   .on('head', new HeadRewriter())
+    //   .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
+    //   .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
+    //   .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
+    //   .on('link[rel="canonical"], meta[property^="og:"], meta[name="twitter:"], script[type="application/ld+json"]', new MetadataStripper())
+    //   .on('base', {
+    //     element(base) {
+    //       console.log('🧱 Stripping <base> tag:', base.getAttribute('href'));
+    //       base.remove();
+    //     }
+    //   })
+    //   .on('style', new StyleRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH));
+    // 
+    // const transformedResponse = rewriter.transform(response);
     
     const finalResponse = new Response(transformedResponse.body, {
       status: transformedResponse.status,
