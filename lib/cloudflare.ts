@@ -1114,7 +1114,14 @@ async function handleMainRequest(request) {
       .on('*[href], *[src], *[action], *[data-src], *[srcset]', new AttributeRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
       .on('form', new FormRewriter(requestUrl.hostname, CDN_PATH))
       .on('a[href]', new LinkRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH))
-      .on('link[rel="canonical"], meta[property^="og:"], meta[name="twitter:"], script[type="application/ld+json"]', new MetadataStripper());
+      .on('link[rel="canonical"], meta[property^="og:"], meta[name="twitter:"], script[type="application/ld+json"]', new MetadataStripper())
+      .on('base', {
+        element(base) {
+          console.log('🧱 Stripping <base> tag:', base.getAttribute('href'));
+          base.remove();
+        }
+      })
+      .on('style', new StyleRewriter(requestUrl.hostname, new URL(baseTargetUrl).origin, CDN_PATH));
     
     const transformedResponse = rewriter.transform(response);
     
@@ -1519,6 +1526,46 @@ class MetadataStripper {
       // Remove structured data that could leak domain info
       element.remove();
     }
+  }
+}
+
+class StyleRewriter {
+  constructor(proxyDomain, targetOrigin, cdnPath) {
+    this.proxyDomain = proxyDomain;
+    this.targetOrigin = targetOrigin;
+    this.cdnPath = cdnPath;
+  }
+
+  text(textChunk) {
+    let content = textChunk.text();
+
+    // Rewrite url(/images/abc.png) → proxied via /r8/
+    content = content.replace(/url\\(["']?(\/[^"'\\)]+)["']?\\)/g, (match, path) => {
+      try {
+        const fullUrl = new URL(path, this.targetOrigin).href;
+        const encoded = btoa(fullUrl);
+        console.log('🎨 Rewriting CSS asset:', path, '→', '/' + this.cdnPath + '/' + encoded);
+        return 'url(/' + this.cdnPath + '/' + encoded + ')';
+      } catch (e) {
+        console.warn('Failed to rewrite CSS URL:', path, e.message);
+        return match; // Return original if rewriting fails
+      }
+    });
+
+    // Also handle @import statements
+    content = content.replace(/@import\\s+["']?(\/[^"']+)["']?/g, (match, path) => {
+      try {
+        const fullUrl = new URL(path, this.targetOrigin).href;
+        const encoded = btoa(fullUrl);
+        console.log('📥 Rewriting CSS import:', path, '→', '/' + this.cdnPath + '/' + encoded);
+        return '@import "/' + this.cdnPath + '/' + encoded + '"';
+      } catch (e) {
+        console.warn('Failed to rewrite CSS import:', path, e.message);
+        return match; // Return original if rewriting fails
+      }
+    });
+
+    textChunk.replace(content);
   }
 }
 `;
