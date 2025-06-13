@@ -793,7 +793,7 @@ async function handleRequest(request) {
       'const TRACKER_BLACKLIST = [\\n' +
       '  // Analytics & Tracking\\n' +
       '  \\'google-analytics.com\\', \\'googletagmanager.com\\', \\'googleadservices.com\\',\\n' +
-      '  \\'doubleclick.net\\', \\'googlesyndication.com\\', \\'doubleverify.com\\',\\n' +
+      '  \\'doubleclick.net\\', \\'googlesyndication.com\\', \\'pagead2.googlesyndication.com\\', \\'doubleverify.com\\',\\n' +
       '  \\'facebook.com\\', \\'facebook.net\\', \\'fbcdn.net\\', \\'connect.facebook.net\\',\\n' +
       '  \\'analytics.twitter.com\\', \\'ads-twitter.com\\', \\'t.co\\',\\n' +
       '  \\'linkedin.com\\', \\'ads.linkedin.com\\', \\'snap.licdn.com\\',\\n' +
