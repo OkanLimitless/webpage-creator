@@ -853,13 +853,22 @@ async function handleRequest(request) {
       '  try {\\n' +
       '    const encoded = btoa(url.href);\\n' +
       '    const proxyUrl = \\'/\\' + CDN_PATH + \\'/\\' + encoded;\\n' +
-      '    const proxyRequest = new Request(proxyUrl, {\\n' +
+      '    \\n' +
+      '    // Handle streaming body properly\\n' +
+      '    const requestOptions = {\\n' +
       '      method: request.method,\\n' +
       '      headers: request.headers,\\n' +
-      '      body: request.body,\\n' +
       '      mode: \\'cors\\',\\n' +
       '      credentials: \\'omit\\'\\n' +
-      '    });\\n' +
+      '    };\\n' +
+      '    \\n' +
+      '    // Only add body and duplex for requests that need it\\n' +
+      '    if (request.method !== \\'GET\\' && request.method !== \\'HEAD\\' && request.body) {\\n' +
+      '      requestOptions.body = request.body;\\n' +
+      '      requestOptions.duplex = \\'half\\';\\n' +
+      '    }\\n' +
+      '    \\n' +
+      '    const proxyRequest = new Request(proxyUrl, requestOptions);\\n' +
       '    event.respondWith(fetch(proxyRequest));\\n' +
       '  } catch (error) {\\n' +
       '    console.error(\\'SW proxy error:\\', error);\\n' +
@@ -1115,9 +1124,28 @@ async function handleResourceRequest(request) {
 
     if (!response.ok) {
       console.warn('Resource fetch failed:', resourceUrl, response.status);
-      return new Response('Resource unavailable (' + response.status + ')', { 
+      
+      // Return appropriate error response based on expected resource type
+      const pathname = new URL(resourceUrl).pathname.toLowerCase();
+      let errorContent = '';
+      let errorContentType = 'text/plain';
+      
+      if (pathname.endsWith('.css')) {
+        errorContent = '/* Resource unavailable: ' + response.status + ' */';
+        errorContentType = 'text/css; charset=utf-8';
+      } else if (pathname.endsWith('.js') || pathname.endsWith('.mjs')) {
+        errorContent = '// Resource unavailable: ' + response.status;
+        errorContentType = 'application/javascript; charset=utf-8';
+      } else if (pathname.endsWith('.json')) {
+        errorContent = '{"error": "Resource unavailable", "status": ' + response.status + '}';
+        errorContentType = 'application/json; charset=utf-8';
+      } else {
+        errorContent = 'Resource unavailable (' + response.status + ')';
+      }
+      
+      return new Response(errorContent, { 
         status: response.status,
-        headers: { 'Content-Type': 'text/plain' }
+        headers: { 'Content-Type': errorContentType }
       });
     }
 
@@ -1133,7 +1161,30 @@ async function handleResourceRequest(request) {
     newResponse.headers.set('X-Content-Type-Options', 'nosniff');
     newResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
     
-    const contentType = response.headers.get('Content-Type') || '';
+    // Fix MIME type issues by ensuring proper Content-Type headers
+    const originalContentType = response.headers.get('Content-Type') || '';
+    const decodedUrl = new URL(resourceUrl);
+    const pathname = decodedUrl.pathname.toLowerCase();
+    
+    // Override incorrect MIME types based on file extension
+    if (pathname.endsWith('.css') && !originalContentType.includes('text/css')) {
+      newResponse.headers.set('Content-Type', 'text/css; charset=utf-8');
+    } else if ((pathname.endsWith('.js') || pathname.endsWith('.mjs')) && !originalContentType.includes('javascript')) {
+      newResponse.headers.set('Content-Type', 'application/javascript; charset=utf-8');
+    } else if (pathname.endsWith('.json') && !originalContentType.includes('json')) {
+      newResponse.headers.set('Content-Type', 'application/json; charset=utf-8');
+    } else if (pathname.endsWith('.woff2')) {
+      newResponse.headers.set('Content-Type', 'font/woff2');
+    } else if (pathname.endsWith('.woff')) {
+      newResponse.headers.set('Content-Type', 'font/woff');
+    } else if (pathname.endsWith('.ttf')) {
+      newResponse.headers.set('Content-Type', 'font/ttf');
+    } else if (pathname.endsWith('.svg')) {
+      newResponse.headers.set('Content-Type', 'image/svg+xml');
+    }
+    
+    // Set appropriate cache headers
+    const contentType = newResponse.headers.get('Content-Type') || '';
     if (contentType.includes('image/') || contentType.includes('font/')) {
       newResponse.headers.set('Cache-Control', 'public, max-age=2592000');
     } else if (contentType.includes('text/css') || contentType.includes('javascript')) {
