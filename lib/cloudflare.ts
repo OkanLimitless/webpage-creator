@@ -756,17 +756,23 @@ const CDN_PATH = '${selectedCdnPath}';
 const PROXYCHECK_API_KEY = '235570-278538-1m4693-m16027';
 
 const BOT_USER_AGENTS = [
-  'googlebot', 'google', 'bingbot', 'slurp', 'duckduckbot',
+  // Search engine bots
+  'googlebot', 'bingbot', 'slurp', 'duckduckbot',
   'baiduspider', 'yandexbot', 'facebookexternalhit', 'twitterbot',
-  'linkedinbot', 'whatsapp', 'telegrambot', 'curl', 'wget',
-  'python', 'requests', 'urllib', 'java', 'go-http', 'okhttp',
-  'axios', 'fetch', 'postman', 'insomnia', 'headless', 'phantom',
-  'selenium', 'puppeteer', 'playwright', 'chromedriver', 'webdriver',
+  'linkedinbot', 'whatsapp', 'telegrambot',
+  // Command line tools
+  'curl', 'wget', 'python-requests', 'python/urllib', 'python-urllib',
+  'java/', 'go-http-client', 'okhttp', 'axios/',
+  'postman', 'insomnia',
+  // Headless browsers & automation
+  'headlesschrome', 'phantomjs', 'selenium', 'puppeteer', 
+  'playwright', 'chromedriver', 'webdriver',
+  // Security scanners
   'nmap', 'masscan', 'zmap', 'shodan', 'censys', 'nuclei',
-  'sqlmap', 'nikto', 'gobuster', 'dirb', 'burp', 'owasp',
-  'monitor', 'check', 'test', 'scan', 'audit', 'analysis',
+  'sqlmap', 'nikto', 'gobuster', 'dirb', 'burpsuite', 'owasp',
+  // Crawling & scraping
   'crawler', 'spider', 'scraper', 'parser', 'extractor',
-  'semrush', 'ahrefs', 'majestic', 'moz', 'sistrix'
+  'semrushbot', 'ahrefsbot', 'majestic', 'moz.com', 'sistrix'
 ];
 
 const DATACENTER_ASNS = [
