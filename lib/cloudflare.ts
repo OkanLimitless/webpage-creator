@@ -973,12 +973,12 @@ async function isVisitorABot(request) {
     const ipData = data[clientIP];
     
     if (ipData) {
-      // Check country first (geo check)
-      if (ipData.country && !TARGET_COUNTRIES.includes(ipData.country)) {
-        return true; // Show safe page for non-target countries
+      // Check country first (geo check) - must be from target countries
+      if (!ipData.country || !TARGET_COUNTRIES.includes(ipData.country)) {
+        return true; // Show safe page if no country data OR not in target countries
       }
       
-      // Then check risk score
+      // Only check risk score if geo passed
       if (ipData.risk) {
         const riskScore = parseInt(ipData.risk) || 0;
         if (riskScore > 60) {
