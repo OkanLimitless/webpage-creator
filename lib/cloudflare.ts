@@ -980,8 +980,9 @@ async function isVisitorABot(request) {
     
     if (ipData) {
       // Check country first (geo check) - must be from target countries
-      if (!ipData.country || !TARGET_COUNTRIES.includes(ipData.country)) {
-        return true; // Show safe page if no country data OR not in target countries
+      // Use isocode (e.g., "NL") instead of country (e.g., "Netherlands") 
+      if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
+        return true; // Show safe page if no country code OR not in target countries
       }
       
       // Only check risk score if geo passed
