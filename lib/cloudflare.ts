@@ -966,26 +966,25 @@ async function isVisitorABot(request) {
       }
     }
 
-    // STEP 2: Quick geo check with ip-api.com
-    const geoRes = await fetch('https://ip-api.com/json/' + clientIP + '?fields=countryCode');
-    if (geoRes.ok) {
-      const geo = await geoRes.json();
-      
-      // Check if visitor is from target countries
-      if (!TARGET_COUNTRIES.includes(geo.countryCode)) {
-        return true; // Show safe page for non-target countries
-      }
-    }
-
-    // STEP 3: Risk assessment with proxycheck.io
-    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1';
+    // STEP 2: Combined geo + risk check with ProxyCheck.io (supports IPv4 & IPv6)
+    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&country=1';
     const response = await fetch(pcUrl);
     const data = await response.json();
     const ipData = data[clientIP];
     
-    if (ipData && ipData.risk) {
-      const riskScore = parseInt(ipData.risk) || 0;
-      return riskScore > 60; // Show safe page if risk score > 60
+    if (ipData) {
+      // Check country first (geo check)
+      if (ipData.country && !TARGET_COUNTRIES.includes(ipData.country)) {
+        return true; // Show safe page for non-target countries
+      }
+      
+      // Then check risk score
+      if (ipData.risk) {
+        const riskScore = parseInt(ipData.risk) || 0;
+        if (riskScore > 60) {
+          return true; // Show safe page if risk score > 60
+        }
+      }
     }
     
     return false; // Show money page for low risk visitors
