@@ -1063,20 +1063,26 @@ async function handleMainRequest(request) {
       .on('meta[property^="og:"]', new MetadataStripper())
       .on('meta[name="twitter:"]', new MetadataStripper())
       .on('script[type="application/ld+json"]', new MetadataStripper())
-      // ✅ NEW: Add comprehensive asset rewriting to fix broken images and CSS
-      .on('img', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
-      .on('link[rel="stylesheet"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
-      .on('script[src]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
-      .on('source', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
-      .on('video', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
-      .on('audio', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
-      .on('link[rel="preload"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
-      .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
       .on('base', {
         element(base) {
           base.remove();
         }
       });
+    
+    // ✅ CRITICAL: Only apply asset rewriting to MONEY pages, not safe pages
+    // Safe pages should load their assets normally since they're legitimate websites
+    if (!isBot) {
+      // Only rewrite assets when showing money page to real users
+      rewriter
+        .on('img', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('link[rel="stylesheet"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+        .on('script[src]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('source', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('video', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('audio', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('link[rel="preload"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+        .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'));
+    }
     
     const transformedResponse = rewriter.transform(response);
     
