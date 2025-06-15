@@ -973,30 +973,46 @@ async function isVisitorABot(request) {
     }
 
     // STEP 2: Combined geo + risk check with ProxyCheck.io (supports IPv4 & IPv6)
-         const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1';
+    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1';
     const response = await fetch(pcUrl);
     const data = await response.json();
     const ipData = data[clientIP];
+    
+    // ✅ DEBUG: Log ProxyCheck.io response for debugging
+    console.log('🔍 ProxyCheck.io Debug - IP:', clientIP);
+    console.log('🔍 ProxyCheck.io Debug - Full Response:', JSON.stringify(data));
+    console.log('🔍 ProxyCheck.io Debug - IP Data:', JSON.stringify(ipData));
     
     if (ipData) {
       // Check country first (geo check) - must be from target countries
       // Use isocode (e.g., "NL") instead of country (e.g., "Netherlands") 
       if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
+        console.log('🚫 Bot detected: Country check failed. isocode:', ipData.isocode, 'TARGET_COUNTRIES:', TARGET_COUNTRIES);
         return true; // Show safe page if no country code OR not in target countries
       }
       
       // Only check risk score if geo passed
-      if (ipData.risk) {
+      if (ipData.risk !== undefined) {
         const riskScore = parseInt(ipData.risk) || 0;
+        console.log('🔍 Risk Score Check - Raw risk:', ipData.risk, 'Parsed risk:', riskScore);
         if (riskScore > 60) {
+          console.log('🚫 Bot detected: High risk score:', riskScore);
           return true; // Show safe page if risk score > 60
         }
       }
+      
+      // Check proxy status
+      if (ipData.proxy === 'yes' || ipData.proxy === true) {
+        console.log('🚫 Bot detected: Proxy detected:', ipData.proxy);
+        return true; // Show safe page for proxy traffic
+      }
     }
     
+    console.log('✅ Visitor passed all checks - showing money page');
     return false; // Show money page for low risk visitors
 
   } catch (error) {
+    console.log('❌ Error in bot detection:', error.message);
     return true; // Show safe page on any error
   }
 }
