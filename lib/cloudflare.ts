@@ -973,7 +973,7 @@ async function isVisitorABot(request) {
     }
 
     // STEP 2: Combined geo + risk check with ProxyCheck.io (supports IPv4 & IPv6)
-    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&country=1';
+         const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1';
     const response = await fetch(pcUrl);
     const data = await response.json();
     const ipData = data[clientIP];
@@ -1063,6 +1063,15 @@ async function handleMainRequest(request) {
       .on('meta[property^="og:"]', new MetadataStripper())
       .on('meta[name="twitter:"]', new MetadataStripper())
       .on('script[type="application/ld+json"]', new MetadataStripper())
+      // ✅ NEW: Add comprehensive asset rewriting to fix broken images and CSS
+      .on('img', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+      .on('link[rel="stylesheet"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+      .on('script[src]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+      .on('source', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+      .on('video', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+      .on('audio', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+      .on('link[rel="preload"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+      .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
       .on('base', {
         element(base) {
           base.remove();
@@ -1552,6 +1561,45 @@ class StyleRewriter {
     }
 
     textChunk.replace(content);
+  }
+}
+
+class AssetRewriter {
+  constructor(targetOrigin, cdnPath, attribute) {
+    this.targetOrigin = targetOrigin;
+    this.cdnPath = cdnPath;
+    this.attribute = attribute;
+  }
+  
+  element(element) {
+    const url = element.getAttribute(this.attribute);
+    if (url && !url.startsWith('data:') && !url.startsWith('blob:') && !url.startsWith('javascript:')) {
+      let absoluteUrl;
+      
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        // Already absolute URL
+        absoluteUrl = url;
+      } else if (url.startsWith('//')) {
+        // Protocol-relative URL
+        absoluteUrl = 'https:' + url;
+      } else if (url.startsWith('/')) {
+        // Relative to domain root
+        absoluteUrl = this.targetOrigin + url;
+      } else {
+        // Relative to current path (rare case)
+        absoluteUrl = this.targetOrigin + '/' + url;
+      }
+      
+      try {
+        // Encode the URL and proxy it through CDN_PATH
+        const encodedUrl = btoa(absoluteUrl);
+        const proxyUrl = '/' + this.cdnPath + '/' + encodedUrl;
+        element.setAttribute(this.attribute, proxyUrl);
+        console.log('🔗 Rewriting asset:', this.attribute, url, '→', proxyUrl);
+      } catch (e) {
+        console.warn('Failed to rewrite asset URL:', this.attribute, url, e.message);
+      }
+    }
   }
 }
 `;
