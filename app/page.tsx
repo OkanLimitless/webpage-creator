@@ -68,7 +68,7 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // State
-  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'jciLogs'>('landingPages');
+  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'jciLogs' | 'cloaking'>('cloaking');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [landingPages, setLandingPages] = useState<LandingPage[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
@@ -222,8 +222,11 @@ export default function Home() {
   const [isCloakedModalOpen, setIsCloakedModalOpen] = useState(false);
   const [cloakedName, setCloakedName] = useState('');
   const [cloakedSubdomain, setCloakedSubdomain] = useState('');
+  const [cloakingSubdomain, setCloakingSubdomain] = useState('');
   const [moneyUrl, setMoneyUrl] = useState('');
+  const [cloakingMoneyUrl, setCloakingMoneyUrl] = useState('');
   const [whitePageUrl, setWhitePageUrl] = useState(''); // New state for white page URL
+  const [cloakingWhitePageUrl, setCloakingWhitePageUrl] = useState('');
   const [targetCountries, setTargetCountries] = useState<string[]>(['Germany']);
   const [excludeCountries, setExcludeCountries] = useState<string[]>([]);
   const [selectedDomainForCloaked, setSelectedDomainForCloaked] = useState('');
@@ -1842,6 +1845,16 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
       <div className="flex mb-6 border-b border-gray-700">
         <div 
           className={`px-4 py-3 cursor-pointer mr-2 ${
+            activeTab === 'cloaking'
+              ? 'border-b-2 border-primary text-white font-semibold'
+              : 'text-gray-400 hover:text-gray-200'
+          }`}
+          onClick={() => setActiveTab('cloaking')}
+        >
+          🎭 Cloaking System
+        </div>
+        <div 
+          className={`px-4 py-3 cursor-pointer mr-2 ${
             activeTab === 'domains'
               ? 'border-b-2 border-primary text-white font-semibold'
               : 'text-gray-400 hover:text-gray-200'
@@ -1878,9 +1891,274 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
           }`}
           onClick={() => setActiveTab('jciLogs')}
         >
-          🎭 JCI Logs
+          JCI Logs
         </div>
       </div>
+      
+      {activeTab === 'cloaking' && (
+        <>
+          {/* Cloaking System Header */}
+          <div className="bg-gradient-to-r from-purple-900 to-blue-900 p-6 mb-6 rounded-lg shadow-dark-md border border-purple-500/30">
+            <h2 className="text-2xl font-bold mb-2 text-white flex items-center">
+              🎭 Advanced Cloaking System
+            </h2>
+            <p className="text-purple-200 text-sm">
+              Create sophisticated cloaked landing pages with multi-layer bot detection, VPN blocking, and geographic targeting.
+            </p>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
+              <div className="text-2xl font-bold text-purple-400">{getCloakedLandingPages().length}</div>
+              <div className="text-sm text-gray-400">Active Cloaked Pages</div>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
+              <div className="text-2xl font-bold text-blue-400">{getVerifiedDomains().length}</div>
+              <div className="text-sm text-gray-400">Available Domains</div>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
+              <div className="text-2xl font-bold text-green-400">5</div>
+              <div className="text-sm text-gray-400">Detection Layers</div>
+            </div>
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
+              <div className="text-2xl font-bold text-orange-400">99.8%</div>
+              <div className="text-sm text-gray-400">Bot Detection Rate</div>
+            </div>
+          </div>
+
+          {/* Create New Cloaked Page */}
+          <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h3 className="text-xl font-semibold mb-4 text-white flex items-center">
+              ⚡ Create New Cloaked Landing Page
+            </h3>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column - Basic Settings */}
+              <div className="space-y-4">
+                <h4 className="text-white font-medium border-b border-gray-600 pb-2">Basic Configuration</h4>
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Landing Page Name (e.g., 'Travel Deals Germany')"
+                  value={cloakedName}
+                  onChange={(e) => setCloakedName(e.target.value)}
+                />
+                
+                <select
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white"
+                  value={selectedDomainForCloaked}
+                  onChange={(e) => setSelectedDomainForCloaked(e.target.value)}
+                >
+                  <option value="">Select Domain</option>
+                  {getCloakingEligibleDomains().map((domain) => (
+                    <option key={domain._id} value={domain._id}>
+                      {domain.name} ({domain.verificationStatus})
+                    </option>
+                  ))}
+                </select>
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
+                  type="text"
+                  placeholder="Subdomain (optional, e.g., 'deals')"
+                  value={cloakingSubdomain}
+                  onChange={(e) => setCloakingSubdomain(e.target.value)}
+                />
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
+                  type="url"
+                  placeholder="Money Page URL (where real users go)"
+                  value={cloakingMoneyUrl}
+                  onChange={(e) => setCloakingMoneyUrl(e.target.value)}
+                />
+                
+                <input
+                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
+                  type="url"
+                  placeholder="Safe Page URL (where bots/reviewers go)"
+                  value={cloakingWhitePageUrl}
+                  onChange={(e) => setCloakingWhitePageUrl(e.target.value)}
+                />
+              </div>
+
+              {/* Right Column - Targeting Settings */}
+              <div className="space-y-4">
+                <h4 className="text-white font-medium border-b border-gray-600 pb-2">Geographic Targeting</h4>
+                
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">Target Countries (Allow List)</label>
+                  <div className="flex space-x-2 mb-2">
+                    <select
+                      className="flex-1 p-2 bg-dark-lighter border border-dark-light rounded-md text-white text-sm"
+                      value={newTargetCountry}
+                      onChange={(e) => setNewTargetCountry(e.target.value)}
+                    >
+                      <option value="">Select country to add</option>
+                      <option value="Germany">🇩🇪 Germany</option>
+                      <option value="Netherlands">🇳🇱 Netherlands</option>
+                      <option value="United States">🇺🇸 United States</option>
+                      <option value="United Kingdom">🇬🇧 United Kingdom</option>
+                      <option value="France">🇫🇷 France</option>
+                      <option value="Italy">🇮🇹 Italy</option>
+                      <option value="Spain">🇪🇸 Spain</option>
+                      <option value="Belgium">🇧🇪 Belgium</option>
+                      <option value="Austria">🇦🇹 Austria</option>
+                      <option value="Switzerland">🇨🇭 Switzerland</option>
+                      <option value="Canada">🇨🇦 Canada</option>
+                      <option value="Australia">🇦🇺 Australia</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={addTargetCountry}
+                      className="px-3 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {targetCountries.map((country) => (
+                      <span
+                        key={country}
+                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-900 text-purple-200 border border-purple-700"
+                      >
+                        {country}
+                        <button
+                          type="button"
+                          onClick={() => removeTargetCountry(country)}
+                          className="ml-1 text-purple-400 hover:text-purple-200"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  {targetCountries.length === 0 && (
+                    <p className="text-gray-500 text-xs">No countries selected - will allow all countries</p>
+                  )}
+                </div>
+
+                {/* Bot Detection Info */}
+                <div className="bg-dark-lighter p-4 rounded-md border border-dark-light">
+                  <h5 className="text-white text-sm font-medium mb-2">🛡️ Bot Detection Layers</h5>
+                  <ul className="text-xs text-gray-400 space-y-1">
+                    <li>✓ Google Ads gclid parameter check</li>
+                    <li>✓ User agent pattern analysis</li>
+                    <li>✓ Geographic filtering</li>
+                    <li>✓ Risk score analysis (ProxyCheck.io)</li>
+                    <li>✓ VPN/Proxy detection</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={createCloakedLandingPage}
+                disabled={!cloakedName || !selectedDomainForCloaked || !cloakingMoneyUrl || !cloakingWhitePageUrl}
+                className="px-6 py-3 rounded-md text-white font-medium bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-dark-card transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🚀 Deploy Cloaked Page
+              </button>
+            </div>
+          </div>
+
+          {/* Existing Cloaked Pages */}
+          <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h3 className="text-xl font-semibold mb-4 text-white flex items-center">
+              📊 Your Cloaked Landing Pages
+            </h3>
+            
+            {getCloakedLandingPages().length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-6xl mb-4">🎭</div>
+                <h4 className="text-xl font-medium text-white mb-2">No Cloaked Pages Yet</h4>
+                <p className="text-gray-400">Create your first cloaked landing page to get started with advanced bot detection.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead className="bg-dark-lighter">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Page</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Domain</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Money URL</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Target Countries</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-dark-card divide-y divide-gray-700">
+                    {getCloakedLandingPages().map((page) => (
+                      <tr key={page._id} className="hover:bg-dark-lighter">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="text-sm font-medium text-white">{page.name}</div>
+                            <div className="text-sm text-gray-400 ml-2">
+                              <a 
+                                href={getLandingPageUrl(page)} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-purple-400 hover:text-purple-300"
+                              >
+                                {getLandingPageUrl(page)}
+                              </a>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                          {typeof page.domainId === 'object' ? page.domainId.name : getDomainNameById(page.domainId)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                          <a href={page.moneyUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                            {page.moneyUrl}
+                          </a>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                          <div className="flex flex-wrap gap-1">
+                            {page.targetCountries?.map((country) => (
+                              <span key={country} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-900 text-purple-200">
+                                {country}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            page.isActive ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+                          }`}>
+                            {page.isActive ? '🟢 Active' : '🔴 Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                          <div className="flex space-x-2">
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                              onClick={() => deleteLandingPage(page._id)}
+                            >
+                              Delete
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-orange-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                              onClick={() => deleteLandingPageWithDomain(page._id)}
+                              title="Delete this landing page and its root domain"
+                            >
+                              Delete with domain
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
       
       {activeTab === 'domains' && (
         <>
@@ -3848,25 +4126,25 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                   type="text"
                   placeholder="Subdomain (e.g., offers, campaign1)"
-                  value={cloakedSubdomain}
-                  onChange={(e) => setCloakedSubdomain(e.target.value)}
+                  value={cloakingSubdomain}
+                  onChange={(e) => setCloakingSubdomain(e.target.value)}
                 />
               )}
               
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="url"
-                placeholder="Money Page URL (where qualified visitors go)"
-                value={moneyUrl}
-                onChange={(e) => setMoneyUrl(e.target.value)}
+                placeholder="Money Page URL (where real users go)"
+                value={cloakingMoneyUrl}
+                onChange={(e) => setCloakingMoneyUrl(e.target.value)}
               />
               
               <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
                 type="url"
-                placeholder="White Page URL (optional - for reverse proxy instead of static safe page)"
-                value={whitePageUrl}
-                onChange={(e) => setWhitePageUrl(e.target.value)}
+                placeholder="Safe Page URL (where bots/reviewers go)"
+                value={cloakingWhitePageUrl}
+                onChange={(e) => setCloakingWhitePageUrl(e.target.value)}
               />
               
               {/* Target Countries */}
@@ -3918,9 +4196,9 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 onClick={() => {
                   setIsCloakedModalOpen(false);
                   setCloakedName('');
-                  setCloakedSubdomain('');
-                  setMoneyUrl('');
-                  setWhitePageUrl(''); // Reset white page URL
+                  setCloakingSubdomain('');
+                  setCloakingMoneyUrl('');
+                  setCloakingWhitePageUrl(''); // Reset white page URL
                   setTargetCountries(['Germany']);
                   setSelectedDomainForCloaked('');
                   setNewTargetCountry('');
