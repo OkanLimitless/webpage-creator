@@ -319,7 +319,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
           excludeCountries: landingPage.excludeCountries || []
         });
         
-        // For re-deployment, we'll use the Cloudflare API directly
+        // For re-deployment, we'll use the proper FormData approach for KV bindings
         const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
         const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
         
@@ -327,21 +327,31 @@ export async function PUT(request: NextRequest, { params }: Params) {
           throw new Error('Cloudflare API credentials not configured');
         }
         
-        // Update the worker script directly
+        // Create FormData for multipart request (needed for KV bindings)
+        const formData = new FormData();
+        
+        // Add the script content
+        formData.append('script', new Blob([workerScript], { type: 'application/javascript' }));
+        
+        // Add metadata with KV bindings
+        const metadata = {
+          body_part: 'script',
+          bindings: [{
+            name: 'TRAFFIC_LOGS',
+            type: 'kv_namespace',
+            namespace_id: '0b5157572fe24cc092500d70954ab67e'
+          }]
+        };
+        
+        formData.append('metadata', JSON.stringify(metadata));
+
+        // Update the worker script with KV bindings
         const workerResult = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
           method: 'PUT',
           headers: {
-            'Content-Type': 'application/javascript',
             'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
           },
-          body: JSON.stringify({
-            script: workerScript,
-            bindings: [{
-              name: 'TRAFFIC_LOGS',
-              type: 'kv_namespace',
-              namespace_id: '0b5157572fe24cc092500d70954ab67e'
-            }]
-          })
+          body: formData,
         }).then(r => r.json());
         
         if (!workerResult.success) {
