@@ -3908,56 +3908,9 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 </div>
               </div>
               
-              {/* Exclude Countries */}
-              <div>
-                <label className="block text-sm font-medium text-white mb-2">Exclude Countries (Optional)</label>
-                <div className="flex space-x-2 mb-2">
-                  <select
-                    value={newExcludeCountry}
-                    onChange={(e) => setNewExcludeCountry(e.target.value)}
-                    className="flex-1 p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
-                  >
-                    <option value="">Select a country to exclude</option>
-                    {commonCountries.filter(country => !excludeCountries.includes(country)).map((country) => (
-                      <option key={country} value={country}>{country}</option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={addExcludeCountry}
-                    disabled={!newExcludeCountry}
-                    className="px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm rounded-md transition-colors duration-200"
-                  >
-                    Add
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {excludeCountries.map((country, index) => (
-                    <span key={index} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-900/30 text-red-300 border border-red-600">
-                      {country}
-                      <button
-                        type="button"
-                        onClick={() => removeExcludeCountry(country)}
-                        className="ml-1 text-red-400 hover:text-red-200"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
+
               
-              {/* Info Box */}
-              <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-md">
-                <h4 className="font-medium text-blue-300 mb-2">🎭 How Cloaking Works</h4>
-                <ul className="text-blue-200 text-sm space-y-1">
-                  <li>• <strong>Qualified visitors</strong> (from target countries, real users) → Money Page</li>
-                  <li>• <strong>Bots & reviewers</strong> (suspicious traffic) → Safe Page</li>
-                  <li>• Safe page can be static "Coming Soon" or reverse proxy to any URL</li>
-                  <li>• Uses JCI API with advanced filtering (geo, device, IP quality, etc.)</li>
-                  <li>• Deployed via Cloudflare Workers for maximum performance</li>
-                </ul>
-              </div>
+
             </div>
             
             <div className="flex justify-end space-x-2 mt-6">
@@ -3969,10 +3922,8 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   setMoneyUrl('');
                   setWhitePageUrl(''); // Reset white page URL
                   setTargetCountries(['Germany']);
-                  setExcludeCountries([]);
                   setSelectedDomainForCloaked('');
                   setNewTargetCountry('');
-                  setNewExcludeCountry('');
                 }}
                 className="px-4 py-2 rounded-md text-white font-medium bg-gray-600 hover:bg-gray-700 transition-colors duration-200"
               >
