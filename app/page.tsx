@@ -68,24 +68,12 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // State
-  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'jciLogs' | 'cloaking'>('cloaking');
+  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'cloaking'>('cloaking');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [landingPages, setLandingPages] = useState<LandingPage[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
   
-  // JCI Logs state
-  const [jciLogs, setJciLogs] = useState<any[]>([]);
-  const [jciLogStats, setJciLogStats] = useState<any>(null);
-  const [jciLogsLoading, setJciLogsLoading] = useState(false);
-  const [jciLogFilters, setJciLogFilters] = useState({
-    decision: '',
-    reason: '',
-    domain: '',
-    country: '',
-    since: ''
-  });
-  const [jciLogPage, setJciLogPage] = useState(1);
-  const [jciLogTotalPages, setJciLogTotalPages] = useState(1);
+
   
   // Form state
   const [domainName, setDomainName] = useState('');
@@ -324,12 +312,7 @@ export default function Home() {
     }
   }, [isAuthenticated]);
   
-  // Fetch JCI logs when tab is selected
-  useEffect(() => {
-    if (activeTab === 'jciLogs') {
-      fetchJciLogs(1, jciLogFilters);
-    }
-  }, [activeTab]);
+
   
   // Fetch domains
   const fetchDomains = async () => {
@@ -1716,33 +1699,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     }
   };
 
-  // Fetch JCI logs function
-  const fetchJciLogs = async (page = 1, filters = jciLogFilters) => {
-    setJciLogsLoading(true);
-    try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        limit: '25',
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v))
-      });
 
-      const response = await fetch(`/api/jci-logs?${queryParams}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setJciLogs(data.data.logs);
-        setJciLogStats(data.data.stats);
-        setJciLogPage(data.data.pagination.page);
-        setJciLogTotalPages(data.data.pagination.pages);
-      } else {
-        console.error('Failed to fetch JCI logs:', data.error);
-      }
-    } catch (error) {
-      console.error('Error fetching JCI logs:', error);
-    } finally {
-      setJciLogsLoading(false);
-    }
-  };
 
   // Format timestamp for display
   const formatTimestamp = (timestamp: string) => {
@@ -1882,16 +1839,6 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
           onClick={() => setActiveTab('phoneNumbers')}
         >
           Phone Numbers
-        </div>
-        <div 
-          className={`px-4 py-3 cursor-pointer mr-2 ${
-            activeTab === 'jciLogs'
-              ? 'border-b-2 border-primary text-white font-semibold'
-              : 'text-gray-400 hover:text-gray-200'
-          }`}
-          onClick={() => setActiveTab('jciLogs')}
-        >
-          JCI Logs
         </div>
       </div>
       
@@ -4223,182 +4170,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
         </div>
       )}
       
-      {activeTab === 'jciLogs' && (
-        <>
-          <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
-            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
-              🎭 JCI Cloaking Logs
-            </h2>
-            <p className="text-gray-400 text-sm mb-4">
-              Monitor visitor decisions and cloaking activity from your Cloudflare Workers. See who gets the money page vs safe page.
-            </p>
-            
-            {/* Stats Cards */}
-            {jciLogStats && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
-                  <div className="text-2xl font-bold text-white">{jciLogStats.totalRequests}</div>
-                  <div className="text-gray-400 text-sm">Total Requests</div>
-                </div>
-                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
-                  <div className="text-2xl font-bold text-green-400">{jciLogStats.moneyPageShown}</div>
-                  <div className="text-gray-400 text-sm">Money Page</div>
-                </div>
-                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
-                  <div className="text-2xl font-bold text-blue-400">{jciLogStats.safePageShown}</div>
-                  <div className="text-gray-400 text-sm">Safe Page</div>
-                </div>
-                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
-                  <div className="text-2xl font-bold text-primary">{jciLogStats.conversionRate}</div>
-                  <div className="text-gray-400 text-sm">Conversion Rate</div>
-                </div>
-              </div>
-            )}
-            
-            {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-              <select
-                value={jciLogFilters.decision}
-                onChange={(e) => setJciLogFilters({...jciLogFilters, decision: e.target.value})}
-                className="p-2 bg-dark-lighter border border-dark-light rounded-md text-white text-sm"
-              >
-                <option value="">All Decisions</option>
-                <option value="MONEY_PAGE">Money Page</option>
-                <option value="SAFE_PAGE">Safe Page</option>
-              </select>
-              
-              <select
-                value={jciLogFilters.reason}
-                onChange={(e) => setJciLogFilters({...jciLogFilters, reason: e.target.value})}
-                className="p-2 bg-dark-lighter border border-dark-light rounded-md text-white text-sm"
-              >
-                <option value="">All Reasons</option>
-                <option value="JCI_APPROVED">JCI Approved</option>
-                <option value="JCI_BLOCKED">JCI Blocked</option>
-                <option value="JCI_API_FAILED">API Failed</option>
-                <option value="WORKER_ERROR">Worker Error</option>
-              </select>
-              
-              <input
-                type="text"
-                placeholder="Filter by domain"
-                value={jciLogFilters.domain}
-                onChange={(e) => setJciLogFilters({...jciLogFilters, domain: e.target.value})}
-                className="p-2 bg-dark-lighter border border-dark-light rounded-md text-white text-sm placeholder-gray-500"
-              />
-              
-              <input
-                type="text"
-                placeholder="Filter by country"
-                value={jciLogFilters.country}
-                onChange={(e) => setJciLogFilters({...jciLogFilters, country: e.target.value})}
-                className="p-2 bg-dark-lighter border border-dark-light rounded-md text-white text-sm placeholder-gray-500"
-              />
-              
-              <button
-                onClick={() => fetchJciLogs(1, jciLogFilters)}
-                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-md text-sm font-medium transition-colors"
-              >
-                Apply Filters
-              </button>
-            </div>
-          </div>
-          
-          {/* Logs Table */}
-          <div className="bg-dark-card rounded-lg shadow-dark-md border border-dark-accent overflow-hidden">
-            <div className="overflow-x-auto">
-              {jciLogsLoading ? (
-                <div className="p-8 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                  <p className="text-gray-400 mt-2">Loading logs...</p>
-                </div>
-              ) : jciLogs.length === 0 ? (
-                <div className="p-8 text-center">
-                  <p className="text-gray-400">No logs found. Logs will appear here when visitors access your cloaked pages.</p>
-                </div>
-              ) : (
-                <table className="w-full">
-                  <thead className="bg-dark-lighter">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Time</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Decision</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Reason</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Country</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Device</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-dark-light">
-                    {jciLogs.map((log, index) => (
-                      <tr key={log._id || index} className="hover:bg-dark-lighter">
-                        <td className="px-4 py-3 text-sm text-gray-300">
-                          {formatTimestamp(log.timestamp)}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-300 font-mono">
-                          {formatIP(log.ip)}
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            log.decision === 'MONEY_PAGE' 
-                              ? 'bg-green-900 text-green-300' 
-                              : 'bg-blue-900 text-blue-300'
-                          }`}>
-                            {log.decision === 'MONEY_PAGE' ? '💰 Money' : '🛡️ Safe'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            log.reason === 'JCI_APPROVED' ? 'bg-green-900 text-green-300' :
-                            log.reason === 'JCI_BLOCKED' ? 'bg-yellow-900 text-yellow-300' :
-                            'bg-red-900 text-red-300'
-                          }`}>
-                            {log.reason.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.country || 'Unknown'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.device || 'Unknown'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.domain || 'Unknown'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            
-            {/* Pagination */}
-            {jciLogTotalPages > 1 && (
-              <div className="px-6 py-3 bg-dark-lighter border-t border-dark-light flex items-center justify-between">
-                <div className="text-sm text-gray-400">
-                  Page {jciLogPage} of {jciLogTotalPages}
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => fetchJciLogs(jciLogPage - 1, jciLogFilters)}
-                    disabled={jciLogPage <= 1}
-                    className="px-3 py-1 bg-dark-card border border-dark-light rounded text-sm text-gray-300 hover:bg-dark-light disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => fetchJciLogs(jciLogPage + 1, jciLogFilters)}
-                    disabled={jciLogPage >= jciLogTotalPages}
-                    className="px-3 py-1 bg-dark-card border border-dark-light rounded text-sm text-gray-300 hover:bg-dark-light disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+
     </div>
   );
 } 
