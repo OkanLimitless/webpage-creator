@@ -2153,6 +2153,20 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                              onClick={() => reDeployCloakedPage(page._id)}
+                              title="Re-deploy worker with latest code and same settings"
+                            >
+                              🚀 Re-deploy
+                            </button>
+                            <button 
+                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                              onClick={() => fixCloakingDns(page._id)}
+                              title="Fix DNS settings to enable Cloudflare Workers"
+                            >
+                              🔧 Fix DNS
+                            </button>
+                            <button 
                               className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
                               onClick={() => deleteLandingPage(page._id)}
                             >
