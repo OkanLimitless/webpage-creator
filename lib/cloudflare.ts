@@ -1630,10 +1630,13 @@ class LinkRewriter {
           absoluteUrl = new URL(href, this.targetOrigin).href;
         }
         
-        // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
+        // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs + force new window
         if (isAffiliateTrackingUrl(absoluteUrl)) {
-          console.log('🎯 Affiliate URL passthrough (no rewriting):', href);
-          return; // Do nothing - leave the original href untouched
+          console.log('🎯 Affiliate URL passthrough (opening in new window):', href);
+          // Force affiliate links to open in new window to avoid any rewriting loops
+          link.setAttribute('target', '_blank');
+          link.setAttribute('rel', 'noopener noreferrer');
+          return; // Do nothing else - leave the original href untouched
         }
         
         // Only rewrite if it's not already pointing to our proxy domain
