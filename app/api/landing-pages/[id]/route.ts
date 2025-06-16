@@ -298,10 +298,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
         // Use existing worker script name or generate new one
         const scriptName = landingPage.workerScriptName || `cloak_${domain.name.replace(/\./g, '_')}_${landingPage.subdomain || 'root'}_${new Date().getTime()}`;
         
-        // Determine safe URL
-        const safeUrl = landingPage.subdomain && domain.dnsManagement !== 'external' 
-          ? `https://${landingPage.subdomain}.${domain.name}`
-          : `https://${domain.name}`;
+        // Determine safe URL (match original creation logic exactly)
+        console.log('Re-deploy safe URL logic:', {
+          subdomain: landingPage.subdomain,
+          domainName: domain.name,
+          dnsManagement: domain.dnsManagement,
+          isExternal: domain.dnsManagement === 'external'
+        });
+        
+        const safePageDomain = landingPage.subdomain && domain.dnsManagement !== 'external' 
+          ? `${landingPage.subdomain}.${domain.name}` 
+          : domain.name;
+        const safeUrl = `https://${safePageDomain}`;
+        
+        console.log('Re-deploy calculated safe URL:', safeUrl);
         
         // Use white page URL if available, otherwise fall back to safe URL
         const whitePageUrl = body.whitePageUrl || undefined;
