@@ -795,6 +795,9 @@ export function generateJciWorkerScript(options: {
   return `// ULTIMATE CLOAKING WORKER v3.0
 // Advanced bot detection with reverse proxy capabilities
 
+// KV Namespace binding - TRAFFIC_LOGS is automatically bound by Cloudflare
+// when the worker is deployed with KV binding configuration
+
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 const MONEY_URL = '${moneyUrl}';
 const SAFE_URL = '${safePageUrl}';
@@ -1045,6 +1048,7 @@ async function logTrafficEvent(request, decision, details = {}) {
     
     // Store in KV with timestamp-based key for easy retrieval
     const logKey = 'traffic_log_' + timestamp + '_' + Math.random().toString(36).substr(2, 9);
+    // @ts-ignore - TRAFFIC_LOGS is injected by Cloudflare Workers runtime with KV binding
     await TRAFFIC_LOGS.put(logKey, JSON.stringify(logEntry), {
       expirationTtl: 7 * 24 * 60 * 60 // Keep logs for 7 days
     });
