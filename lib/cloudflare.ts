@@ -1449,6 +1449,42 @@ async function handleResourceRequest(request) {
   }
 }
 
+// Helper function to check if a URL is an affiliate/tracking URL that should not be rewritten
+function isAffiliateTrackingUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // List of affiliate/tracking domains that should never be rewritten
+    const affiliateTrackingDomains = [
+      'exl-redircd.com',
+      'tracking.com',
+      'affiliate.com',
+      'click.linksynergy.com',
+      'shareasale.com',
+      'cj.com',
+      'commission-junction.com',
+      'impact.com',
+      'impactradius.com',
+      'partnerize.com',
+      'awin.com',
+      'awin1.com',
+      'clickbank.com',
+      'hop.clickbank.net',
+      'maxbounty.com',
+      'pepperjam.com',
+      'tradedoubler.com',
+      'zanox.com',
+      'rakuten.com'
+    ];
+    
+    // Check if this hostname is in our affiliate tracking list
+    return affiliateTrackingDomains.includes(hostname);
+  } catch (e) {
+    return false;
+  }
+}
+
 class AttributeRewriter {
   constructor(proxyDomain, targetOrigin, cdnPath) {
     this.proxyDomain = proxyDomain;
@@ -1479,6 +1515,12 @@ class AttributeRewriter {
           } else {
             // Relative URL
             absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
+          }
+          
+          // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
+          if (isAffiliateTrackingUrl(absoluteUrl)) {
+            console.log('🎯 Affiliate URL protection in AttributeRewriter:', originalUrl);
+            return; // Do nothing - leave the original URL untouched
           }
           
           // Only rewrite if it's not already pointing to our proxy domain
@@ -1544,6 +1586,12 @@ class FormRewriter {
   element(form) {
     const action = form.getAttribute('action');
     if (action && !action.startsWith('/') && !action.includes(this.proxyDomain)) {
+      // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
+      if (isAffiliateTrackingUrl(action)) {
+        console.log('🎯 Affiliate URL protection in FormRewriter:', action);
+        return; // Do nothing - leave the original action untouched
+      }
+      
       const encoded = btoa(action);
       form.setAttribute('action', '/' + this.cdnPath + '/' + encoded);
     }
@@ -1580,6 +1628,12 @@ class LinkRewriter {
         } else {
           // Relative URL
           absoluteUrl = new URL(href, this.targetOrigin).href;
+        }
+        
+        // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
+        if (isAffiliateTrackingUrl(absoluteUrl)) {
+          console.log('🎯 Affiliate URL passthrough (no rewriting):', href);
+          return; // Do nothing - leave the original href untouched
         }
         
         // Only rewrite if it's not already pointing to our proxy domain
@@ -1663,15 +1717,22 @@ class StyleRewriter {
         if (path.startsWith('/')) {
           try {
             const fullUrl = new URL(path, this.targetOrigin).href;
-            const encoded = btoa(fullUrl);
-            const newUrl = '/' + this.cdnPath + '/' + encoded;
-            const replacement = isQuoted ? 
-              'url(' + startQuote + newUrl + startQuote + ')' :
-              'url(' + newUrl + ')';
             
-            content = content.substring(0, urlIndex) + replacement + 
-                     content.substring(isQuoted ? pathEnd + 2 : pathEnd + 1);
-            console.log('🎨 Rewriting CSS asset:', path, '→', newUrl);
+            // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs in CSS
+            if (isAffiliateTrackingUrl(fullUrl)) {
+              console.log('🎯 Affiliate URL protection in StyleRewriter:', path);
+              // Skip this URL - don't rewrite it
+            } else {
+              const encoded = btoa(fullUrl);
+              const newUrl = '/' + this.cdnPath + '/' + encoded;
+              const replacement = isQuoted ? 
+                'url(' + startQuote + newUrl + startQuote + ')' :
+                'url(' + newUrl + ')';
+              
+              content = content.substring(0, urlIndex) + replacement + 
+                       content.substring(isQuoted ? pathEnd + 2 : pathEnd + 1);
+              console.log('🎨 Rewriting CSS asset:', path, '→', newUrl);
+            }
           } catch (e) {
             console.warn('Failed to rewrite CSS URL:', path, e.message);
           }
@@ -1704,13 +1765,20 @@ class StyleRewriter {
           if (path.startsWith('/')) {
             try {
               const fullUrl = new URL(path, this.targetOrigin).href;
-              const encoded = btoa(fullUrl);
-              const newPath = '/' + this.cdnPath + '/' + encoded;
-              const replacement = '@import "' + newPath + '"';
               
-              content = content.substring(0, importIndex) + replacement + 
-                       content.substring(quoteEnd + 1);
-              console.log('📥 Rewriting CSS import:', path, '→', newPath);
+              // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs in CSS imports
+              if (isAffiliateTrackingUrl(fullUrl)) {
+                console.log('🎯 Affiliate URL protection in StyleRewriter import:', path);
+                // Skip this URL - don't rewrite it
+              } else {
+                const encoded = btoa(fullUrl);
+                const newPath = '/' + this.cdnPath + '/' + encoded;
+                const replacement = '@import "' + newPath + '"';
+                
+                content = content.substring(0, importIndex) + replacement + 
+                         content.substring(quoteEnd + 1);
+                console.log('📥 Rewriting CSS import:', path, '→', newPath);
+              }
             } catch (e) {
               console.warn('Failed to rewrite CSS import:', path, e.message);
             }
@@ -1752,6 +1820,12 @@ class AssetRewriter {
       }
       
       try {
+        // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
+        if (isAffiliateTrackingUrl(absoluteUrl)) {
+          console.log('🎯 Affiliate URL protection in AssetRewriter:', url);
+          return; // Do nothing - leave the original URL untouched
+        }
+        
         const urlObj = new URL(absoluteUrl);
         const targetOriginObj = new URL(this.targetOrigin);
         
