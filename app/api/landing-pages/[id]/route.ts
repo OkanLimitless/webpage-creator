@@ -275,9 +275,103 @@ export async function PUT(request: NextRequest, { params }: Params) {
         subdomain: landingPage.subdomain
       });
     }
-    
-    // Handle other update actions here (existing functionality)
-    // ...
+
+    if (action === 're-deploy-cloaked') {
+      // Re-deploy cloaked landing page with latest code
+      const landingPage = await LandingPage.findById(params.id).populate('domainId');
+      
+      if (!landingPage) {
+        return NextResponse.json({ error: 'Landing page not found' }, { status: 404 });
+      }
+      
+      if (landingPage.templateType !== 'cloaked') {
+        return NextResponse.json({ error: 'This is not a cloaked landing page' }, { status: 400 });
+      }
+      
+      const domain = landingPage.domainId as any;
+      
+      if (!domain.cloudflareZoneId) {
+        return NextResponse.json({ error: 'Domain does not have Cloudflare Zone ID' }, { status: 400 });
+      }
+      
+      try {
+        // Use existing worker script name or generate new one
+        const scriptName = landingPage.workerScriptName || `cloak_${domain.name.replace(/\./g, '_')}_${landingPage.subdomain || 'root'}_${new Date().getTime()}`;
+        
+        // Determine safe URL
+        const safeUrl = landingPage.subdomain && domain.dnsManagement !== 'external' 
+          ? `https://${landingPage.subdomain}.${domain.name}`
+          : `https://${domain.name}`;
+        
+        // Use white page URL if available, otherwise fall back to safe URL
+        const whitePageUrl = body.whitePageUrl || undefined;
+        
+        // Import Cloudflare functions dynamically
+        const cloudflareModule = await import('@/lib/cloudflare');
+        const { generateJciWorkerScript } = cloudflareModule;
+        
+        // Generate updated worker script with latest code
+        const workerScript = generateJciWorkerScript({
+          safeUrl,
+          moneyUrl: landingPage.moneyUrl!,
+          whitePageUrl,
+          targetCountries: landingPage.targetCountries!,
+          excludeCountries: landingPage.excludeCountries || []
+        });
+        
+        // For re-deployment, we'll use the Cloudflare API directly
+        const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+        const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+        
+        if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID) {
+          throw new Error('Cloudflare API credentials not configured');
+        }
+        
+        // Update the worker script directly
+        const workerResult = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/javascript',
+            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+          },
+          body: JSON.stringify({
+            script: workerScript,
+            bindings: [{
+              name: 'TRAFFIC_LOGS',
+              type: 'kv_namespace',
+              namespace_id: '0b5157572fe24cc092500d70954ab67e'
+            }]
+          })
+        }).then(r => r.json());
+        
+        if (!workerResult.success) {
+          throw new Error(`Failed to deploy worker: ${JSON.stringify(workerResult.errors)}`);
+        }
+        
+        // Update landing page record if we created a new worker
+        if (!landingPage.workerScriptName) {
+          landingPage.workerScriptName = scriptName;
+          await landingPage.save();
+        }
+        
+        return NextResponse.json({
+          success: true,
+          message: `Cloaked landing page re-deployed successfully! Worker script updated with latest code.`,
+          workerScriptName: landingPage.workerScriptName,
+          safeUrl,
+          landingPageId: landingPage._id,
+          domain: domain.name,
+          subdomain: landingPage.subdomain
+        });
+        
+      } catch (error) {
+        console.error('Error re-deploying cloaked page:', error);
+        return NextResponse.json({
+          success: false,
+          message: `Failed to re-deploy: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }, { status: 500 });
+      }
+    }
     
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
     

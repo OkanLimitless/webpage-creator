@@ -1681,6 +1681,40 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     );
   };
 
+  // Re-deploy cloaked page with latest code
+  const reDeployCloakedPage = async (landingPageId: string) => {
+    if (!confirm('Re-deploy this cloaked page with the latest code? This will update the worker script while keeping all your current settings (money URL, target countries, etc.)')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/landing-pages/${landingPageId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 're-deploy-cloaked'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.success) {
+          alert(`✅ Re-deployment successful!\n\n${data.message}\n\nYour cloaked page is now running the latest code with affiliate URL protection.`);
+        } else {
+          alert(`❌ Re-deployment failed: ${data.message}`);
+        }
+      } else {
+        alert(`Error: ${data.error || 'Failed to re-deploy'}`);
+      }
+    } catch (error) {
+      console.error('Error re-deploying cloaked page:', error);
+      alert('An error occurred while re-deploying the cloaked page');
+    }
+  };
+
   // Fix cloaking DNS for existing cloaked pages
   const fixCloakingDns = async (landingPageId: string) => {
     if (!confirm('Fix DNS settings for this cloaked page? This will enable Cloudflare proxying so the worker can intercept requests.')) {
@@ -3263,13 +3297,22 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             {page.templateType === 'cloaked' && (
-                              <button 
-                                className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                                onClick={() => fixCloakingDns(page._id)}
-                                title="Fix DNS settings to enable Cloudflare Workers"
-                              >
-                                🔧 Fix DNS
-                              </button>
+                              <>
+                                <button 
+                                  className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-green-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                                  onClick={() => reDeployCloakedPage(page._id)}
+                                  title="Re-deploy worker with latest code and same settings"
+                                >
+                                  🚀 Re-deploy
+                                </button>
+                                <button 
+                                  className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-300 bg-dark-light hover:bg-dark transition-colors duration-150"
+                                  onClick={() => fixCloakingDns(page._id)}
+                                  title="Fix DNS settings to enable Cloudflare Workers"
+                                >
+                                  🔧 Fix DNS
+                                </button>
+                              </>
                             )}
                             <button 
                               className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
