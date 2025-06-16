@@ -1011,6 +1011,22 @@ async function logTrafficEvent(request, decision, details = {}) {
       return;
     }
     
+    // Skip logging for asset requests (fonts, images, CSS, JS, etc.)
+    const pathname = url.pathname.toLowerCase();
+    const isAsset = pathname.endsWith('.woff') || pathname.endsWith('.woff2') || 
+                   pathname.endsWith('.ttf') || pathname.endsWith('.otf') || pathname.endsWith('.eot') ||
+                   pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') ||
+                   pathname.endsWith('.png') || pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
+                   pathname.endsWith('.gif') || pathname.endsWith('.svg') || pathname.endsWith('.webp') ||
+                   pathname.endsWith('.ico') || pathname.endsWith('.xml') || pathname.endsWith('.pdf') ||
+                   pathname.endsWith('.mp4') || pathname.endsWith('.mp3') || pathname.endsWith('.zip') ||
+                   pathname.includes('/assets/') || pathname.includes('/fonts/') || 
+                   pathname.includes('/images/') || pathname.includes('/css/') || pathname.includes('/js/');
+    
+    if (isAsset) {
+      return; // Don't log asset requests
+    }
+    
     const logEntry = {
       timestamp,
       ip: clientIP,
