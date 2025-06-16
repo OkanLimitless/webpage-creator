@@ -210,11 +210,8 @@ export default function Home() {
   const [isCloakedModalOpen, setIsCloakedModalOpen] = useState(false);
   const [cloakedName, setCloakedName] = useState('');
   const [cloakedSubdomain, setCloakedSubdomain] = useState('');
-  const [cloakingSubdomain, setCloakingSubdomain] = useState('');
   const [moneyUrl, setMoneyUrl] = useState('');
-  const [cloakingMoneyUrl, setCloakingMoneyUrl] = useState('');
   const [whitePageUrl, setWhitePageUrl] = useState(''); // New state for white page URL
-  const [cloakingWhitePageUrl, setCloakingWhitePageUrl] = useState('');
   const [targetCountries, setTargetCountries] = useState<string[]>(['Germany']);
   const [excludeCountries, setExcludeCountries] = useState<string[]>([]);
   const [selectedDomainForCloaked, setSelectedDomainForCloaked] = useState('');
@@ -1949,24 +1946,24 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
                   type="text"
                   placeholder="Subdomain (optional, e.g., 'deals')"
-                  value={cloakingSubdomain}
-                  onChange={(e) => setCloakingSubdomain(e.target.value)}
+                  value={cloakedSubdomain}
+                  onChange={(e) => setCloakedSubdomain(e.target.value)}
                 />
                 
                 <input
                   className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
                   type="url"
                   placeholder="Money Page URL (where real users go)"
-                  value={cloakingMoneyUrl}
-                  onChange={(e) => setCloakingMoneyUrl(e.target.value)}
+                  value={moneyUrl}
+                  onChange={(e) => setMoneyUrl(e.target.value)}
                 />
                 
                 <input
                   className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
                   type="url"
                   placeholder="Safe Page URL (where bots/reviewers go)"
-                  value={cloakingWhitePageUrl}
-                  onChange={(e) => setCloakingWhitePageUrl(e.target.value)}
+                  value={whitePageUrl}
+                  onChange={(e) => setWhitePageUrl(e.target.value)}
                 />
               </div>
 
@@ -2044,7 +2041,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             <div className="mt-6 flex justify-end">
               <button
                 onClick={createCloakedLandingPage}
-                disabled={!cloakedName || !selectedDomainForCloaked || !cloakingMoneyUrl || !cloakingWhitePageUrl}
+                disabled={!cloakedName || !selectedDomainForCloaked || !moneyUrl || targetCountries.length === 0}
                 className="px-6 py-3 rounded-md text-white font-medium bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-dark-card transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 🚀 Deploy Cloaked Page
@@ -4108,30 +4105,30 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               </div>
               
               {selectedDomainForCloaked && !domains.find(d => d._id === selectedDomainForCloaked)?.dnsManagement?.includes('external') && (
-                <input
-                  className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
-                  type="text"
-                  placeholder="Subdomain (e.g., offers, campaign1)"
-                  value={cloakingSubdomain}
-                  onChange={(e) => setCloakingSubdomain(e.target.value)}
-                />
-              )}
-              
-              <input
+                              <input
                 className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
-                type="url"
-                placeholder="Money Page URL (where real users go)"
-                value={cloakingMoneyUrl}
-                onChange={(e) => setCloakingMoneyUrl(e.target.value)}
+                type="text"
+                placeholder="Subdomain (e.g., offers, campaign1)"
+                value={cloakedSubdomain}
+                onChange={(e) => setCloakedSubdomain(e.target.value)}
               />
-              
-              <input
-                className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
-                type="url"
-                placeholder="Safe Page URL (where bots/reviewers go)"
-                value={cloakingWhitePageUrl}
-                onChange={(e) => setCloakingWhitePageUrl(e.target.value)}
-              />
+            )}
+            
+            <input
+              className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+              type="url"
+              placeholder="Money Page URL (where real users go)"
+              value={moneyUrl}
+              onChange={(e) => setMoneyUrl(e.target.value)}
+            />
+            
+            <input
+              className="w-full p-3 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white placeholder-gray-500"
+              type="url"
+              placeholder="Safe Page URL (where bots/reviewers go)"
+              value={whitePageUrl}
+              onChange={(e) => setWhitePageUrl(e.target.value)}
+            />
               
               {/* Target Countries */}
               <div>
@@ -4182,9 +4179,9 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 onClick={() => {
                   setIsCloakedModalOpen(false);
                   setCloakedName('');
-                  setCloakingSubdomain('');
-                  setCloakingMoneyUrl('');
-                  setCloakingWhitePageUrl(''); // Reset white page URL
+                  setCloakedSubdomain('');
+                  setMoneyUrl('');
+                  setWhitePageUrl(''); // Reset white page URL
                   setTargetCountries(['Germany']);
                   setSelectedDomainForCloaked('');
                   setNewTargetCountry('');
