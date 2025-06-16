@@ -68,7 +68,7 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // State
-  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'cloaking'>('cloaking');
+  const [activeTab, setActiveTab] = useState<'landingPages' | 'domains' | 'phoneNumbers' | 'cloaking' | 'trafficLogs'>('cloaking');
   const [domains, setDomains] = useState<Domain[]>([]);
   const [landingPages, setLandingPages] = useState<LandingPage[]>([]);
   const [phoneNumbers, setPhoneNumbers] = useState<PhoneNumber[]>([]);
@@ -229,6 +229,18 @@ export default function Home() {
     'Norway', 'Sweden', 'Denmark', 'Finland', 'Poland', 'Czech Republic',
     'Portugal', 'Ireland', 'Luxembourg', 'New Zealand', 'Japan', 'South Korea'
   ];
+
+  // Traffic Logs state
+  const [trafficLogs, setTrafficLogs] = useState<any[]>([]);
+  const [trafficLogStats, setTrafficLogStats] = useState<any>(null);
+  const [trafficLogsLoading, setTrafficLogsLoading] = useState(false);
+  const [trafficLogFilters, setTrafficLogFilters] = useState({
+    decision: '',
+    domain: '',
+    since: ''
+  });
+  const [trafficLogPage, setTrafficLogPage] = useState(1);
+  const [trafficLogTotalPages, setTrafficLogTotalPages] = useState(1);
   
   // Check authentication on page load
   useEffect(() => {
@@ -244,6 +256,13 @@ export default function Home() {
       setIsAuthenticated(true);
     }
   }, []);
+
+  // Fetch traffic logs when tab is selected
+  useEffect(() => {
+    if (activeTab === 'trafficLogs') {
+      fetchTrafficLogs(1, trafficLogFilters);
+    }
+  }, [activeTab]);
   
   // Handle login
   const handleLogin = async (e: React.FormEvent) => {
@@ -1715,6 +1734,34 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     return ip.substring(0, 8) + '...';
   };
 
+  // Fetch traffic logs function
+  const fetchTrafficLogs = async (page = 1, filters = trafficLogFilters) => {
+    setTrafficLogsLoading(true);
+    try {
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: '25',
+        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v))
+      });
+
+      const response = await fetch(`/api/traffic-logs?${queryParams}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setTrafficLogs(data.data.logs);
+        setTrafficLogStats(data.data.stats);
+        setTrafficLogPage(data.data.pagination.page);
+        setTrafficLogTotalPages(data.data.pagination.pages);
+      } else {
+        console.error('Failed to fetch traffic logs:', data.error);
+      }
+    } catch (error) {
+      console.error('Error fetching traffic logs:', error);
+    } finally {
+      setTrafficLogsLoading(false);
+    }
+  };
+
   // Login form component
   if (!isAuthenticated) {
     return (
@@ -1839,6 +1886,16 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
           onClick={() => setActiveTab('phoneNumbers')}
         >
           Phone Numbers
+        </div>
+        <div 
+          className={`px-4 py-3 cursor-pointer mr-2 ${
+            activeTab === 'trafficLogs'
+              ? 'border-b-2 border-primary text-white font-semibold'
+              : 'text-gray-400 hover:text-gray-200'
+          }`}
+          onClick={() => setActiveTab('trafficLogs')}
+        >
+          📊 Traffic Logs
         </div>
       </div>
       
@@ -4151,7 +4208,265 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
           </div>
         </div>
       )}
-      
+
+      {/* Traffic Logs Section */}
+      {activeTab === 'trafficLogs' && (
+        <>
+          <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
+            <h2 className="text-xl font-semibold mb-4 text-white flex items-center">
+              📊 Traffic Logs & Analytics
+            </h2>
+            <p className="text-gray-400 text-sm mb-4">
+              Monitor all visitor traffic through your cloaked pages. See real-time decisions, geographic data, and bot detection results.
+            </p>
+            
+            {/* Stats Cards */}
+            {trafficLogStats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
+                  <div className="text-2xl font-bold text-white">{trafficLogStats.totalRequests}</div>
+                  <div className="text-gray-400 text-sm">Total Requests</div>
+                </div>
+                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
+                  <div className="text-2xl font-bold text-green-400">{trafficLogStats.moneyPageRequests}</div>
+                  <div className="text-gray-400 text-sm">Money Page Views</div>
+                </div>
+                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
+                  <div className="text-2xl font-bold text-red-400">{trafficLogStats.safePageRequests}</div>
+                  <div className="text-gray-400 text-sm">Safe Page Views</div>
+                </div>
+                <div className="bg-dark-lighter p-4 rounded-lg border border-dark-light">
+                  <div className="text-2xl font-bold text-blue-400">
+                    {trafficLogStats.totalRequests > 0 ? Math.round((trafficLogStats.moneyPageRequests / trafficLogStats.totalRequests) * 100) : 0}%
+                  </div>
+                  <div className="text-gray-400 text-sm">Conversion Rate</div>
+                </div>
+              </div>
+            )}
+
+            {/* Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <select
+                value={trafficLogFilters.decision}
+                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, decision: e.target.value})}
+                className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
+              >
+                <option value="">All Decisions</option>
+                <option value="money_page">Money Page</option>
+                <option value="safe_page">Safe Page</option>
+              </select>
+              
+              <input
+                type="text"
+                placeholder="Filter by domain"
+                value={trafficLogFilters.domain}
+                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, domain: e.target.value})}
+                className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm placeholder-gray-500"
+              />
+              
+              <input
+                type="datetime-local"
+                value={trafficLogFilters.since}
+                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, since: e.target.value})}
+                className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
+              />
+            </div>
+
+            <div className="flex space-x-2 mb-4">
+              <button
+                onClick={() => fetchTrafficLogs(1, trafficLogFilters)}
+                disabled={trafficLogsLoading}
+                className="px-4 py-2 bg-primary hover:bg-primary-dark disabled:bg-primary-light/50 text-white rounded-md text-sm font-medium transition-colors duration-200"
+              >
+                {trafficLogsLoading ? 'Loading...' : 'Apply Filters'}
+              </button>
+              <button
+                onClick={() => {
+                  setTrafficLogFilters({ decision: '', domain: '', since: '' });
+                  fetchTrafficLogs(1, { decision: '', domain: '', since: '' });
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm font-medium transition-colors duration-200"
+              >
+                Clear Filters
+              </button>
+            </div>
+          </div>
+
+          {/* Traffic Logs Table */}
+          <div className="bg-dark-card rounded-lg shadow-dark-md border border-dark-accent overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-dark-lighter">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Time</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP Address</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Path</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Decision</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Country</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Risk Score</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Reason</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User Agent</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-light">
+                  {trafficLogsLoading ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                        Loading traffic logs...
+                      </td>
+                    </tr>
+                  ) : trafficLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                        No traffic logs found. Traffic will appear here once your cloaked pages start receiving visitors.
+                      </td>
+                    </tr>
+                  ) : (
+                    trafficLogs.map((log, index) => (
+                      <tr key={index} className="hover:bg-dark-lighter/50">
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300 font-mono">
+                          {formatIP(log.ip)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          {log.domain}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          {log.path}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            log.decision === 'money_page' 
+                              ? 'bg-green-900/30 text-green-300 border border-green-600' 
+                              : 'bg-red-900/30 text-red-300 border border-red-600'
+                          }`}>
+                            {log.decision === 'money_page' ? '💰 Money' : '🛡️ Safe'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          {log.country || 'Unknown'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          {log.riskScore !== null ? (
+                            <span className={`font-medium ${
+                              log.riskScore > 60 ? 'text-red-400' : 
+                              log.riskScore > 30 ? 'text-yellow-400' : 'text-green-400'
+                            }`}>
+                              {log.riskScore}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                            log.detectionReason === 'clean_visitor' ? 'bg-green-900/20 text-green-400' :
+                            log.detectionReason === 'no_gclid' ? 'bg-yellow-900/20 text-yellow-400' :
+                            log.detectionReason === 'bot_user_agent' ? 'bg-red-900/20 text-red-400' :
+                            log.detectionReason === 'geo_block' ? 'bg-blue-900/20 text-blue-400' :
+                            log.detectionReason === 'high_risk' ? 'bg-red-900/20 text-red-400' :
+                            log.detectionReason === 'proxy_detected' ? 'bg-purple-900/20 text-purple-400' :
+                            'bg-gray-900/20 text-gray-400'
+                          }`}>
+                            {log.detectionReason?.replace('_', ' ') || 'Unknown'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300 max-w-xs truncate" title={log.userAgent}>
+                          {log.userAgent}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {trafficLogTotalPages > 1 && (
+              <div className="bg-dark-lighter px-4 py-3 flex items-center justify-between border-t border-dark-light">
+                <div className="flex-1 flex justify-between sm:hidden">
+                  <button
+                    onClick={() => fetchTrafficLogs(Math.max(1, trafficLogPage - 1), trafficLogFilters)}
+                    disabled={trafficLogPage <= 1 || trafficLogsLoading}
+                    className="relative inline-flex items-center px-4 py-2 border border-dark-light text-sm font-medium rounded-md text-gray-300 bg-dark-card hover:bg-dark-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => fetchTrafficLogs(Math.min(trafficLogTotalPages, trafficLogPage + 1), trafficLogFilters)}
+                    disabled={trafficLogPage >= trafficLogTotalPages || trafficLogsLoading}
+                    className="ml-3 relative inline-flex items-center px-4 py-2 border border-dark-light text-sm font-medium rounded-md text-gray-300 bg-dark-card hover:bg-dark-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm text-gray-400">
+                      Page <span className="font-medium text-white">{trafficLogPage}</span> of{' '}
+                      <span className="font-medium text-white">{trafficLogTotalPages}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                      <button
+                        onClick={() => fetchTrafficLogs(Math.max(1, trafficLogPage - 1), trafficLogFilters)}
+                        disabled={trafficLogPage <= 1 || trafficLogsLoading}
+                        className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-dark-light bg-dark-card text-sm font-medium text-gray-300 hover:bg-dark-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() => fetchTrafficLogs(Math.min(trafficLogTotalPages, trafficLogPage + 1), trafficLogFilters)}
+                        disabled={trafficLogPage >= trafficLogTotalPages || trafficLogsLoading}
+                        className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-dark-light bg-dark-card text-sm font-medium text-gray-300 hover:bg-dark-lighter disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Top Countries & Reasons */}
+          {trafficLogStats && (trafficLogStats.topCountries.length > 0 || trafficLogStats.topReasons.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              {/* Top Countries */}
+              {trafficLogStats.topCountries.length > 0 && (
+                <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+                  <h3 className="text-lg font-semibold mb-4 text-white">🌍 Top Countries</h3>
+                  <div className="space-y-3">
+                    {trafficLogStats.topCountries.map((item: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <span className="text-gray-300">{item.country}</span>
+                        <span className="text-white font-medium">{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Top Detection Reasons */}
+              {trafficLogStats.topReasons.length > 0 && (
+                <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+                  <h3 className="text-lg font-semibold mb-4 text-white">🔍 Top Detection Reasons</h3>
+                  <div className="space-y-3">
+                    {trafficLogStats.topReasons.map((item: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <span className="text-gray-300 capitalize">{item.reason.replace('_', ' ')}</span>
+                        <span className="text-white font-medium">{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
     </div>
   );

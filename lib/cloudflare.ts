@@ -952,6 +952,41 @@ async function handleRequest(request) {
 
 // --- CORE FUNCTIONS ---
 
+// Traffic logging function
+async function logTrafficEvent(request, decision, details = {}) {
+  try {
+    const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
+    const userAgent = request.headers.get('User-Agent') || '';
+    const url = new URL(request.url);
+    const timestamp = new Date().toISOString();
+    
+    const logEntry = {
+      timestamp,
+      ip: clientIP,
+      domain: url.hostname,
+      path: url.pathname,
+      userAgent,
+      decision: decision, // 'safe_page' or 'money_page'
+      gclid: url.searchParams.get('gclid') || null,
+      country: details.country || null,
+      riskScore: details.riskScore || null,
+      isProxy: details.isProxy || false,
+      isVpn: details.isVpn || false,
+      detectionReason: details.reason || null,
+      referer: request.headers.get('Referer') || null
+    };
+    
+    // Store in KV with timestamp-based key for easy retrieval
+    const logKey = 'traffic_log_' + timestamp + '_' + Math.random().toString(36).substr(2, 9);
+    await TRAFFIC_LOGS.put(logKey, JSON.stringify(logEntry), {
+      expirationTtl: 7 * 24 * 60 * 60 // Keep logs for 7 days
+    });
+  } catch (error) {
+    // Don't let logging errors break the main flow
+    console.error('Traffic logging error:', error);
+  }
+}
+
 async function isVisitorABot(request) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
@@ -961,6 +996,7 @@ async function isVisitorABot(request) {
     // STEP 0: Check for gclid parameter (Google Ads traffic)
     const gclid = url.searchParams.get('gclid');
     if (!gclid) {
+      await logTrafficEvent(request, 'safe_page', { reason: 'no_gclid' });
       return true; // Show safe page for direct visits without gclid
     }
 
@@ -968,12 +1004,15 @@ async function isVisitorABot(request) {
     const userAgentLower = userAgent.toLowerCase();
     for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
       if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
+        await logTrafficEvent(request, 'safe_page', { reason: 'bot_user_agent', detectedBot: BOT_USER_AGENTS[i] });
         return true; // Show safe page for known bot user agents
       }
     }
 
     // STEP 2: Combined geo + risk check with ProxyCheck.io (supports IPv4 & IPv6)
-         const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1&vpn=1';
+    const requestUrl = new URL(request.url);
+    const domain = requestUrl.hostname;
+    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1&vpn=1&tag=' + encodeURIComponent('cloak-' + domain);
     const response = await fetch(pcUrl);
     const data = await response.json();
     const ipData = data[clientIP];
@@ -982,29 +1021,64 @@ async function isVisitorABot(request) {
 
     
     if (ipData) {
+      const country = ipData.isocode || 'unknown';
+      const riskScore = parseInt(ipData.risk) || 0;
+      const isProxy = ipData.proxy === 'yes' || ipData.proxy === true;
+      const isVpn = ipData.type === 'VPN' || (ipData.vpn && ipData.vpn === 'yes');
+      
       // Check country first (geo check) - must be from target countries
       // Use isocode (e.g., "NL") instead of country (e.g., "Netherlands") 
       if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
+        await logTrafficEvent(request, 'safe_page', { 
+          reason: 'geo_block', 
+          country, 
+          riskScore, 
+          isProxy, 
+          isVpn 
+        });
         return true; // Show safe page if no country code OR not in target countries
       }
       
       // Only check risk score if geo passed
       if (ipData.risk !== undefined) {
-        const riskScore = parseInt(ipData.risk) || 0;
         if (riskScore > 60) {
+          await logTrafficEvent(request, 'safe_page', { 
+            reason: 'high_risk', 
+            country, 
+            riskScore, 
+            isProxy, 
+            isVpn 
+          });
           return true; // Show safe page if risk score > 60
         }
       }
       
       // Check proxy status
-      if (ipData.proxy === 'yes' || ipData.proxy === true) {
+      if (isProxy) {
+        await logTrafficEvent(request, 'safe_page', { 
+          reason: 'proxy_detected', 
+          country, 
+          riskScore, 
+          isProxy, 
+          isVpn 
+        });
         return true; // Show safe page for proxy traffic
       }
+      
+      // Passed all checks - show money page
+      await logTrafficEvent(request, 'money_page', { 
+        reason: 'clean_visitor', 
+        country, 
+        riskScore, 
+        isProxy, 
+        isVpn 
+      });
     }
     
     return false; // Show money page for low risk visitors
 
   } catch (error) {
+    await logTrafficEvent(request, 'safe_page', { reason: 'error', error: error.message });
     return true; // Show safe page on any error
   }
 }
