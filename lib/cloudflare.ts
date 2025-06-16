@@ -1738,6 +1738,8 @@ class AssetRewriter {
     }
   }
 }
+`;
+}
 
 // Helper function to create a simple "Coming Soon" page
 export function generateComingSoonPage(): string {
