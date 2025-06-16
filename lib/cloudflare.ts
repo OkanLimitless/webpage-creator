@@ -1006,6 +1006,11 @@ async function logTrafficEvent(request, decision, details = {}) {
     const url = new URL(request.url);
     const timestamp = new Date().toISOString();
     
+    // Skip logging for Vercel internal requests
+    if (userAgent.toLowerCase().includes('vercel-fetch')) {
+      return;
+    }
+    
     const logEntry = {
       timestamp,
       ip: clientIP,
@@ -1727,11 +1732,35 @@ class AssetRewriter {
       }
       
       try {
-        // Encode the URL and proxy it through CDN_PATH
-        const encodedUrl = btoa(absoluteUrl);
-        const proxyUrl = '/' + this.cdnPath + '/' + encodedUrl;
-        element.setAttribute(this.attribute, proxyUrl);
-        console.log('🔗 Rewriting asset:', this.attribute, url, '→', proxyUrl);
+        const urlObj = new URL(absoluteUrl);
+        const targetOriginObj = new URL(this.targetOrigin);
+        
+        // Check if this is a same-domain asset
+        if (urlObj.hostname === targetOriginObj.hostname) {
+          // For same-domain assets, check if they're problematic types
+          const pathname = urlObj.pathname.toLowerCase();
+          const isFont = pathname.endsWith('.woff') || pathname.endsWith('.woff2') || 
+                        pathname.endsWith('.ttf') || pathname.endsWith('.otf') || pathname.endsWith('.eot');
+          
+          // For fonts and certain assets, try direct loading first (less likely to have CORS issues)
+          if (isFont) {
+            // Keep original URL but make it absolute to avoid relative path issues
+            element.setAttribute(this.attribute, absoluteUrl);
+            console.log('🔤 Keeping direct font URL:', this.attribute, url, '→', absoluteUrl);
+          } else {
+            // For other same-domain assets (CSS, JS, images), proxy them
+            const encodedUrl = btoa(absoluteUrl);
+            const proxyUrl = '/' + this.cdnPath + '/' + encodedUrl;
+            element.setAttribute(this.attribute, proxyUrl);
+            console.log('🔗 Proxying same-domain asset:', this.attribute, url, '→', proxyUrl);
+          }
+        } else {
+          // For cross-domain assets, always proxy
+          const encodedUrl = btoa(absoluteUrl);
+          const proxyUrl = '/' + this.cdnPath + '/' + encodedUrl;
+          element.setAttribute(this.attribute, proxyUrl);
+          console.log('🌐 Proxying cross-domain asset:', this.attribute, url, '→', proxyUrl);
+        }
       } catch (e) {
         console.warn('Failed to rewrite asset URL:', this.attribute, url, e.message);
       }
