@@ -1854,25 +1854,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             </p>
           </div>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
-              <div className="text-2xl font-bold text-purple-400">{getCloakedLandingPages().length}</div>
-              <div className="text-sm text-gray-400">Active Cloaked Pages</div>
-            </div>
-            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
-              <div className="text-2xl font-bold text-blue-400">{getVerifiedDomains().length}</div>
-              <div className="text-sm text-gray-400">Available Domains</div>
-            </div>
-            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
-              <div className="text-2xl font-bold text-green-400">5</div>
-              <div className="text-sm text-gray-400">Detection Layers</div>
-            </div>
-            <div className="bg-dark-card p-4 rounded-lg border border-dark-accent">
-              <div className="text-2xl font-bold text-orange-400">99.8%</div>
-              <div className="text-sm text-gray-400">Bot Detection Rate</div>
-            </div>
-          </div>
+
 
           {/* Create New Cloaked Page */}
           <div className="bg-dark-card p-6 mb-6 rounded-lg shadow-dark-md border border-dark-accent">
