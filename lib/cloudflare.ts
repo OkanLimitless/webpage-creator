@@ -341,7 +341,53 @@ const cf = {
       },
     });
     return response.json();
-  }
+  },
+
+  // Create worker with KV bindings
+  async createWorkerWithKVBinding(scriptName: string, scriptContent: string, kvBindings: { name: string; namespace_id: string }[] = []) {
+    // In development with missing credentials, return mock success
+    if (isDevelopment && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+      return {
+        success: true,
+        result: {
+          id: 'mock-worker-id',
+          script: scriptName
+        }
+      };
+    }
+
+    if (!CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error('Cloudflare account ID is required to create workers');
+    }
+
+    // Create FormData for multipart request
+    const formData = new FormData();
+    
+    // Add the script content
+    formData.append('script', new Blob([scriptContent], { type: 'application/javascript' }));
+    
+    // Add metadata with KV bindings
+    const metadata = {
+      body_part: 'script',
+      bindings: kvBindings.map(binding => ({
+        name: binding.name,
+        type: 'kv_namespace',
+        namespace_id: binding.namespace_id
+      }))
+    };
+    
+    formData.append('metadata', JSON.stringify(metadata));
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+      },
+      body: formData,
+    });
+    
+    return response.json();
+  },
 };
 
 export type CloudflareNameserver = string;
@@ -1692,8 +1738,6 @@ class AssetRewriter {
     }
   }
 }
-`;
-}
 
 // Helper function to create a simple "Coming Soon" page
 export function generateComingSoonPage(): string {
@@ -1876,9 +1920,14 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
       excludeCountries
     });
     
-    // 5. Deploy worker to Cloudflare
-    console.log(`Creating worker script: ${scriptName}`);
-    const workerResult = await cf.createWorker(scriptName, workerScript);
+    // 5. Deploy worker to Cloudflare with TRAFFIC_LOGS KV binding
+    console.log(`Creating worker script with KV binding: ${scriptName}`);
+    const kvBindings = [{
+      name: 'TRAFFIC_LOGS',
+      namespace_id: '0b5157572fe24cc092500d70954ab67e'
+    }];
+    
+    const workerResult = await cf.createWorkerWithKVBinding(scriptName, workerScript, kvBindings);
     
     if (!workerResult.success) {
       throw new Error(`Failed to create worker: ${JSON.stringify(workerResult.errors)}`);
