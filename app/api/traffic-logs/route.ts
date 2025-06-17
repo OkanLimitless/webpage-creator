@@ -151,13 +151,20 @@ async function fetchRecentLogs(): Promise<any[]> {
       // Sort keys by timestamp (newest first) - extract ISO timestamp from key name
       // Key format: traffic_log_{ISOString}_{randomString}
       keys.sort((a: any, b: any) => {
-        // Extract ISO timestamp from key name - everything between first and last underscore
-        const aKeyParts = a.name.split('_');
-        const bKeyParts = b.name.split('_');
+        // For key like "traffic_log_2025-01-27T16:30:45.123Z_abc123def"
+        // We need to extract "2025-01-27T16:30:45.123Z"
         
-        // Reconstruct the ISO timestamp (everything except 'traffic', 'log', and the last random part)
-        const aTimestamp = aKeyParts.slice(2, -1).join('_');
-        const bTimestamp = bKeyParts.slice(2, -1).join('_');
+        const aKeyName = a.name;
+        const bKeyName = b.name;
+        const prefixLength = 'traffic_log_'.length;
+        
+        // Find the last underscore to separate the random suffix
+        const aLastUnderscoreIndex = aKeyName.lastIndexOf('_');
+        const bLastUnderscoreIndex = bKeyName.lastIndexOf('_');
+        
+        // Extract timestamp (everything between prefix and last underscore)
+        const aTimestamp = aKeyName.substring(prefixLength, aLastUnderscoreIndex);
+        const bTimestamp = bKeyName.substring(prefixLength, bLastUnderscoreIndex);
         
         // Parse as Date objects for proper chronological sorting
         const aTime = new Date(aTimestamp).getTime() || 0;
