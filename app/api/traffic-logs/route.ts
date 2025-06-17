@@ -114,17 +114,59 @@ export async function GET(request: NextRequest) {
 
 async function fetchRecentLogs(): Promise<any[]> {
   const logs: any[] = [];
-  let cursor: string | undefined;
-  let totalFetched = 0;
   
   try {
-    // Fetch keys in batches using cursor pagination, limiting to recent logs
-    while (totalFetched < MAX_RECENT_LOGS) {
-      const remaining = MAX_RECENT_LOGS - totalFetched;
-      const batchLimit = Math.min(1000, remaining); // KV max limit is 1000
+    // Step 1: Fetch ALL traffic log keys first (this is the only way to get truly recent ones)
+    const allKeys = await fetchAllTrafficLogKeys();
+    console.log(`Found ${allKeys.length} total traffic log keys`);
+    
+    if (allKeys.length === 0) {
+      return [];
+    }
+    
+    // Step 2: Sort ALL keys by timestamp (newest first)
+    allKeys.sort((a, b) => {
+      const aKeyName = a.name;
+      const bKeyName = b.name;
+      const prefixLength = 'traffic_log_'.length;
       
-      // Build the list URL with cursor pagination
-      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${batchLimit}`;
+      const aLastUnderscoreIndex = aKeyName.lastIndexOf('_');
+      const bLastUnderscoreIndex = bKeyName.lastIndexOf('_');
+      
+      const aTimestamp = aKeyName.substring(prefixLength, aLastUnderscoreIndex);
+      const bTimestamp = bKeyName.substring(prefixLength, bLastUnderscoreIndex);
+      
+      const aTime = new Date(aTimestamp).getTime() || 0;
+      const bTime = new Date(bTimestamp).getTime() || 0;
+      
+      return bTime - aTime; // Newest first
+    });
+    
+    // Step 3: Take only the most recent MAX_RECENT_LOGS keys
+    const recentKeys = allKeys.slice(0, MAX_RECENT_LOGS);
+    console.log(`Processing ${recentKeys.length} most recent keys`);
+    
+    // Step 4: Fetch the actual log data for these recent keys
+    const recentLogs = await fetchLogsBulk(recentKeys);
+    
+    // Step 5: Final sort by timestamp (newest first) and return
+    recentLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    return recentLogs;
+    
+  } catch (error) {
+    console.error('Error fetching recent logs:', error);
+    return [];
+  }
+}
+
+async function fetchAllTrafficLogKeys(): Promise<any[]> {
+  const allKeys: any[] = [];
+  let cursor: string | undefined;
+  
+  try {
+    while (true) {
+      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=1000`;
       
       if (cursor) {
         listUrl += `&cursor=${cursor}`;
@@ -145,60 +187,24 @@ async function fetchRecentLogs(): Promise<any[]> {
       const keys = listData.result || [];
       
       if (keys.length === 0) {
-        break; // No more keys
+        break;
       }
-
-      // Sort keys by timestamp (newest first) - extract ISO timestamp from key name
-      // Key format: traffic_log_{ISOString}_{randomString}
-      keys.sort((a: any, b: any) => {
-        // For key like "traffic_log_2025-01-27T16:30:45.123Z_abc123def"
-        // We need to extract "2025-01-27T16:30:45.123Z"
-        
-        const aKeyName = a.name;
-        const bKeyName = b.name;
-        const prefixLength = 'traffic_log_'.length;
-        
-        // Find the last underscore to separate the random suffix
-        const aLastUnderscoreIndex = aKeyName.lastIndexOf('_');
-        const bLastUnderscoreIndex = bKeyName.lastIndexOf('_');
-        
-        // Extract timestamp (everything between prefix and last underscore)
-        const aTimestamp = aKeyName.substring(prefixLength, aLastUnderscoreIndex);
-        const bTimestamp = bKeyName.substring(prefixLength, bLastUnderscoreIndex);
-        
-        // Parse as Date objects for proper chronological sorting
-        const aTime = new Date(aTimestamp).getTime() || 0;
-        const bTime = new Date(bTimestamp).getTime() || 0;
-        
-        return bTime - aTime; // Newest first
-      });
-
-      // Take only what we need to reach our limit
-      const keysToProcess = keys.slice(0, remaining);
       
-      // Fetch log entries in bulk batches (KV bulk GET supports up to 100 keys)
-      const batchedLogs = await fetchLogsBulk(keysToProcess);
-      logs.push(...batchedLogs);
+      // Filter only traffic log keys
+      const trafficLogKeys = keys.filter((key: any) => key.name.startsWith('traffic_log_'));
+      allKeys.push(...trafficLogKeys);
       
-      totalFetched += keysToProcess.length;
-      
-      // Update cursor for next iteration
       cursor = listData.result_info?.cursor;
       
-      // Break if we've reached our limit or if there are no more results
-      if (totalFetched >= MAX_RECENT_LOGS || !cursor || listData.result_info?.list_complete !== false) {
+      if (!cursor || listData.result_info?.list_complete !== false) {
         break;
       }
     }
     
-    // Final sort by timestamp (newest first)
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Trim to exact limit
-    return logs.slice(0, MAX_RECENT_LOGS);
+    return allKeys;
     
   } catch (error) {
-    console.error('Error fetching recent logs:', error);
+    console.error('Error fetching all traffic log keys:', error);
     return [];
   }
 }
