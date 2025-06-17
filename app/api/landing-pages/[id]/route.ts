@@ -298,18 +298,56 @@ export async function PUT(request: NextRequest, { params }: Params) {
         // Use existing worker script name or generate new one
         const scriptName = landingPage.workerScriptName || `cloak_${domain.name.replace(/\./g, '_')}_${landingPage.subdomain || 'root'}_${new Date().getTime()}`;
         
-        // Determine safe URL - use stored safeUrl if available, otherwise build from domain
+        // Determine safe URL - extract from existing worker script first, then fallback
         let safeUrl;
-        if (landingPage.safeUrl) {
-          safeUrl = landingPage.safeUrl;
-          console.log('Re-deploy using stored safe URL:', safeUrl);
-        } else {
-          // Fall back to building from domain (for older records without stored safeUrl)
-          const safePageDomain = landingPage.subdomain && domain.dnsManagement !== 'external' 
-            ? `${landingPage.subdomain}.${domain.name}` 
-            : domain.name;
-          safeUrl = `https://${safePageDomain}`;
-          console.log('Re-deploy calculated safe URL from domain:', safeUrl);
+        
+        // Try to extract SAFE_URL from existing worker script
+        if (landingPage.workerScriptName) {
+          try {
+            console.log('Attempting to extract SAFE_URL from existing worker:', landingPage.workerScriptName);
+            
+            const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+            const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+            
+            // Fetch the current worker script
+            const workerResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${landingPage.workerScriptName}`, {
+              headers: {
+                'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+              },
+            });
+            
+            if (workerResponse.ok) {
+              const workerScript = await workerResponse.text();
+              
+              // Extract SAFE_URL using regex
+              const safeUrlMatch = workerScript.match(/const SAFE_URL = ['"`]([^'"`]+)['"`]/);
+              if (safeUrlMatch && safeUrlMatch[1]) {
+                safeUrl = safeUrlMatch[1];
+                console.log('✅ Extracted SAFE_URL from existing worker:', safeUrl);
+              } else {
+                console.log('⚠️ Could not extract SAFE_URL from worker script');
+              }
+            } else {
+              console.log('⚠️ Failed to fetch existing worker script:', workerResponse.status);
+            }
+          } catch (extractError) {
+            console.log('⚠️ Error extracting SAFE_URL from worker:', extractError instanceof Error ? extractError.message : 'Unknown error');
+          }
+        }
+        
+        // Fallback logic if extraction failed
+        if (!safeUrl) {
+          if (landingPage.safeUrl) {
+            safeUrl = landingPage.safeUrl;
+            console.log('Re-deploy using stored safe URL:', safeUrl);
+          } else {
+            // Final fallback to building from domain
+            const safePageDomain = landingPage.subdomain && domain.dnsManagement !== 'external' 
+              ? `${landingPage.subdomain}.${domain.name}` 
+              : domain.name;
+            safeUrl = `https://${safePageDomain}`;
+            console.log('Re-deploy calculated safe URL from domain:', safeUrl);
+          }
         }
         
         // Import Cloudflare functions dynamically
