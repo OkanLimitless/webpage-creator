@@ -1817,6 +1817,35 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
     }
   };
 
+  const cleanupOldTrafficLogs = async (dryRun = false) => {
+    try {
+      const response = await fetch('/api/traffic-logs/cleanup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ dryRun })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        if (dryRun) {
+          alert(`Cleanup Preview:\n\nTotal logs: ${data.totalLogs}\nWill delete: ${data.toDelete}\nWill keep: ${data.toKeep} most recent\n\nOldest to keep: ${data.oldestToKeep}\nNewest to delete: ${data.newestToDelete}`);
+        } else {
+          alert(`Cleanup completed!\n\nDeleted: ${data.deleted} old logs\nRemaining: ${data.remaining} recent logs`);
+          // Refresh the traffic logs after cleanup
+          fetchTrafficLogs(1, trafficLogFilters);
+        }
+      } else {
+        alert(`Cleanup failed: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      alert('Cleanup failed due to network error');
+    }
+  };
+
   const fetchTrafficLogs = async (page = 1, filters = trafficLogFilters) => {
     setTrafficLogsLoading(true);
     try {
@@ -4404,6 +4433,29 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                   <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                 </svg>
                 {trafficLogsLoading ? 'Refreshing...' : 'Refresh Now'}
+              </button>
+              <button
+                onClick={() => cleanupOldTrafficLogs(true)}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md text-sm font-medium transition-colors duration-200 flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                  <path fillRule="evenodd" d="M4 5a2 2 0 012-2h8a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 3a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                </svg>
+                Preview Cleanup
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('This will delete old traffic logs, keeping only the most recent 300. This action cannot be undone. Continue?')) {
+                    cleanupOldTrafficLogs(false);
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors duration-200 flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Cleanup Now
               </button>
             </div>
             

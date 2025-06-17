@@ -26,7 +26,7 @@ const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const TRAFFIC_LOGS_NAMESPACE_ID = process.env.TRAFFIC_LOGS_NAMESPACE_ID;
 
 // Maximum number of recent logs to fetch (keep it reasonable for performance)
-const MAX_RECENT_LOGS = 300;
+const MAX_RECENT_LOGS = 1000; // Fetch all available logs since we auto-cleanup to keep only recent ones
 
 export async function GET(request: NextRequest) {
   try {
