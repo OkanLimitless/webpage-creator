@@ -151,13 +151,17 @@ async function fetchRecentLogs(): Promise<any[]> {
       // Sort keys by timestamp (newest first) - extract ISO timestamp from key name
       // Key format: traffic_log_{ISOString}_{randomString}
       keys.sort((a: any, b: any) => {
-        // Extract ISO timestamp from key name, handling potential URL encoding
-        const aTimestamp = a.name.split('_')[2] || '';
-        const bTimestamp = b.name.split('_')[2] || '';
+        // Extract ISO timestamp from key name - everything between first and last underscore
+        const aKeyParts = a.name.split('_');
+        const bKeyParts = b.name.split('_');
+        
+        // Reconstruct the ISO timestamp (everything except 'traffic', 'log', and the last random part)
+        const aTimestamp = aKeyParts.slice(2, -1).join('_');
+        const bTimestamp = bKeyParts.slice(2, -1).join('_');
         
         // Parse as Date objects for proper chronological sorting
-        const aTime = new Date(decodeURIComponent(aTimestamp)).getTime() || 0;
-        const bTime = new Date(decodeURIComponent(bTimestamp)).getTime() || 0;
+        const aTime = new Date(aTimestamp).getTime() || 0;
+        const bTime = new Date(bTimestamp).getTime() || 0;
         
         return bTime - aTime; // Newest first
       });
