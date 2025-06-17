@@ -1453,7 +1453,7 @@ async function handleResourceRequest(request) {
   }
 }
 
-// ✅ isAffiliateTrackingUrl REMOVED - No longer needed since we don't rewrite any links
+// ✅ No affiliate URL filtering - All links stay untouched, assets are rewritten normally
 // Money pages have zero link rewriting, so all affiliate URLs work perfectly
 
 class AttributeRewriter {
@@ -1610,21 +1610,16 @@ class StyleRewriter {
           try {
             const fullUrl = new URL(path, this.targetOrigin).href;
             
-            // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs in CSS
-            if (isAffiliateTrackingUrl(fullUrl)) {
-              console.log('🎯 Affiliate URL protection in StyleRewriter:', path);
-              // Skip this URL - don't rewrite it
-            } else {
-              const encoded = btoa(fullUrl);
-              const newUrl = '/' + this.cdnPath + '/' + encoded;
-              const replacement = isQuoted ? 
-                'url(' + startQuote + newUrl + startQuote + ')' :
-                'url(' + newUrl + ')';
-              
-              content = content.substring(0, urlIndex) + replacement + 
-                       content.substring(isQuoted ? pathEnd + 2 : pathEnd + 1);
-              console.log('🎨 Rewriting CSS asset:', path, '→', newUrl);
-            }
+            // ✅ SIMPLIFIED: Just rewrite all CSS assets without filtering
+            const encoded = btoa(fullUrl);
+            const newUrl = '/' + this.cdnPath + '/' + encoded;
+            const replacement = isQuoted ? 
+              'url(' + startQuote + newUrl + startQuote + ')' :
+              'url(' + newUrl + ')';
+            
+            content = content.substring(0, urlIndex) + replacement + 
+                     content.substring(isQuoted ? pathEnd + 2 : pathEnd + 1);
+            console.log('🎨 Rewriting CSS asset:', path, '→', newUrl);
           } catch (e) {
             console.warn('Failed to rewrite CSS URL:', path, e.message);
           }
@@ -1658,19 +1653,14 @@ class StyleRewriter {
             try {
               const fullUrl = new URL(path, this.targetOrigin).href;
               
-              // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs in CSS imports
-              if (isAffiliateTrackingUrl(fullUrl)) {
-                console.log('🎯 Affiliate URL protection in StyleRewriter import:', path);
-                // Skip this URL - don't rewrite it
-              } else {
-                const encoded = btoa(fullUrl);
-                const newPath = '/' + this.cdnPath + '/' + encoded;
-                const replacement = '@import "' + newPath + '"';
-                
-                content = content.substring(0, importIndex) + replacement + 
-                         content.substring(quoteEnd + 1);
-                console.log('📥 Rewriting CSS import:', path, '→', newPath);
-              }
+              // ✅ SIMPLIFIED: Just rewrite all CSS imports without filtering
+              const encoded = btoa(fullUrl);
+              const newPath = '/' + this.cdnPath + '/' + encoded;
+              const replacement = '@import "' + newPath + '"';
+              
+              content = content.substring(0, importIndex) + replacement + 
+                       content.substring(quoteEnd + 1);
+              console.log('📥 Rewriting CSS import:', path, '→', newPath);
             } catch (e) {
               console.warn('Failed to rewrite CSS import:', path, e.message);
             }
@@ -1712,11 +1702,7 @@ class AssetRewriter {
       }
       
       try {
-        // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
-        if (isAffiliateTrackingUrl(absoluteUrl)) {
-          console.log('🎯 Affiliate URL protection in AssetRewriter:', url);
-          return; // Do nothing - leave the original URL untouched
-        }
+        // ✅ SIMPLIFIED: Process all asset URLs without filtering
         
         const urlObj = new URL(absoluteUrl);
         const targetOriginObj = new URL(this.targetOrigin);
