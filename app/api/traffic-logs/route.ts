@@ -1,10 +1,14 @@
 /**
  * Traffic Logs API - Optimized for Large Datasets
  * 
- * This API has been optimized to handle large traffic log datasets (30k+ logs) efficiently:
+ * This API reads traffic logs from Cloudflare KV storage with the key format:
+ * traffic_log_{timestamp}_{randomString}
+ * 
+ * Optimizations for handling large datasets (30k+ logs) efficiently:
  * - Uses cursor-based pagination instead of fetching all keys
  * - Limits to most recent MAX_RECENT_LOGS (300) for performance
  * - Employs Cloudflare KV bulk GET operations for speed
+ * - Numeric timestamp sorting for proper chronological order
  * - Provides auto-refresh capability for real-time updates
  * - Includes graceful fallbacks for reliability
  * 
@@ -145,10 +149,11 @@ async function fetchRecentLogs(): Promise<any[]> {
       }
 
       // Sort keys by timestamp (newest first) - extract timestamp from key name
+      // Key format: traffic_log_{timestamp}_{randomString}
       keys.sort((a: any, b: any) => {
-        const aTime = a.name.split('_')[2] || '0';
-        const bTime = b.name.split('_')[2] || '0';
-        return bTime.localeCompare(aTime);
+        const aTime = parseInt(a.name.split('_')[2]) || 0;
+        const bTime = parseInt(b.name.split('_')[2]) || 0;
+        return bTime - aTime; // Numeric comparison for proper sorting
       });
 
       // Take only what we need to reach our limit
