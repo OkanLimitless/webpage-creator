@@ -1583,7 +1583,6 @@ class AttributeRewriter {
               element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
             }
           }
-          }
         } catch (e) {
           console.warn('Failed to rewrite URL:', originalUrl, e.message);
         }
