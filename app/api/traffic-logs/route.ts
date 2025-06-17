@@ -148,12 +148,18 @@ async function fetchRecentLogs(): Promise<any[]> {
         break; // No more keys
       }
 
-      // Sort keys by timestamp (newest first) - extract timestamp from key name
-      // Key format: traffic_log_{timestamp}_{randomString}
+      // Sort keys by timestamp (newest first) - extract ISO timestamp from key name
+      // Key format: traffic_log_{ISOString}_{randomString}
       keys.sort((a: any, b: any) => {
-        const aTime = parseInt(a.name.split('_')[2]) || 0;
-        const bTime = parseInt(b.name.split('_')[2]) || 0;
-        return bTime - aTime; // Numeric comparison for proper sorting
+        // Extract ISO timestamp from key name, handling potential URL encoding
+        const aTimestamp = a.name.split('_')[2] || '';
+        const bTimestamp = b.name.split('_')[2] || '';
+        
+        // Parse as Date objects for proper chronological sorting
+        const aTime = new Date(decodeURIComponent(aTimestamp)).getTime() || 0;
+        const bTime = new Date(decodeURIComponent(bTimestamp)).getTime() || 0;
+        
+        return bTime - aTime; // Newest first
       });
 
       // Take only what we need to reach our limit

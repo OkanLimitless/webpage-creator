@@ -1787,6 +1787,36 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
   };
 
   // Fetch traffic logs function
+  const deleteOldTrafficLogs = async (action: string, days: number = 7, decision?: string) => {
+    try {
+      setTrafficLogsLoading(true);
+      
+      let url = `/api/traffic-logs/cleanup?action=${action}`;
+      if (action === 'older_than') {
+        url += `&days=${days}`;
+      } else if (action === 'by_decision' && decision) {
+        url += `&decision=${decision}`;
+      }
+      
+      const response = await fetch(url, { method: 'DELETE' });
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Successfully deleted ${data.deletedCount} traffic log entries`);
+        // Refresh the traffic logs after cleanup
+        await fetchTrafficLogs(1, trafficLogFilters);
+      } else {
+        console.error('Failed to delete traffic logs:', data.error);
+        alert('Failed to delete traffic logs: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Error deleting traffic logs:', error);
+      alert('Error deleting traffic logs');
+    } finally {
+      setTrafficLogsLoading(false);
+    }
+  };
+
   const fetchTrafficLogs = async (page = 1, filters = trafficLogFilters) => {
     setTrafficLogsLoading(true);
     try {
