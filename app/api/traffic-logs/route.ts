@@ -1,3 +1,17 @@
+/**
+ * Traffic Logs API - Optimized for Large Datasets
+ * 
+ * This API has been optimized to handle large traffic log datasets (30k+ logs) efficiently:
+ * - Uses cursor-based pagination instead of fetching all keys
+ * - Limits to most recent MAX_RECENT_LOGS (300) for performance
+ * - Employs Cloudflare KV bulk GET operations for speed
+ * - Provides auto-refresh capability for real-time updates
+ * - Includes graceful fallbacks for reliability
+ * 
+ * Author: MODIE Protocol Implementation
+ * Date: 2025-06-17
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 
 // Force dynamic rendering for this route
@@ -75,6 +89,12 @@ export async function GET(request: NextRequest) {
           limit,
           total: filteredLogs.length,
           pages: Math.ceil(filteredLogs.length / limit)
+        },
+        metadata: {
+          maxRecentLogs: MAX_RECENT_LOGS,
+          showingRecentOnly: true,
+          totalLogsShown: recentLogs.length,
+          fetchedAt: new Date().toISOString()
         }
       }
     });
