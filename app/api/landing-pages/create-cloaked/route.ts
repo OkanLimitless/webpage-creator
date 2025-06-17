@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
       moneyUrl,
       targetCountries,
       excludeCountries,
-      safePageContent
+      safePageContent,
+      safeUrl: whitePageUrl // Store the original safe URL for re-deployments
     });
     
     try {

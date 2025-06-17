@@ -298,32 +298,30 @@ export async function PUT(request: NextRequest, { params }: Params) {
         // Use existing worker script name or generate new one
         const scriptName = landingPage.workerScriptName || `cloak_${domain.name.replace(/\./g, '_')}_${landingPage.subdomain || 'root'}_${new Date().getTime()}`;
         
-        // Determine safe URL (match original creation logic exactly)
-        console.log('Re-deploy safe URL logic:', {
-          subdomain: landingPage.subdomain,
-          domainName: domain.name,
-          dnsManagement: domain.dnsManagement,
-          isExternal: domain.dnsManagement === 'external'
-        });
-        
-        const safePageDomain = landingPage.subdomain && domain.dnsManagement !== 'external' 
-          ? `${landingPage.subdomain}.${domain.name}` 
-          : domain.name;
-        const safeUrl = `https://${safePageDomain}`;
-        
-        console.log('Re-deploy calculated safe URL:', safeUrl);
+        // Determine safe URL - use stored safeUrl if available, otherwise build from domain
+        let safeUrl;
+        if (landingPage.safeUrl) {
+          safeUrl = landingPage.safeUrl;
+          console.log('Re-deploy using stored safe URL:', safeUrl);
+        } else {
+          // Fall back to building from domain (for older records without stored safeUrl)
+          const safePageDomain = landingPage.subdomain && domain.dnsManagement !== 'external' 
+            ? `${landingPage.subdomain}.${domain.name}` 
+            : domain.name;
+          safeUrl = `https://${safePageDomain}`;
+          console.log('Re-deploy calculated safe URL from domain:', safeUrl);
+        }
         
         // Import Cloudflare functions dynamically
         const cloudflareModule = await import('@/lib/cloudflare');
         const { generateJciWorkerScript } = cloudflareModule;
         
         // Generate updated worker script with latest code
-        // Note: Not using whitePageUrl since it's not stored in the database
-        // The worker will use safeUrl as the SAFE_URL consistently
+        // Use the stored safeUrl as whitePageUrl to ensure correct SAFE_URL in worker
         const workerScript = generateJciWorkerScript({
           safeUrl,
           moneyUrl: landingPage.moneyUrl!,
-          whitePageUrl: undefined, // Force use of safeUrl for consistency
+          whitePageUrl: landingPage.safeUrl, // Use stored safe URL if available
           targetCountries: landingPage.targetCountries!,
           excludeCountries: landingPage.excludeCountries || []
         });

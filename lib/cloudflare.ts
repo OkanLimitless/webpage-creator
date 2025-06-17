@@ -1919,11 +1919,20 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
       console.log(`Found zone ID: ${zoneId} for root domain: ${rootDomain}`);
     }
     
-    // 2. Generate safe page URL (we'll deploy the coming soon page to Vercel first)
-    const safePageDomain = subdomain && domain.dnsManagement !== 'external' 
-      ? `${subdomain}.${domain.name}` 
-      : domain.name;
-    const safeUrl = `https://${safePageDomain}`;
+    // 2. Generate safe page URL 
+    // ✅ CRITICAL: Use whitePageUrl if provided, otherwise fall back to domain-based URL
+    let safeUrl;
+    if (whitePageUrl) {
+      safeUrl = whitePageUrl;
+      console.log(`Using provided whitePageUrl as safe URL: ${safeUrl}`);
+    } else {
+      // Fall back to building from domain (for coming soon pages)
+      const safePageDomain = subdomain && domain.dnsManagement !== 'external' 
+        ? `${subdomain}.${domain.name}` 
+        : domain.name;
+      safeUrl = `https://${safePageDomain}`;
+      console.log(`Built safe URL from domain: ${safeUrl}`);
+    }
     
     // 3. Generate unique worker script name
     const scriptName = `cloak-${domain.name.replace(/\./g, '-')}-${Date.now()}`;

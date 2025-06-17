@@ -28,6 +28,7 @@ export interface ILandingPage extends mongoose.Document {
   workerScriptName?: string;
   workerRouteId?: string;
   safePageContent?: string;
+  safeUrl?: string; // Store the original safe URL for bots (e.g., https://www.auxmoney.com/)
 }
 
 const LandingPageSchema = new mongoose.Schema<ILandingPage>(
@@ -134,6 +135,10 @@ const LandingPageSchema = new mongoose.Schema<ILandingPage>(
       trim: true,
     },
     safePageContent: {
+      type: String,
+      trim: true,
+    },
+    safeUrl: {
       type: String,
       trim: true,
     },
