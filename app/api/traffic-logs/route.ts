@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const TRAFFIC_LOGS_NAMESPACE_ID = process.env.TRAFFIC_LOGS_NAMESPACE_ID;
+
+// Maximum number of recent logs to fetch (keep it reasonable for performance)
+const MAX_RECENT_LOGS = 300;
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = parseInt(searchParams.get('limit') || '25');
     const domain = searchParams.get('domain') || '';
     const decision = searchParams.get('decision') || '';
     const since = searchParams.get('since') || '';
@@ -20,99 +26,55 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // List all keys from KV namespace
-    const listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys`;
+    // Fetch recent logs efficiently using cursor-based pagination
+    const recentLogs = await fetchRecentLogs();
     
-    const listResponse = await fetch(listUrl, {
-      headers: {
-        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!listResponse.ok) {
-      throw new Error(`Failed to list traffic log keys: ${listResponse.statusText}`);
+    // Apply filters
+    let filteredLogs = recentLogs;
+    
+    if (domain) {
+      filteredLogs = filteredLogs.filter(log => log.domain.includes(domain));
     }
-
-    const listData = await listResponse.json();
-    const keys = listData.result || [];
-
-    // Filter keys by date if 'since' parameter is provided
-    let filteredKeys = keys;
+    
+    if (decision) {
+      filteredLogs = filteredLogs.filter(log => log.decision === decision);
+    }
+    
     if (since) {
       const sinceDate = new Date(since);
-      filteredKeys = keys.filter((key: any) => {
-        const keyDate = new Date(key.name.split('_')[2]); // Extract timestamp from key
-        return keyDate >= sinceDate;
+      filteredLogs = filteredLogs.filter(log => {
+        const logDate = new Date(log.timestamp);
+        return logDate >= sinceDate;
       });
     }
 
-    // Sort keys by timestamp (newest first)
-    filteredKeys.sort((a: any, b: any) => {
-      const aTime = a.name.split('_')[2];
-      const bTime = b.name.split('_')[2];
-      return bTime.localeCompare(aTime);
-    });
+    // Sort by timestamp (newest first) - they should already be sorted from fetchRecentLogs
+    filteredLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    // Paginate
+    // Paginate the filtered results
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-    const paginatedKeys = filteredKeys.slice(startIndex, endIndex);
-
-    // Fetch actual log entries
-    const logs = [];
-    for (const key of paginatedKeys) {
-      try {
-        const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/values/${key.name}`;
-        
-        const valueResponse = await fetch(valueUrl, {
-          headers: {
-            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`
-          }
-        });
-
-        if (valueResponse.ok) {
-          const logEntry = await valueResponse.json();
-          
-          // Apply filters
-          let includeEntry = true;
-          
-          if (domain && !logEntry.domain.includes(domain)) {
-            includeEntry = false;
-          }
-          
-          if (decision && logEntry.decision !== decision) {
-            includeEntry = false;
-          }
-          
-          if (includeEntry) {
-            logs.push(logEntry);
-          }
-        }
-      } catch (error) {
-        console.error(`Error fetching log entry ${key.name}:`, error);
-      }
-    }
+    const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
 
     // Calculate stats
     const stats = {
-      totalRequests: filteredKeys.length,
-      safePageRequests: logs.filter(log => log.decision === 'safe_page').length,
-      moneyPageRequests: logs.filter(log => log.decision === 'money_page').length,
-      topCountries: getTopCountries(logs),
-      topReasons: getTopReasons(logs)
+      totalRequests: filteredLogs.length,
+      safePageRequests: filteredLogs.filter(log => log.decision === 'safe_page').length,
+      moneyPageRequests: filteredLogs.filter(log => log.decision === 'money_page').length,
+      topCountries: getTopCountries(filteredLogs),
+      topReasons: getTopReasons(filteredLogs)
     };
 
     return NextResponse.json({
       success: true,
       data: {
-        logs,
+        logs: paginatedLogs,
         stats,
         pagination: {
           page,
           limit,
-          total: filteredKeys.length,
-          pages: Math.ceil(filteredKeys.length / limit)
+          total: filteredLogs.length,
+          pages: Math.ceil(filteredLogs.length / limit)
         }
       }
     });
@@ -123,6 +85,158 @@ export async function GET(request: NextRequest) {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
+  }
+}
+
+async function fetchRecentLogs(): Promise<any[]> {
+  const logs: any[] = [];
+  let cursor: string | undefined;
+  let totalFetched = 0;
+  
+  try {
+    // Fetch keys in batches using cursor pagination, limiting to recent logs
+    while (totalFetched < MAX_RECENT_LOGS) {
+      const remaining = MAX_RECENT_LOGS - totalFetched;
+      const batchLimit = Math.min(1000, remaining); // KV max limit is 1000
+      
+      // Build the list URL with cursor pagination
+      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${batchLimit}`;
+      
+      if (cursor) {
+        listUrl += `&cursor=${cursor}`;
+      }
+      
+      const listResponse = await fetch(listUrl, {
+        headers: {
+          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!listResponse.ok) {
+        throw new Error(`Failed to list traffic log keys: ${listResponse.statusText}`);
+      }
+
+      const listData = await listResponse.json();
+      const keys = listData.result || [];
+      
+      if (keys.length === 0) {
+        break; // No more keys
+      }
+
+      // Sort keys by timestamp (newest first) - extract timestamp from key name
+      keys.sort((a: any, b: any) => {
+        const aTime = a.name.split('_')[2] || '0';
+        const bTime = b.name.split('_')[2] || '0';
+        return bTime.localeCompare(aTime);
+      });
+
+      // Take only what we need to reach our limit
+      const keysToProcess = keys.slice(0, remaining);
+      
+      // Fetch log entries in bulk batches (KV bulk GET supports up to 100 keys)
+      const batchedLogs = await fetchLogsBulk(keysToProcess);
+      logs.push(...batchedLogs);
+      
+      totalFetched += keysToProcess.length;
+      
+      // Update cursor for next iteration
+      cursor = listData.result_info?.cursor;
+      
+      // Break if we've reached our limit or if there are no more results
+      if (totalFetched >= MAX_RECENT_LOGS || !cursor || listData.result_info?.list_complete !== false) {
+        break;
+      }
+    }
+    
+    // Final sort by timestamp (newest first)
+    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    // Trim to exact limit
+    return logs.slice(0, MAX_RECENT_LOGS);
+    
+  } catch (error) {
+    console.error('Error fetching recent logs:', error);
+    return [];
+  }
+}
+
+async function fetchLogsBulk(keys: any[]): Promise<any[]> {
+  const logs: any[] = [];
+  
+  // Process keys in batches of 100 (KV bulk GET limit)
+  const BULK_BATCH_SIZE = 100;
+  
+  for (let i = 0; i < keys.length; i += BULK_BATCH_SIZE) {
+    const batch = keys.slice(i, i + BULK_BATCH_SIZE);
+    const keyNames = batch.map((key: any) => key.name);
+    
+    try {
+      // Use bulk GET operation for efficiency
+      const bulkGetUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/bulk/get`;
+      
+      const bulkResponse = await fetch(bulkGetUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          keys: keyNames
+        })
+      });
+
+      if (bulkResponse.ok) {
+        const bulkData = await bulkResponse.json();
+        const values = bulkData.result?.values || {};
+        
+        // Convert the key-value pairs to log entries
+        for (const keyName of keyNames) {
+          if (values[keyName]) {
+            try {
+              const logEntry = JSON.parse(values[keyName]);
+              logs.push(logEntry);
+            } catch (parseError) {
+              console.error(`Error parsing log entry ${keyName}:`, parseError);
+            }
+          }
+        }
+      } else {
+        console.error(`Bulk GET failed for batch:`, bulkResponse.statusText);
+        
+        // Fallback to individual GET requests for this batch
+        await fetchLogsIndividually(batch, logs);
+      }
+    } catch (error) {
+      console.error(`Error in bulk fetch for batch:`, error);
+      
+      // Fallback to individual GET requests for this batch
+      await fetchLogsIndividually(batch, logs);
+    }
+  }
+  
+  return logs;
+}
+
+async function fetchLogsIndividually(keys: any[], logs: any[]): Promise<void> {
+  // Fallback: fetch individual log entries (less efficient but more reliable)
+  for (const key of keys) {
+    try {
+      const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/values/${key.name}`;
+      
+      const valueResponse = await fetch(valueUrl, {
+        headers: {
+          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`
+        }
+      });
+
+      if (valueResponse.ok) {
+        const logEntry = await valueResponse.json();
+        logs.push(logEntry);
+      }
+    } catch (error) {
+      console.error(`Error fetching individual log entry ${key.name}:`, error);
+    }
   }
 }
 

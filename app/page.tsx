@@ -238,6 +238,7 @@ export default function Home() {
   });
   const [trafficLogPage, setTrafficLogPage] = useState(1);
   const [trafficLogTotalPages, setTrafficLogTotalPages] = useState(1);
+  const [trafficLogLastUpdate, setTrafficLogLastUpdate] = useState<Date | null>(null);
   
   // Check authentication on page load
   useEffect(() => {
@@ -260,6 +261,24 @@ export default function Home() {
       fetchTrafficLogs(1, trafficLogFilters);
     }
   }, [activeTab]);
+
+  // Auto-refresh traffic logs every 30 seconds when on traffic logs tab
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (activeTab === 'trafficLogs') {
+      // Refresh every 30 seconds to keep logs up to date
+      intervalId = setInterval(() => {
+        fetchTrafficLogs(trafficLogPage || 1, trafficLogFilters);
+      }, 30000);
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [activeTab, trafficLogPage, trafficLogFilters]);
   
   // Handle login
   const handleLogin = async (e: React.FormEvent) => {
@@ -1783,6 +1802,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
         setTrafficLogStats(data.data.stats);
         setTrafficLogPage(data.data.pagination.page);
         setTrafficLogTotalPages(data.data.pagination.pages);
+        setTrafficLogLastUpdate(new Date());
       } else {
         console.error('Failed to fetch traffic logs:', data.error);
       }
@@ -4343,6 +4363,25 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               >
                 Clear Filters
               </button>
+              <button
+                onClick={() => fetchTrafficLogs(trafficLogPage || 1, trafficLogFilters)}
+                disabled={trafficLogsLoading}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded-md text-sm font-medium transition-colors duration-200 flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                </svg>
+                {trafficLogsLoading ? 'Refreshing...' : 'Refresh Now'}
+              </button>
+            </div>
+            
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-sm text-gray-400">
+                📊 Showing most recent 300 logs • Auto-refreshes every 30 seconds
+              </div>
+              <div className="text-xs text-gray-500">
+                Last updated: {trafficLogLastUpdate ? trafficLogLastUpdate.toLocaleTimeString() : 'Never'}
+              </div>
             </div>
           </div>
 
