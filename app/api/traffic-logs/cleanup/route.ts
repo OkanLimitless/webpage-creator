@@ -203,97 +203,75 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { dryRun = false } = await request.json();
+    const { dryRun = false, aggressiveCleanup = false } = await request.json();
     
-    console.log('Starting traffic logs cleanup...');
+    console.log('Starting smart traffic logs cleanup...');
     
-    // Step 1: Fetch ALL traffic log keys
-    const allKeys = await fetchAllTrafficLogKeys();
-    console.log(`Found ${allKeys.length} total traffic log keys`);
+    let totalDeleted = 0;
+    let totalKeys = 0;
+    let batchCount = 0;
+    const maxBatches = aggressiveCleanup ? 50 : 20; // Limit to prevent timeouts
     
-    if (allKeys.length <= KEEP_RECENT_LOGS) {
-      return NextResponse.json({
-        success: true,
-        message: `Only ${allKeys.length} logs found, no cleanup needed`,
-        deleted: 0,
-        remaining: allKeys.length
-      });
+    // Strategy: Delete batches of the "first" (oldest) keys until we have a reasonable number left
+    while (batchCount < maxBatches) {
+      batchCount++;
+      console.log(`Processing batch ${batchCount}...`);
+      
+      // Fetch a batch of keys (these will be alphabetically first = generally oldest)
+      const batchKeys = await fetchKeysBatch(1000);
+      
+      if (batchKeys.length === 0) {
+        console.log('No more keys found');
+        break;
+      }
+      
+      totalKeys += batchKeys.length;
+      
+      // Quick check: if we're getting keys with recent timestamps, we should stop
+      const sampleKey = batchKeys[0];
+      const timestamp = extractTimestampFromKey(sampleKey.name);
+      const keyAge = Date.now() - new Date(timestamp).getTime();
+      const hoursOld = keyAge / (1000 * 60 * 60);
+      
+      console.log(`Sample key age: ${hoursOld.toFixed(1)} hours old`);
+      
+      // If keys are less than 2 hours old, we've reached recent data - stop here
+      if (hoursOld < 2) {
+        console.log('Reached recent data, stopping cleanup');
+        break;
+      }
+      
+      if (dryRun) {
+        console.log(`Would delete batch of ${batchKeys.length} keys (oldest: ${hoursOld.toFixed(1)}h old)`);
+        totalDeleted += batchKeys.length;
+      } else {
+        // Delete this batch of old keys
+        const deleted = await deleteKeysBatch(batchKeys);
+        totalDeleted += deleted;
+        console.log(`Deleted ${deleted} keys from batch ${batchCount}`);
+      }
+      
+      // Small delay to avoid overwhelming the API
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    
-    // Step 2: Sort keys by timestamp (newest first)
-    allKeys.sort((a, b) => {
-      const aKeyName = a.name;
-      const bKeyName = b.name;
-      const prefixLength = 'traffic_log_'.length;
-      
-      const aLastUnderscoreIndex = aKeyName.lastIndexOf('_');
-      const bLastUnderscoreIndex = bKeyName.lastIndexOf('_');
-      
-      const aTimestamp = aKeyName.substring(prefixLength, aLastUnderscoreIndex);
-      const bTimestamp = bKeyName.substring(prefixLength, bLastUnderscoreIndex);
-      
-      const aTime = new Date(aTimestamp).getTime() || 0;
-      const bTime = new Date(bTimestamp).getTime() || 0;
-      
-      return bTime - aTime; // Newest first
-    });
-    
-    // Step 3: Identify keys to delete (everything after the first KEEP_RECENT_LOGS)
-    const keysToDelete = allKeys.slice(KEEP_RECENT_LOGS);
-    console.log(`Will delete ${keysToDelete.length} old logs, keeping ${KEEP_RECENT_LOGS} recent ones`);
     
     if (dryRun) {
       return NextResponse.json({
         success: true,
         message: 'Dry run completed',
-        totalLogs: allKeys.length,
-        toDelete: keysToDelete.length,
-        toKeep: KEEP_RECENT_LOGS,
-        oldestToKeep: allKeys[KEEP_RECENT_LOGS - 1]?.name || 'N/A',
-        newestToDelete: keysToDelete[0]?.name || 'N/A'
+        batchesProcessed: batchCount,
+        totalKeysFound: totalKeys,
+        wouldDelete: totalDeleted,
+        note: 'This deletes old logs in batches until reaching recent data (< 2 hours old)'
       });
-    }
-    
-    // Step 4: Delete old keys in batches
-    let deleted = 0;
-    const BATCH_SIZE = 100; // KV bulk delete supports up to 100 keys
-    
-    for (let i = 0; i < keysToDelete.length; i += BATCH_SIZE) {
-      const batch = keysToDelete.slice(i, i + BATCH_SIZE);
-      const keyNames = batch.map(key => key.name);
-      
-      try {
-        const deleteUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/bulk/delete`;
-        
-        const deleteResponse = await fetch(deleteUrl, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            keys: keyNames
-          })
-        });
-        
-        if (deleteResponse.ok) {
-          deleted += keyNames.length;
-          console.log(`Deleted batch of ${keyNames.length} logs (total: ${deleted})`);
-        } else {
-          console.error(`Failed to delete batch:`, deleteResponse.statusText);
-        }
-      } catch (error) {
-        console.error(`Error deleting batch:`, error);
-      }
     }
     
     return NextResponse.json({
       success: true,
-      message: `Cleanup completed`,
-      totalLogs: allKeys.length,
-      deleted,
-      remaining: allKeys.length - deleted,
-      keptRecent: KEEP_RECENT_LOGS
+      message: `Smart cleanup completed`,
+      batchesProcessed: batchCount,
+      totalDeleted,
+      note: 'Deleted old logs until reaching recent data'
     });
     
   } catch (error) {
@@ -305,51 +283,70 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function fetchAllTrafficLogKeys(): Promise<any[]> {
-  const allKeys: any[] = [];
-  let cursor: string | undefined;
-  
+async function fetchKeysBatch(limit: number): Promise<any[]> {
   try {
-    while (true) {
-      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=1000`;
-      
-      if (cursor) {
-        listUrl += `&cursor=${cursor}`;
+    const listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${limit}`;
+    
+    const listResponse = await fetch(listUrl, {
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        'Content-Type': 'application/json'
       }
+    });
+
+    if (!listResponse.ok) {
+      throw new Error(`Failed to list traffic log keys: ${listResponse.statusText}`);
+    }
+
+    const listData = await listResponse.json();
+    const keys = listData.result || [];
+    
+    // Filter only traffic log keys
+    return keys.filter((key: any) => key.name.startsWith('traffic_log_'));
+    
+  } catch (error) {
+    console.error('Error fetching keys batch:', error);
+    return [];
+  }
+}
+
+async function deleteKeysBatch(keys: any[]): Promise<number> {
+  let deleted = 0;
+  const BATCH_SIZE = 100; // KV bulk delete supports up to 100 keys
+  
+  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+    const batch = keys.slice(i, i + BATCH_SIZE);
+    const keyNames = batch.map((key: any) => key.name);
+    
+    try {
+      const deleteUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/bulk/delete`;
       
-      const listResponse = await fetch(listUrl, {
+      const deleteResponse = await fetch(deleteUrl, {
+        method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          keys: keyNames
+        })
       });
-
-      if (!listResponse.ok) {
-        throw new Error(`Failed to list traffic log keys: ${listResponse.statusText}`);
+      
+      if (deleteResponse.ok) {
+        deleted += keyNames.length;
+      } else {
+        console.error(`Failed to delete batch:`, deleteResponse.statusText);
       }
-
-      const listData = await listResponse.json();
-      const keys = listData.result || [];
-      
-      if (keys.length === 0) {
-        break;
-      }
-      
-      // Filter only traffic log keys
-      const trafficLogKeys = keys.filter((key: any) => key.name.startsWith('traffic_log_'));
-      allKeys.push(...trafficLogKeys);
-      
-      cursor = listData.result_info?.cursor;
-      
-      if (!cursor || listData.result_info?.list_complete !== false) {
-        break;
-      }
+    } catch (error) {
+      console.error(`Error deleting batch:`, error);
     }
-    
-    return allKeys;
-    
-  } catch (error) {
-    console.error('Error fetching all traffic log keys:', error);
-    return [];
   }
+  
+  return deleted;
+}
+
+function extractTimestampFromKey(keyName: string): string {
+  const prefixLength = 'traffic_log_'.length;
+  const lastUnderscoreIndex = keyName.lastIndexOf('_');
+  return keyName.substring(prefixLength, lastUnderscoreIndex);
 } 
