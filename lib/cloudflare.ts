@@ -1226,6 +1226,7 @@ async function handleMainRequest(request) {
     // Safe pages should load their assets normally since they're legitimate websites
     if (!isBot) {
       // Only rewrite assets when showing money page to real users
+      // ✅ NO LINK REWRITING FOR MONEY PAGES - All <a href> links stay untouched
       rewriter
         .on('img', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
         .on('link[rel="stylesheet"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
@@ -1235,6 +1236,9 @@ async function handleMainRequest(request) {
         .on('audio', new AssetRewriter(baseTargetUrl, CDN_PATH, 'src'))
         .on('link[rel="preload"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'))
         .on('link[rel="prefetch"]', new AssetRewriter(baseTargetUrl, CDN_PATH, 'href'));
+      
+      // ✅ EXPLICITLY NO LINK REWRITING - Money page links stay exactly as they are
+      // No .on('a', new LinkRewriter(...)) - this ensures affiliate URLs work perfectly
     }
     
     const transformedResponse = rewriter.transform(response);
@@ -1449,41 +1453,8 @@ async function handleResourceRequest(request) {
   }
 }
 
-// Helper function to check if a URL is an affiliate/tracking URL that should not be rewritten
-function isAffiliateTrackingUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.toLowerCase();
-    
-    // List of affiliate/tracking domains that should never be rewritten
-    const affiliateTrackingDomains = [
-      'exl-redircd.com',
-      'tracking.com',
-      'affiliate.com',
-      'click.linksynergy.com',
-      'shareasale.com',
-      'cj.com',
-      'commission-junction.com',
-      'impact.com',
-      'impactradius.com',
-      'partnerize.com',
-      'awin.com',
-      'awin1.com',
-      'clickbank.com',
-      'hop.clickbank.net',
-      'maxbounty.com',
-      'pepperjam.com',
-      'tradedoubler.com',
-      'zanox.com',
-      'rakuten.com'
-    ];
-    
-    // Check if this hostname is in our affiliate tracking list
-    return affiliateTrackingDomains.includes(hostname);
-  } catch (e) {
-    return false;
-  }
-}
+// ✅ isAffiliateTrackingUrl REMOVED - No longer needed since we don't rewrite any links
+// Money pages have zero link rewriting, so all affiliate URLs work perfectly
 
 class AttributeRewriter {
   constructor(proxyDomain, targetOrigin, cdnPath) {
@@ -1493,7 +1464,8 @@ class AttributeRewriter {
   }
   
   element(element) {
-    const attributes = ['href', 'src', 'action', 'data-src', 'srcset'];
+    // ✅ NO HREF REWRITING - Skip href attributes completely for money pages
+    const attributes = ['src', 'action', 'data-src', 'srcset']; // href removed!
     for (let i = 0; i < attributes.length; i++) {
       const attr = attributes[i];
       const originalUrl = element.getAttribute(attr);
@@ -1517,11 +1489,7 @@ class AttributeRewriter {
             absoluteUrl = new URL(originalUrl, this.targetOrigin).href;
           }
           
-          // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
-          if (isAffiliateTrackingUrl(absoluteUrl)) {
-            console.log('🎯 Affiliate URL protection in AttributeRewriter:', originalUrl);
-            return; // Do nothing - leave the original URL untouched
-          }
+          // Note: No affiliate URL protection needed here since href is excluded
           
           // Only rewrite if it's not already pointing to our proxy domain
           if (!absoluteUrl.includes(this.proxyDomain)) {
@@ -1577,92 +1545,13 @@ class HeadRewriter {
   }
 }
 
-class FormRewriter {
-  constructor(proxyDomain, cdnPath) {
-    this.proxyDomain = proxyDomain;
-    this.cdnPath = cdnPath;
-  }
-  
-  element(form) {
-    const action = form.getAttribute('action');
-    if (action && !action.startsWith('/') && !action.includes(this.proxyDomain)) {
-      // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs
-      if (isAffiliateTrackingUrl(action)) {
-        console.log('🎯 Affiliate URL protection in FormRewriter:', action);
-        return; // Do nothing - leave the original action untouched
-      }
-      
-      const encoded = btoa(action);
-      form.setAttribute('action', '/' + this.cdnPath + '/' + encoded);
-    }
-  }
-}
+// ✅ FormRewriter REMOVED - Money pages have NO form action rewriting
+// All form actions on money pages stay exactly as they are
+// This ensures affiliate form submissions work perfectly
 
-class LinkRewriter {
-  constructor(proxyDomain, targetOrigin, cdnPath) {
-    this.proxyDomain = proxyDomain;
-    this.targetOrigin = targetOrigin;
-    this.cdnPath = cdnPath;
-  }
-  
-  element(link) {
-    const href = link.getAttribute('href');
-    if (href) {
-      try {
-        let absoluteUrl;
-        
-        // Handle different types of URLs
-        if (href.startsWith('http://') || href.startsWith('https://')) {
-          // Already absolute URL
-          absoluteUrl = href;
-        } else if (href.startsWith('//')) {
-          // Protocol-relative URL
-          absoluteUrl = 'https:' + href;
-        } else if (href.startsWith('/')) {
-          // Root-relative URL - these are the problematic ones!
-          const targetOriginObj = new URL(this.targetOrigin);
-          absoluteUrl = targetOriginObj.origin + href;
-        } else if (href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
-          // Skip anchors and special protocols
-          return;
-        } else {
-          // Relative URL
-          absoluteUrl = new URL(href, this.targetOrigin).href;
-        }
-        
-        // ✅ AFFILIATE URL PROTECTION: Never rewrite affiliate/tracking URLs + force new window
-        if (isAffiliateTrackingUrl(absoluteUrl)) {
-          console.log('🎯 Affiliate URL passthrough (opening in new window):', href);
-          // Force affiliate links to open in new window to avoid any rewriting loops
-          link.setAttribute('target', '_blank');
-          link.setAttribute('rel', 'noopener noreferrer');
-          return; // Do nothing else - leave the original href untouched
-        }
-        
-        // Only rewrite if it's not already pointing to our proxy domain
-        if (!absoluteUrl.includes(this.proxyDomain)) {
-          const linkDomain = new URL(absoluteUrl).hostname;
-          const targetDomain = new URL(this.targetOrigin).hostname;
-          
-          // For same-domain links (articles), don't proxy them - let them be handled by main request
-          if (linkDomain === targetDomain) {
-            // Keep the original href but make it relative to our proxy domain
-            const linkPath = new URL(absoluteUrl).pathname + new URL(absoluteUrl).search;
-            link.setAttribute('href', linkPath);
-          } else {
-            // For external domains, proxy through CDN path
-            const encoded = btoa(absoluteUrl);
-            link.setAttribute('href', '/' + this.cdnPath + '/' + encoded);
-            link.setAttribute('target', '_blank');
-            link.setAttribute('rel', 'noopener noreferrer');
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to rewrite link:', href, e.message);
-      }
-    }
-  }
-}
+// ✅ LinkRewriter REMOVED - Money pages have NO link rewriting
+// All <a href> links on money pages stay exactly as they are
+// This ensures affiliate URLs work perfectly without any interference
 
 class MetadataStripper {
   element(element) {

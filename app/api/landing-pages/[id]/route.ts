@@ -313,18 +313,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
         
         console.log('Re-deploy calculated safe URL:', safeUrl);
         
-        // Use white page URL if available, otherwise fall back to safe URL
-        const whitePageUrl = body.whitePageUrl || undefined;
-        
         // Import Cloudflare functions dynamically
         const cloudflareModule = await import('@/lib/cloudflare');
         const { generateJciWorkerScript } = cloudflareModule;
         
         // Generate updated worker script with latest code
+        // Note: Not using whitePageUrl since it's not stored in the database
+        // The worker will use safeUrl as the SAFE_URL consistently
         const workerScript = generateJciWorkerScript({
           safeUrl,
           moneyUrl: landingPage.moneyUrl!,
-          whitePageUrl,
+          whitePageUrl: undefined, // Force use of safeUrl for consistency
           targetCountries: landingPage.targetCountries!,
           excludeCountries: landingPage.excludeCountries || []
         });
