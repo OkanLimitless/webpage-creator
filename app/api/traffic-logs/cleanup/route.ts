@@ -238,22 +238,17 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
     let totalKeysFound = 0;
     let totalKeysToDelete = 0;
     let totalDeleted = 0;
-    const keysToDelete: string[] = [];
     
-    // Fetch all traffic log keys in batches
-    let cursor: string | undefined;
+    // Process keys in batches and delete immediately
     let batchCount = 0;
+    let hasMoreKeys = true;
     
-    while (true) {
+    while (hasMoreKeys && batchCount < 100) { // Safety limit
       batchCount++;
       console.log(`Processing batch ${batchCount}...`);
       
-      // Build the list URL with cursor pagination
-      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=1000`;
-      
-      if (cursor) {
-        listUrl += `&cursor=${encodeURIComponent(cursor)}`;
-      }
+      // Fetch a batch of keys (no cursor needed since we delete as we go)
+      const listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=1000`;
       
       const listResponse = await fetch(listUrl, {
         headers: {
@@ -271,6 +266,7 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
       
       if (keys.length === 0) {
         console.log('No more keys found');
+        hasMoreKeys = false;
         break;
       }
       
@@ -278,6 +274,8 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
       console.log(`Found ${keys.length} keys in batch ${batchCount} (total: ${totalKeysFound})`);
       
       // Filter traffic log keys and check their timestamps
+      const keysToDeleteInThisBatch: string[] = [];
+      
       for (const key of keys) {
         if (key.name.startsWith('traffic_log_')) {
           try {
@@ -288,35 +286,49 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
             
             // If key is older than cutoff, mark for deletion
             if (keyDate < cutoffTime) {
-              keysToDelete.push(key.name);
+              keysToDeleteInThisBatch.push(key.name);
               totalKeysToDelete++;
             }
           } catch (error) {
             console.warn(`Failed to parse timestamp from key: ${key.name}`, error);
             // If we can't parse the timestamp, assume it's old and delete it
-            keysToDelete.push(key.name);
+            keysToDeleteInThisBatch.push(key.name);
             totalKeysToDelete++;
           }
         }
       }
       
-      console.log(`Keys to delete so far: ${totalKeysToDelete}`);
+      console.log(`Keys to delete in batch ${batchCount}: ${keysToDeleteInThisBatch.length}`);
       
-      // Check if there are more keys
-      cursor = listData.result_info?.cursor;
-      if (!cursor) {
-        console.log('Finished scanning all keys');
-        break;
+      if (dryRun) {
+        console.log(`[DRY RUN] Would delete ${keysToDeleteInThisBatch.length} keys from batch ${batchCount}`);
+      } else {
+        // Delete this batch immediately
+        if (keysToDeleteInThisBatch.length > 0) {
+          const deleted = await bulkDeleteKeys(keysToDeleteInThisBatch);
+          totalDeleted += deleted;
+          console.log(`Deleted ${deleted} keys from batch ${batchCount} (total deleted: ${totalDeleted})`);
+        }
       }
       
-      // Safety check to prevent infinite loops
-      if (batchCount > 100) {
-        console.log('Reached maximum batch limit (100), stopping scan');
-        break;
+      // If we found fewer than 1000 keys, we've reached the end
+      if (keys.length < 1000) {
+        console.log('Reached end of keys (batch had fewer than 1000 keys)');
+        hasMoreKeys = false;
+      }
+      
+      // If no keys were marked for deletion in this batch, we might be done with old keys
+      if (keysToDeleteInThisBatch.length === 0) {
+        console.log('No keys to delete in this batch - might be done with old keys');
+        // Continue for a few more batches to be sure
+        if (batchCount > 5) {
+          console.log('No old keys found in several batches, stopping');
+          hasMoreKeys = false;
+        }
       }
     }
     
-    console.log(`Scan complete. Total keys: ${totalKeysFound}, Keys to delete: ${totalKeysToDelete}`);
+    console.log(`Scan complete. Total keys processed: ${totalKeysFound}, Keys to delete: ${totalKeysToDelete}`);
     
     if (dryRun) {
       return {
@@ -327,30 +339,6 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
         cutoffTime: cutoffISO,
         message: `Would delete ${totalKeysToDelete} keys older than ${cutoffISO}`
       };
-    }
-    
-    // Perform actual deletion using the new bulk delete API
-    if (keysToDelete.length > 0) {
-      console.log(`Starting deletion of ${keysToDelete.length} keys...`);
-      
-      // Delete in batches of 10,000 (Cloudflare's limit)
-      const BULK_DELETE_LIMIT = 10000;
-      let deletedCount = 0;
-      
-      for (let i = 0; i < keysToDelete.length; i += BULK_DELETE_LIMIT) {
-        const batch = keysToDelete.slice(i, i + BULK_DELETE_LIMIT);
-        console.log(`Deleting batch ${Math.floor(i / BULK_DELETE_LIMIT) + 1}: ${batch.length} keys`);
-        
-        const deleted = await bulkDeleteKeys(batch);
-        deletedCount += deleted;
-        
-        // Small delay between batches to avoid rate limiting
-        if (i + BULK_DELETE_LIMIT < keysToDelete.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-      
-      totalDeleted = deletedCount;
     }
     
     const remaining = totalKeysFound - totalDeleted;
