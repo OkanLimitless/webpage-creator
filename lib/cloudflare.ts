@@ -841,6 +841,42 @@ addEventListener('fetch', event => {
 async function handleRequest(request) {
   const url = new URL(request.url);
 
+  // ROUTE 0: Block analytics and tracking requests with proper responses
+  const pathname = url.pathname.toLowerCase();
+  if (pathname.includes('analytics') || pathname.includes('tracking') || 
+      pathname.includes('metrics') || pathname.includes('beacon') ||
+      pathname.endsWith('analytics.json') || pathname.endsWith('tracking.json') ||
+      pathname.includes('gtag') || pathname.includes('ga.js') ||
+      pathname.includes('google-analytics') || pathname.includes('googletagmanager')) {
+    
+    // Return appropriate response based on request type
+    if (pathname.endsWith('.json')) {
+      return new Response('{"status":"blocked","message":"Analytics blocked"}', {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+    } else if (pathname.endsWith('.js')) {
+      return new Response('// Analytics script blocked', {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache'
+        }
+      });
+    } else {
+      // For POST requests to analytics endpoints
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+    }
+  }
+
   // ROUTE 1: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
     const swCode = '// Service Worker Configuration - Use the same CDN path as main worker\\n' +
