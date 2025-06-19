@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { LandingPage } from '@/lib/models/LandingPage';
 import { Domain } from '@/lib/models/Domain';
-import { createCloakedLandingPage, generateComingSoonPage, createDnsRecord } from '@/lib/cloudflare';
+import { createCloakedLandingPage, createDnsRecord } from '@/lib/cloudflare';
 import { addDomainToVercel, addDomainAndSubdomainToVercel } from '@/lib/vercel';
 
 // POST /api/landing-pages/create-cloaked
@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
       excludeCountries = []
     } = body;
     
-    if (!name || !domainId || !moneyUrl || !targetCountries || !Array.isArray(targetCountries) || targetCountries.length === 0) {
-      return NextResponse.json({ error: 'Missing required fields: name, domainId, moneyUrl, and targetCountries are required' }, { status: 400 });
+    if (!name || !domainId || !moneyUrl || !whitePageUrl || !targetCountries || !Array.isArray(targetCountries) || targetCountries.length === 0) {
+      return NextResponse.json({ error: 'Missing required fields: name, domainId, moneyUrl, whitePageUrl, and targetCountries are required' }, { status: 400 });
     }
     
     // Validate and get domain
@@ -66,8 +66,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Generate safe page HTML content
-    const safePageContent = generateComingSoonPage();
+    // No fallback safe page content - whitePageUrl is required
     
     // Step 1: Create and save the landing page record first
     const landingPage = new LandingPage({
@@ -82,7 +81,7 @@ export async function POST(request: NextRequest) {
       moneyUrl,
       targetCountries,
       excludeCountries,
-      safePageContent,
+      safePageContent: '', // No fallback content - requires whitePageUrl
       safeUrl: whitePageUrl // Store the original safe URL for re-deployments
     });
     
@@ -184,7 +183,7 @@ export async function POST(request: NextRequest) {
           whitePageUrl,
           targetCountries,
           excludeCountries,
-          safePageContent
+          safePageContent: '' // No fallback content - requires whitePageUrl
         });
         
         // Update landing page with worker details
