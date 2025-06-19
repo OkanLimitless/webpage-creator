@@ -1205,13 +1205,9 @@ async function handleMainRequest(request) {
       const safeOrigin = new URL(SAFE_URL).origin;
       targetUrl = safeOrigin + requestUrl.pathname + requestUrl.search;
     } else {
-      // For real users, construct URL with money domain + requested path
-      if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
-        targetUrl = MONEY_URL;
-      } else {
-        const moneyOrigin = new URL(MONEY_URL).origin;
-        targetUrl = moneyOrigin + requestUrl.pathname + requestUrl.search;
-      }
+      // For real users, ALWAYS redirect to the specific money page URL
+      // Ignore the requested path and just preserve query parameters (like gclid)
+      targetUrl = MONEY_URL + (requestUrl.search || '');
     }
     
     const baseTargetUrl = isBot ? SAFE_URL : MONEY_URL;
