@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`Starting aggressive cleanup - DryRun: ${dryRun}`);
     
-    // Aggressive cleanup: Delete everything older than 24 hours
+    // Aggressive cleanup: Delete everything older than 6 hours
     const result = await aggressiveCleanup(dryRun);
     
     return NextResponse.json({
@@ -228,12 +228,12 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
   try {
     console.log('Starting aggressive cleanup of old traffic logs...');
     
-    // Calculate cutoff time (24 hours ago instead of 2 hours - more reasonable)
+    // Calculate cutoff time (6 hours ago - more aggressive cleanup)
     const cutoffTime = new Date();
-    cutoffTime.setHours(cutoffTime.getHours() - 24);
+    cutoffTime.setHours(cutoffTime.getHours() - 6);
     const cutoffISO = cutoffTime.toISOString();
     
-    console.log(`Cutoff time: ${cutoffISO} (deleting everything older than 24 hours)`);
+    console.log(`Cutoff time: ${cutoffISO} (deleting everything older than 6 hours)`);
     
     let totalKeysFound = 0;
     let totalKeysToDelete = 0;
@@ -358,7 +358,7 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
         totalKeysToDelete,
         totalKeysToKeep: recentKeysFound,
         cutoffTime: cutoffISO,
-        message: `Would delete ${totalKeysToDelete} keys older than 24 hours`
+        message: `Would delete ${totalKeysToDelete} keys older than 6 hours`
       };
     }
     
@@ -372,7 +372,7 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
       deleted: totalDeleted,
       remaining,
       cutoffTime: cutoffISO,
-      message: `Successfully deleted ${totalDeleted} old traffic logs (older than 24 hours)`
+      message: `Successfully deleted ${totalDeleted} old traffic logs (older than 6 hours)`
     };
     
   } catch (error) {
