@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`Starting aggressive cleanup - DryRun: ${dryRun}`);
     
-    // Aggressive cleanup: Delete everything older than 2 hours
+    // Aggressive cleanup: Delete everything older than 24 hours
     const result = await aggressiveCleanup(dryRun);
     
     return NextResponse.json({
@@ -228,16 +228,17 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
   try {
     console.log('Starting aggressive cleanup of old traffic logs...');
     
-    // Calculate cutoff time (2 hours ago)
+    // Calculate cutoff time (24 hours ago instead of 2 hours - more reasonable)
     const cutoffTime = new Date();
-    cutoffTime.setHours(cutoffTime.getHours() - 2);
+    cutoffTime.setHours(cutoffTime.getHours() - 24);
     const cutoffISO = cutoffTime.toISOString();
     
-    console.log(`Cutoff time: ${cutoffISO} (deleting everything older)`);
+    console.log(`Cutoff time: ${cutoffISO} (deleting everything older than 24 hours)`);
     
     let totalKeysFound = 0;
     let totalKeysToDelete = 0;
     let totalDeleted = 0;
+    let recentKeysFound = 0;
     
     // Process keys in batches and delete immediately
     let batchCount = 0;
@@ -275,19 +276,32 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
       
       // Filter traffic log keys and check their timestamps
       const keysToDeleteInThisBatch: string[] = [];
+      let trafficLogKeysInBatch = 0;
       
       for (const key of keys) {
         if (key.name.startsWith('traffic_log_')) {
+          trafficLogKeysInBatch++;
+          
           try {
             // Extract timestamp from key name: traffic_log_2025-06-19T14:05:25.797Z_randomString
             const parts = key.name.split('_');
             const timestamp = parts.slice(2, -1).join('_'); // Everything between traffic_log_ and last _
             const keyDate = new Date(timestamp);
             
+            // Log first few keys for debugging
+            if (trafficLogKeysInBatch <= 3) {
+              console.log(`Sample key: ${key.name}`);
+              console.log(`Extracted timestamp: ${timestamp}`);
+              console.log(`Parsed date: ${keyDate.toISOString()}`);
+              console.log(`Is older than cutoff? ${keyDate < cutoffTime}`);
+            }
+            
             // If key is older than cutoff, mark for deletion
             if (keyDate < cutoffTime) {
               keysToDeleteInThisBatch.push(key.name);
               totalKeysToDelete++;
+            } else {
+              recentKeysFound++;
             }
           } catch (error) {
             console.warn(`Failed to parse timestamp from key: ${key.name}`, error);
@@ -298,13 +312,20 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
         }
       }
       
+      console.log(`Traffic log keys in batch: ${trafficLogKeysInBatch}`);
       console.log(`Keys to delete in batch ${batchCount}: ${keysToDeleteInThisBatch.length}`);
+      console.log(`Recent keys found so far: ${recentKeysFound}`);
       
       if (dryRun) {
         console.log(`[DRY RUN] Would delete ${keysToDeleteInThisBatch.length} keys from batch ${batchCount}`);
+        // Show a few sample keys that would be deleted
+        if (keysToDeleteInThisBatch.length > 0) {
+          console.log(`Sample keys to delete: ${keysToDeleteInThisBatch.slice(0, 3).join(', ')}`);
+        }
       } else {
         // Delete this batch immediately
         if (keysToDeleteInThisBatch.length > 0) {
+          console.log(`About to delete ${keysToDeleteInThisBatch.length} keys...`);
           const deleted = await bulkDeleteKeys(keysToDeleteInThisBatch);
           totalDeleted += deleted;
           console.log(`Deleted ${deleted} keys from batch ${batchCount} (total deleted: ${totalDeleted})`);
@@ -328,20 +349,20 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
       }
     }
     
-    console.log(`Scan complete. Total keys processed: ${totalKeysFound}, Keys to delete: ${totalKeysToDelete}`);
+    console.log(`Scan complete. Total keys processed: ${totalKeysFound}, Keys to delete: ${totalKeysToDelete}, Recent keys: ${recentKeysFound}`);
     
     if (dryRun) {
       return {
         dryRun: true,
         totalKeysFound,
         totalKeysToDelete,
-        totalKeysToKeep: totalKeysFound - totalKeysToDelete,
+        totalKeysToKeep: recentKeysFound,
         cutoffTime: cutoffISO,
-        message: `Would delete ${totalKeysToDelete} keys older than ${cutoffISO}`
+        message: `Would delete ${totalKeysToDelete} keys older than 24 hours`
       };
     }
     
-    const remaining = totalKeysFound - totalDeleted;
+    const remaining = recentKeysFound;
     
     console.log(`Cleanup complete. Deleted: ${totalDeleted}, Remaining: ${remaining}`);
     
@@ -351,7 +372,7 @@ async function aggressiveCleanup(dryRun: boolean): Promise<any> {
       deleted: totalDeleted,
       remaining,
       cutoffTime: cutoffISO,
-      message: `Successfully deleted ${totalDeleted} old traffic logs`
+      message: `Successfully deleted ${totalDeleted} old traffic logs (older than 24 hours)`
     };
     
   } catch (error) {
