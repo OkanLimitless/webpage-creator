@@ -114,14 +114,78 @@ export async function GET(request: NextRequest) {
 
 async function fetchRecentLogs(): Promise<any[]> {
   const logs: any[] = [];
+  
+  try {
+    console.log('Starting efficient recent traffic logs fetch...');
+    
+    // Strategy: Since KV returns keys alphabetically, and we have a large dataset,
+    // we'll use a reverse-search approach to find recent logs more efficiently
+    
+    // Step 1: Get a sample of keys to understand the timestamp range
+    const sampleKeys = await getSampleKeys(3000); // Get first 3000 keys to analyze
+    console.log(`Sampled ${sampleKeys.length} keys for analysis`);
+    
+    if (sampleKeys.length === 0) {
+      console.log('No traffic log keys found');
+      return [];
+    }
+    
+         // Step 2: Extract timestamps from sample and find the cutoff point for recent logs
+     const keyTimestamps = sampleKeys.map(key => {
+       try {
+         const parts = key.name.split('_');
+         const timestamp = parts.slice(2, -1).join('_');
+         return {
+           key,
+           timestamp,
+           date: new Date(timestamp)
+         };
+       } catch (error) {
+         console.warn('Failed to parse timestamp from key:', key.name);
+         return null;
+       }
+     }).filter((item): item is NonNullable<typeof item> => item !== null);
+     
+     // Sort by timestamp (newest first)
+     keyTimestamps.sort((a, b) => b.date.getTime() - a.date.getTime());
+     
+     console.log(`Parsed ${keyTimestamps.length} valid timestamps`);
+     if (keyTimestamps.length > 0) {
+       console.log('Newest log:', keyTimestamps[0].timestamp);
+       console.log('Oldest in sample:', keyTimestamps[keyTimestamps.length - 1].timestamp);
+     }
+     
+     // Step 3: Take the most recent keys up to our limit
+     const recentKeyData = keyTimestamps.slice(0, MAX_RECENT_LOGS);
+     const recentKeys = recentKeyData.map(item => item.key);
+    
+    console.log(`Selected ${recentKeys.length} most recent keys`);
+    
+    // Step 4: Fetch log entries for the recent keys in bulk batches
+    const batchedLogs = await fetchLogsBulk(recentKeys);
+    logs.push(...batchedLogs);
+    
+    // Step 5: Final sort by actual timestamp from log data (just to be sure)
+    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    console.log(`Successfully fetched ${logs.length} recent traffic logs`);
+    return logs.slice(0, MAX_RECENT_LOGS); // Trim to exact limit
+    
+  } catch (error) {
+    console.error('Error fetching recent logs:', error);
+    return [];
+  }
+}
+
+// Helper function to get a sample of keys for analysis
+async function getSampleKeys(sampleSize: number = 3000): Promise<any[]> {
+  const keys: any[] = [];
   let cursor: string | undefined;
   let totalFetched = 0;
   
   try {
-    // Fetch keys in batches using cursor pagination, limiting to recent logs
-    // After cleanup, the first keys should be recent ones
-    while (totalFetched < MAX_RECENT_LOGS) {
-      const remaining = MAX_RECENT_LOGS - totalFetched;
+    while (totalFetched < sampleSize) {
+      const remaining = sampleSize - totalFetched;
       const batchLimit = Math.min(1000, remaining); // KV max limit is 1000
       
       // Build the list URL with cursor pagination
@@ -143,46 +207,33 @@ async function fetchRecentLogs(): Promise<any[]> {
       }
 
       const listData = await listResponse.json();
-      const keys = listData.result || [];
+      const batchKeys = listData.result || [];
       
-      if (keys.length === 0) {
+      if (batchKeys.length === 0) {
         break; // No more keys
       }
 
-      // Filter only traffic log keys
-      const trafficLogKeys = keys.filter((key: any) => key.name.startsWith('traffic_log_'));
-      
-      // Take only what we need to reach our limit
-      const keysToProcess = trafficLogKeys.slice(0, remaining);
-      
-      // Fetch log entries in bulk batches (KV bulk GET supports up to 100 keys)
-      const batchedLogs = await fetchLogsBulk(keysToProcess);
-      logs.push(...batchedLogs);
-      
-      totalFetched += keysToProcess.length;
+      // Filter only traffic log keys and add to our collection
+      const trafficLogKeys = batchKeys.filter((key: any) => key.name.startsWith('traffic_log_'));
+      keys.push(...trafficLogKeys);
+      totalFetched += trafficLogKeys.length;
       
       // Update cursor for next iteration
       cursor = listData.result_info?.cursor;
       
-      // Break if we've reached our limit or if there are no more results
-      if (totalFetched >= MAX_RECENT_LOGS || !cursor || listData.result_info?.list_complete !== false) {
+      // Break if no more results or we've reached our sample size
+      if (!cursor || listData.result_info?.list_complete !== false || totalFetched >= sampleSize) {
         break;
       }
     }
     
-    // Final sort by timestamp (newest first)
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Trim to exact limit
-    return logs.slice(0, MAX_RECENT_LOGS);
+    return keys;
     
   } catch (error) {
-    console.error('Error fetching recent logs:', error);
+    console.error('Error getting sample keys:', error);
     return [];
   }
 }
-
-
 
 async function fetchLogsBulk(keys: any[]): Promise<any[]> {
   const logs: any[] = [];

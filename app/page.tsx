@@ -262,25 +262,7 @@ export default function Home() {
     }
   }, [activeTab]);
 
-  // Auto-refresh traffic logs every 30 seconds when on traffic logs tab
-  // This keeps the logs constantly up-to-date for real-time monitoring
-  // while being respectful of API resources by only refreshing when needed
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout | null = null;
-    
-    if (activeTab === 'trafficLogs') {
-      // Refresh every 30 seconds to keep logs up to date
-      intervalId = setInterval(() => {
-        fetchTrafficLogs(trafficLogPage || 1, trafficLogFilters);
-      }, 30000);
-    }
-    
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [activeTab, trafficLogPage, trafficLogFilters]);
+  // Removed auto-refresh for performance - manual refresh only
   
   // Handle login
   const handleLogin = async (e: React.FormEvent) => {
@@ -4447,7 +4429,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             <div className="flex justify-between items-center mb-4">
               <div className="text-sm text-gray-400 flex items-center">
                 <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
-                📊 Showing most recent 300 logs • Auto-refreshes every 30 seconds
+                📊 Showing most recent 300 logs
               </div>
               <div className="text-xs text-gray-500">
                 Last updated: {trafficLogLastUpdate ? trafficLogLastUpdate.toLocaleTimeString() : 'Never'}
