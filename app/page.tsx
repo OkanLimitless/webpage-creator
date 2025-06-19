@@ -1815,7 +1815,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
         if (dryRun) {
           alert(`Cleanup Preview:\n\nTotal logs: ${data.totalLogs}\nWill delete: ${data.toDelete}\nWill keep: ${data.toKeep} most recent\n\nOldest to keep: ${data.oldestToKeep}\nNewest to delete: ${data.newestToDelete}`);
         } else {
-          alert(`Cleanup completed!\n\nDeleted: ${data.deleted} old logs\nRemaining: ${data.remaining} recent logs`);
+          alert(`Cleanup completed!\n\nDeleted: ${data.data.deleted} old logs\nRemaining: ${data.data.remaining} recent logs`);
           // Refresh the traffic logs after cleanup
           fetchTrafficLogs(1, trafficLogFilters);
         }
