@@ -33,167 +33,168 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '25');
-    const domain = searchParams.get('domain') || '';
-    const decision = searchParams.get('decision') || '';
-    const since = searchParams.get('since') || '';
+    
+    // Get filter parameters
+    const dateFilter = searchParams.get('date') || 'today'; // 'today', 'yesterday', 'both'
+    const domainFilter = searchParams.get('domain') || '';
+    const countryFilter = searchParams.get('country') || '';
+    const userTypeFilter = searchParams.get('userType') || ''; // 'bot', 'real'
 
-    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN || !TRAFFIC_LOGS_NAMESPACE_ID) {
+    if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID || !TRAFFIC_LOGS_NAMESPACE_ID) {
       return NextResponse.json({
         success: false,
-        error: 'Missing Cloudflare configuration for traffic logs'
+        error: 'Missing Cloudflare configuration'
       }, { status: 500 });
     }
 
-    // Fetch recent logs efficiently using cursor-based pagination
-    const recentLogs = await fetchRecentLogs();
-    
-    // Apply filters
-    let filteredLogs = recentLogs;
-    
-    if (domain) {
-      filteredLogs = filteredLogs.filter(log => log.domain.includes(domain));
-    }
-    
-    if (decision) {
-      filteredLogs = filteredLogs.filter(log => log.decision === decision);
-    }
-    
-    if (since) {
-      const sinceDate = new Date(since);
-      filteredLogs = filteredLogs.filter(log => {
-        const logDate = new Date(log.timestamp);
-        return logDate >= sinceDate;
-      });
-    }
+    console.log(`Fetching traffic logs - Page: ${page}, Limit: ${limit}, Date: ${dateFilter}`);
 
-    // Sort by timestamp (newest first) - they should already be sorted from fetchRecentLogs
-    filteredLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    // Paginate the filtered results
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-    const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
-
-    // Calculate stats
-    const stats = {
-      totalRequests: filteredLogs.length,
-      safePageRequests: filteredLogs.filter(log => log.decision === 'safe_page').length,
-      moneyPageRequests: filteredLogs.filter(log => log.decision === 'money_page').length,
-      topCountries: getTopCountries(filteredLogs),
-      topReasons: getTopReasons(filteredLogs)
-    };
-
+    // Get logs using efficient date-based filtering
+    const result = await fetchLogsByDate(dateFilter, domainFilter, countryFilter, userTypeFilter, page, limit);
+    
     return NextResponse.json({
       success: true,
-      data: {
-        logs: paginatedLogs,
-        stats,
-        pagination: {
-          page,
-          limit,
-          total: filteredLogs.length,
-          pages: Math.ceil(filteredLogs.length / limit)
-        },
-        metadata: {
-          maxRecentLogs: MAX_RECENT_LOGS,
-          showingRecentOnly: true,
-          totalLogsShown: recentLogs.length,
-          fetchedAt: new Date().toISOString()
-        }
-      }
+      data: result
     });
 
   } catch (error) {
     console.error('Traffic logs API error:', error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Failed to fetch traffic logs'
     }, { status: 500 });
   }
 }
 
-async function fetchRecentLogs(): Promise<any[]> {
-  const logs: any[] = [];
-  
+async function fetchLogsByDate(
+  dateFilter: string, 
+  domainFilter: string, 
+  countryFilter: string, 
+  userTypeFilter: string,
+  page: number, 
+  limit: number
+): Promise<any> {
   try {
-    console.log('Starting efficient recent traffic logs fetch...');
+    console.log(`Fetching logs with date filter: ${dateFilter}`);
     
-    // Strategy: Since KV returns keys alphabetically, and we have a large dataset,
-    // we'll use a reverse-search approach to find recent logs more efficiently
+    // Get current date and yesterday's date in YYYY-MM-DD format
+    const now = new Date();
+    const today = now.toISOString().split('T')[0]; // e.g., "2025-06-19"
     
-    // Step 1: Get a sample of keys to understand the timestamp range
-    const sampleKeys = await getSampleKeys(3000); // Get first 3000 keys to analyze
-    console.log(`Sampled ${sampleKeys.length} keys for analysis`);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0]; // e.g., "2025-06-18"
     
-    if (sampleKeys.length === 0) {
-      console.log('No traffic log keys found');
-      return [];
+    console.log(`Today: ${today}, Yesterday: ${yesterdayStr}`);
+    
+    // Determine which date prefixes to search for
+    let datePrefixes: string[] = [];
+    
+    switch (dateFilter) {
+      case 'today':
+        datePrefixes = [`traffic_log_${today}`];
+        break;
+      case 'yesterday':
+        datePrefixes = [`traffic_log_${yesterdayStr}`];
+        break;
+      case 'both':
+      default:
+        datePrefixes = [`traffic_log_${today}`, `traffic_log_${yesterdayStr}`];
+        break;
     }
     
-         // Step 2: Extract timestamps from sample and find the cutoff point for recent logs
-     const keyTimestamps = sampleKeys.map(key => {
-       try {
-         const parts = key.name.split('_');
-         const timestamp = parts.slice(2, -1).join('_');
-         return {
-           key,
-           timestamp,
-           date: new Date(timestamp)
-         };
-       } catch (error) {
-         console.warn('Failed to parse timestamp from key:', key.name);
-         return null;
-       }
-     }).filter((item): item is NonNullable<typeof item> => item !== null);
-     
-     // Sort by timestamp (newest first)
-     keyTimestamps.sort((a, b) => b.date.getTime() - a.date.getTime());
-     
-     console.log(`Parsed ${keyTimestamps.length} valid timestamps`);
-     if (keyTimestamps.length > 0) {
-       console.log('Newest log:', keyTimestamps[0].timestamp);
-       console.log('Oldest in sample:', keyTimestamps[keyTimestamps.length - 1].timestamp);
-     }
-     
-     // Step 3: Take the most recent keys up to our limit
-     const recentKeyData = keyTimestamps.slice(0, MAX_RECENT_LOGS);
-     const recentKeys = recentKeyData.map(item => item.key);
+    console.log(`Searching with prefixes:`, datePrefixes);
     
-    console.log(`Selected ${recentKeys.length} most recent keys`);
+    // Fetch logs for each date prefix
+    const allLogs: any[] = [];
     
-    // Step 4: Fetch log entries for the recent keys in bulk batches
-    const batchedLogs = await fetchLogsBulk(recentKeys);
-    logs.push(...batchedLogs);
+    for (const prefix of datePrefixes) {
+      const logsForDate = await fetchLogsWithPrefix(prefix);
+      allLogs.push(...logsForDate);
+      console.log(`Found ${logsForDate.length} logs for prefix: ${prefix}`);
+    }
     
-    // Step 5: Final sort by actual timestamp from log data (just to be sure)
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    console.log(`Total logs found: ${allLogs.length}`);
     
-    console.log(`Successfully fetched ${logs.length} recent traffic logs`);
-    return logs.slice(0, MAX_RECENT_LOGS); // Trim to exact limit
+    // Apply additional filters
+    let filteredLogs = allLogs;
+    
+    if (domainFilter) {
+      filteredLogs = filteredLogs.filter(log => 
+        log.domain && log.domain.toLowerCase().includes(domainFilter.toLowerCase())
+      );
+    }
+    
+    if (countryFilter) {
+      filteredLogs = filteredLogs.filter(log => 
+        log.country && log.country.toLowerCase().includes(countryFilter.toLowerCase())
+      );
+    }
+    
+    if (userTypeFilter) {
+      filteredLogs = filteredLogs.filter(log => {
+        if (userTypeFilter === 'bot') return log.isBot === true;
+        if (userTypeFilter === 'real') return log.isBot === false;
+        return true;
+      });
+    }
+    
+    console.log(`Logs after filtering: ${filteredLogs.length}`);
+    
+    // Sort by timestamp (newest first)
+    filteredLogs.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeB - timeA; // Newest first
+    });
+    
+    // Calculate pagination
+    const totalLogs = filteredLogs.length;
+    const totalPages = Math.ceil(totalLogs / limit);
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
+    
+         // Calculate stats
+     const stats = {
+       totalRequests: totalLogs,
+       botRequests: filteredLogs.filter(log => log.isBot === true).length,
+       realUserRequests: filteredLogs.filter(log => log.isBot === false).length,
+       uniqueCountries: Array.from(new Set(filteredLogs.map(log => log.country).filter(Boolean))).length,
+       uniqueDomains: Array.from(new Set(filteredLogs.map(log => log.domain).filter(Boolean))).length
+     };
+    
+    return {
+      logs: paginatedLogs,
+      stats,
+      pagination: {
+        page,
+        pages: totalPages,
+        total: totalLogs,
+        limit
+      }
+    };
     
   } catch (error) {
-    console.error('Error fetching recent logs:', error);
-    return [];
+    console.error('Error in fetchLogsByDate:', error);
+    throw error;
   }
 }
 
-// Helper function to get a sample of keys for analysis
-async function getSampleKeys(sampleSize: number = 3000): Promise<any[]> {
-  const keys: any[] = [];
-  let cursor: string | undefined;
-  let totalFetched = 0;
-  
+async function fetchLogsWithPrefix(prefix: string): Promise<any[]> {
   try {
-    while (totalFetched < sampleSize) {
-      const remaining = sampleSize - totalFetched;
-      const batchLimit = Math.min(1000, remaining); // KV max limit is 1000
-      
-      // Build the list URL with cursor pagination
-      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${batchLimit}`;
+    const logs: any[] = [];
+    let cursor: string | undefined;
+    
+    // Use prefix parameter to efficiently filter keys at the KV level
+    while (true) {
+      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=1000&prefix=${encodeURIComponent(prefix)}`;
       
       if (cursor) {
-        listUrl += `&cursor=${cursor}`;
+        listUrl += `&cursor=${encodeURIComponent(cursor)}`;
       }
+      
+      console.log(`Fetching keys with prefix: ${prefix}${cursor ? ` (cursor: ${cursor.substring(0, 20)}...)` : ''}`);
       
       const listResponse = await fetch(listUrl, {
         headers: {
@@ -203,100 +204,50 @@ async function getSampleKeys(sampleSize: number = 3000): Promise<any[]> {
       });
 
       if (!listResponse.ok) {
-        throw new Error(`Failed to list traffic log keys: ${listResponse.statusText}`);
+        throw new Error(`Failed to list keys: ${listResponse.statusText}`);
       }
 
       const listData = await listResponse.json();
-      const batchKeys = listData.result || [];
+      const keys = listData.result || [];
       
-      if (batchKeys.length === 0) {
-        break; // No more keys
+      if (keys.length === 0) {
+        console.log(`No more keys found for prefix: ${prefix}`);
+        break;
       }
-
-      // Filter only traffic log keys and add to our collection
-      const trafficLogKeys = batchKeys.filter((key: any) => key.name.startsWith('traffic_log_'));
-      keys.push(...trafficLogKeys);
-      totalFetched += trafficLogKeys.length;
       
-      // Update cursor for next iteration
+      console.log(`Found ${keys.length} keys for prefix: ${prefix}`);
+      
+      // Fetch log data for these keys in batches
+      const batchSize = 50; // Smaller batches to avoid timeouts
+      for (let i = 0; i < keys.length; i += batchSize) {
+        const keyBatch = keys.slice(i, i + batchSize);
+        const logBatch = await fetchLogBatch(keyBatch);
+        logs.push(...logBatch);
+      }
+      
+      // Check if there are more keys
       cursor = listData.result_info?.cursor;
-      
-      // Break if no more results or we've reached our sample size
-      if (!cursor || listData.result_info?.list_complete !== false || totalFetched >= sampleSize) {
+      if (!cursor) {
+        console.log(`Finished fetching all keys for prefix: ${prefix}`);
         break;
       }
     }
     
-    return keys;
+    return logs;
     
   } catch (error) {
-    console.error('Error getting sample keys:', error);
+    console.error(`Error fetching logs with prefix ${prefix}:`, error);
     return [];
   }
 }
 
-async function fetchLogsBulk(keys: any[]): Promise<any[]> {
+async function fetchLogBatch(keys: any[]): Promise<any[]> {
   const logs: any[] = [];
   
-  // Process keys in batches of 100 (KV bulk GET limit)
-  const BULK_BATCH_SIZE = 100;
-  
-  for (let i = 0; i < keys.length; i += BULK_BATCH_SIZE) {
-    const batch = keys.slice(i, i + BULK_BATCH_SIZE);
-    const keyNames = batch.map((key: any) => key.name);
-    
-    try {
-      // Use bulk GET operation for efficiency
-      const bulkGetUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/bulk/get`;
-      
-      const bulkResponse = await fetch(bulkGetUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          keys: keyNames
-        })
-      });
-
-      if (bulkResponse.ok) {
-        const bulkData = await bulkResponse.json();
-        const values = bulkData.result?.values || {};
-        
-        // Convert the key-value pairs to log entries
-        for (const keyName of keyNames) {
-          if (values[keyName]) {
-            try {
-              const logEntry = JSON.parse(values[keyName]);
-              logs.push(logEntry);
-            } catch (parseError) {
-              console.error(`Error parsing log entry ${keyName}:`, parseError);
-            }
-          }
-        }
-      } else {
-        console.error(`Bulk GET failed for batch:`, bulkResponse.statusText);
-        
-        // Fallback to individual GET requests for this batch
-        await fetchLogsIndividually(batch, logs);
-      }
-    } catch (error) {
-      console.error(`Error in bulk fetch for batch:`, error);
-      
-      // Fallback to individual GET requests for this batch
-      await fetchLogsIndividually(batch, logs);
-    }
-  }
-  
-  return logs;
-}
-
-async function fetchLogsIndividually(keys: any[], logs: any[]): Promise<void> {
-  // Fallback: fetch individual log entries (less efficient but more reliable)
+  // Fetch log data for each key
   for (const key of keys) {
     try {
-      const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/values/${key.name}`;
+      const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/values/${encodeURIComponent(key.name)}`;
       
       const valueResponse = await fetch(valueUrl, {
         headers: {
@@ -305,13 +256,26 @@ async function fetchLogsIndividually(keys: any[], logs: any[]): Promise<void> {
       });
 
       if (valueResponse.ok) {
-        const logEntry = await valueResponse.json();
-        logs.push(logEntry);
+        const logData = await valueResponse.json();
+        
+        // Extract timestamp from key name for sorting
+        // Key format: traffic_log_2025-06-19T14:05:25.797Z_randomString
+        const keyParts = key.name.split('_');
+        const timestamp = keyParts.slice(2, -1).join('_'); // Everything between traffic_log_ and last _
+        
+        logs.push({
+          ...logData,
+          timestamp: timestamp,
+          keyName: key.name
+        });
       }
     } catch (error) {
-      console.error(`Error fetching individual log entry ${key.name}:`, error);
+      console.error(`Error fetching log data for key ${key.name}:`, error);
+      // Continue with other keys even if one fails
     }
   }
+  
+  return logs;
 }
 
 function getTopCountries(logs: any[]) {

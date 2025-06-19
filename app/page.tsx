@@ -232,9 +232,10 @@ export default function Home() {
   const [trafficLogStats, setTrafficLogStats] = useState<any>(null);
   const [trafficLogsLoading, setTrafficLogsLoading] = useState(false);
   const [trafficLogFilters, setTrafficLogFilters] = useState({
-    decision: '',
+    date: 'both', // 'today', 'yesterday', 'both'
     domain: '',
-    since: ''
+    country: '',
+    userType: '' // 'bot', 'real', ''
   });
   const [trafficLogPage, setTrafficLogPage] = useState(1);
   const [trafficLogTotalPages, setTrafficLogTotalPages] = useState(1);
@@ -4347,15 +4348,15 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             )}
 
             {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <select
-                value={trafficLogFilters.decision}
-                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, decision: e.target.value})}
+                value={trafficLogFilters.date}
+                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, date: e.target.value})}
                 className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
               >
-                <option value="">All Decisions</option>
-                <option value="money_page">Money Page</option>
-                <option value="safe_page">Safe Page</option>
+                <option value="both">📅 Today + Yesterday</option>
+                <option value="today">📅 Today Only</option>
+                <option value="yesterday">📅 Yesterday Only</option>
               </select>
               
               <input
@@ -4367,11 +4368,22 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               />
               
               <input
-                type="datetime-local"
-                value={trafficLogFilters.since}
-                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, since: e.target.value})}
-                className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
+                type="text"
+                placeholder="Filter by country"
+                value={trafficLogFilters.country}
+                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, country: e.target.value})}
+                className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm placeholder-gray-500"
               />
+              
+              <select
+                value={trafficLogFilters.userType}
+                onChange={(e) => setTrafficLogFilters({...trafficLogFilters, userType: e.target.value})}
+                className="p-2 bg-dark-lighter border border-dark-light rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white text-sm"
+              >
+                <option value="">🤖 All Users</option>
+                <option value="bot">🤖 Bots Only</option>
+                <option value="real">👤 Real Users Only</option>
+              </select>
             </div>
 
             <div className="flex space-x-2 mb-4">
@@ -4384,8 +4396,8 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
               </button>
               <button
                 onClick={() => {
-                  setTrafficLogFilters({ decision: '', domain: '', since: '' });
-                  fetchTrafficLogs(1, { decision: '', domain: '', since: '' });
+                  setTrafficLogFilters({ date: 'both', domain: '', country: '', userType: '' });
+                  fetchTrafficLogs(1, { date: 'both', domain: '', country: '', userType: '' });
                 }}
                 className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-md text-sm font-medium transition-colors duration-200"
               >
@@ -4429,7 +4441,7 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             <div className="flex justify-between items-center mb-4">
               <div className="text-sm text-gray-400 flex items-center">
                 <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
-                📊 Showing most recent 300 logs
+                📊 Showing logs from {trafficLogFilters.date === 'today' ? 'today' : trafficLogFilters.date === 'yesterday' ? 'yesterday' : 'today + yesterday'}
               </div>
               <div className="text-xs text-gray-500">
                 Last updated: {trafficLogLastUpdate ? trafficLogLastUpdate.toLocaleTimeString() : 'Never'}
@@ -4447,10 +4459,10 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP Address</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Path</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Decision</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User Type</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Country</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Risk Score</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Reason</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">GCLID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Traffic Type</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User Agent</th>
                   </tr>
                 </thead>
@@ -4484,37 +4496,29 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            log.decision === 'money_page' 
+                            log.isBot === false
                               ? 'bg-green-900/30 text-green-300 border border-green-600' 
-                              : 'bg-red-900/30 text-red-300 border border-red-600'
+                              : 'bg-blue-900/30 text-blue-300 border border-blue-600'
                           }`}>
-                            {log.decision === 'money_page' ? '💰 Money' : '🛡️ Safe'}
+                            {log.isBot === false ? '👤 Real User' : '🤖 Bot'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300">
                           {log.country || 'Unknown'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.riskScore !== null ? (
-                            <span className={`font-medium ${
-                              log.riskScore > 60 ? 'text-red-400' : 
-                              log.riskScore > 30 ? 'text-yellow-400' : 'text-green-400'
-                            }`}>
-                              {log.riskScore}
-                            </span>
-                          ) : '-'}
+                          {log.gclid ? (
+                            <span className="text-green-400 font-medium">✓ Has GCLID</span>
+                          ) : (
+                            <span className="text-gray-400">No GCLID</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                            log.detectionReason === 'clean_visitor' ? 'bg-green-900/20 text-green-400' :
-                            log.detectionReason === 'no_gclid' ? 'bg-yellow-900/20 text-yellow-400' :
-                            log.detectionReason === 'bot_user_agent' ? 'bg-red-900/20 text-red-400' :
-                            log.detectionReason === 'geo_block' ? 'bg-blue-900/20 text-blue-400' :
-                            log.detectionReason === 'high_risk' ? 'bg-red-900/20 text-red-400' :
-                            log.detectionReason === 'proxy_detected' ? 'bg-purple-900/20 text-purple-400' :
-                            'bg-gray-900/20 text-gray-400'
+                            log.isBot === false ? 'bg-green-900/20 text-green-400' :
+                            'bg-blue-900/20 text-blue-400'
                           }`}>
-                            {log.detectionReason?.replace('_', ' ') || 'Unknown'}
+                            {log.isBot === false ? 'Real User Traffic' : 'Bot/Crawler Traffic'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300 max-w-xs truncate" title={log.userAgent}>
@@ -4576,38 +4580,32 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             )}
           </div>
 
-          {/* Top Countries & Reasons */}
-          {trafficLogStats && (trafficLogStats.topCountries.length > 0 || trafficLogStats.topReasons.length > 0) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-              {/* Top Countries */}
-              {trafficLogStats.topCountries.length > 0 && (
-                <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
-                  <h3 className="text-lg font-semibold mb-4 text-white">🌍 Top Countries</h3>
-                  <div className="space-y-3">
-                    {trafficLogStats.topCountries.map((item: any, index: number) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <span className="text-gray-300">{item.country}</span>
-                        <span className="text-white font-medium">{item.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Top Detection Reasons */}
-              {trafficLogStats.topReasons.length > 0 && (
-                <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
-                  <h3 className="text-lg font-semibold mb-4 text-white">🔍 Top Detection Reasons</h3>
-                  <div className="space-y-3">
-                    {trafficLogStats.topReasons.map((item: any, index: number) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <span className="text-gray-300 capitalize">{item.reason.replace('_', ' ')}</span>
-                        <span className="text-white font-medium">{item.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {/* Traffic Stats */}
+          {trafficLogStats && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
+              {/* Total Requests */}
+              <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+                <h3 className="text-lg font-semibold mb-2 text-white">📊 Total Requests</h3>
+                <div className="text-3xl font-bold text-primary">{trafficLogStats.totalRequests}</div>
+              </div>
+              
+              {/* Bot Requests */}
+              <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+                <h3 className="text-lg font-semibold mb-2 text-white">🤖 Bot Traffic</h3>
+                <div className="text-3xl font-bold text-blue-400">{trafficLogStats.botRequests}</div>
+              </div>
+              
+              {/* Real User Requests */}
+              <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+                <h3 className="text-lg font-semibold mb-2 text-white">👤 Real Users</h3>
+                <div className="text-3xl font-bold text-green-400">{trafficLogStats.realUserRequests}</div>
+              </div>
+              
+              {/* Unique Countries */}
+              <div className="bg-dark-card p-6 rounded-lg shadow-dark-md border border-dark-accent">
+                <h3 className="text-lg font-semibold mb-2 text-white">🌍 Countries</h3>
+                <div className="text-3xl font-bold text-purple-400">{trafficLogStats.uniqueCountries}</div>
+              </div>
             </div>
           )}
         </>
