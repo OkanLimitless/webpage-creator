@@ -2185,7 +2185,6 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Domain</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Money URL</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Target Countries</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -2224,13 +2223,6 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                             ))}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            page.isActive ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
-                          }`}>
-                            {page.isActive ? '🟢 Active' : '🔴 Inactive'}
-                          </span>
-                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           <div className="flex space-x-2">
                             <button 
@@ -2239,13 +2231,6 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                               title="Re-deploy worker with latest code and same settings"
                             >
                               🚀 Re-deploy
-                            </button>
-                            <button 
-                              className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-300 bg-dark-light hover:bg-dark transition-colors duration-150"
-                              onClick={() => fixCloakingDns(page._id)}
-                              title="Fix DNS settings to enable Cloudflare Workers"
-                            >
-                              🔧 Fix DNS
                             </button>
                             <button 
                               className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-300 bg-dark-light hover:bg-dark transition-colors duration-150"
