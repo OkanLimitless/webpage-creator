@@ -105,13 +105,20 @@ async function fetchLogsByDate(
     
     console.log(`Searching with prefixes:`, datePrefixes);
     
-    // Fetch logs for each date prefix
+    // Fetch logs for each date prefix - LIMIT TO AVOID TIMEOUTS
     const allLogs: any[] = [];
+    const MAX_LOGS_PER_PREFIX = 50; // Keep it small to avoid timeouts
     
     for (const prefix of datePrefixes) {
-      const logsForDate = await fetchLogsWithPrefix(prefix);
+      const logsForDate = await fetchLogsWithPrefix(prefix, MAX_LOGS_PER_PREFIX);
       allLogs.push(...logsForDate);
       console.log(`Found ${logsForDate.length} logs for prefix: ${prefix}`);
+      
+      // If we have enough logs, stop fetching
+      if (allLogs.length >= 100) {
+        console.log(`Reached 100 logs limit, stopping fetch`);
+        break;
+      }
     }
     
     console.log(`Total logs found: ${allLogs.length}`);
@@ -155,14 +162,14 @@ async function fetchLogsByDate(
     const endIndex = startIndex + limit;
     const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
     
-         // Calculate stats
-     const stats = {
-       totalRequests: totalLogs,
-       botRequests: filteredLogs.filter(log => log.isBot === true).length,
-       realUserRequests: filteredLogs.filter(log => log.isBot === false).length,
-       uniqueCountries: Array.from(new Set(filteredLogs.map(log => log.country).filter(Boolean))).length,
-       uniqueDomains: Array.from(new Set(filteredLogs.map(log => log.domain).filter(Boolean))).length
-     };
+    // Calculate stats
+    const stats = {
+      totalRequests: totalLogs,
+      botRequests: filteredLogs.filter(log => log.isBot === true).length,
+      realUserRequests: filteredLogs.filter(log => log.isBot === false).length,
+      uniqueCountries: Array.from(new Set(filteredLogs.map(log => log.country).filter(Boolean))).length,
+      uniqueDomains: Array.from(new Set(filteredLogs.map(log => log.domain).filter(Boolean))).length
+    };
     
     return {
       logs: paginatedLogs,
@@ -181,20 +188,24 @@ async function fetchLogsByDate(
   }
 }
 
-async function fetchLogsWithPrefix(prefix: string): Promise<any[]> {
+async function fetchLogsWithPrefix(prefix: string, maxLogs: number = 50): Promise<any[]> {
   try {
     const logs: any[] = [];
     let cursor: string | undefined;
+    let fetchedCount = 0;
     
     // Use prefix parameter to efficiently filter keys at the KV level
-    while (true) {
-      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=1000&prefix=${encodeURIComponent(prefix)}`;
+    while (fetchedCount < maxLogs) {
+      const remainingToFetch = maxLogs - fetchedCount;
+      const batchLimit = Math.min(1000, remainingToFetch * 2); // Fetch more keys than needed since not all will have data
+      
+      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${batchLimit}&prefix=${encodeURIComponent(prefix)}`;
       
       if (cursor) {
         listUrl += `&cursor=${encodeURIComponent(cursor)}`;
       }
       
-      console.log(`Fetching keys with prefix: ${prefix}${cursor ? ` (cursor: ${cursor.substring(0, 20)}...)` : ''}`);
+      console.log(`Fetching keys with prefix: ${prefix} (limit: ${batchLimit})`);
       
       const listResponse = await fetch(listUrl, {
         headers: {
@@ -217,22 +228,23 @@ async function fetchLogsWithPrefix(prefix: string): Promise<any[]> {
       
       console.log(`Found ${keys.length} keys for prefix: ${prefix}`);
       
-      // Fetch log data for these keys in batches
-      const batchSize = 50; // Smaller batches to avoid timeouts
-      for (let i = 0; i < keys.length; i += batchSize) {
-        const keyBatch = keys.slice(i, i + batchSize);
-        const logBatch = await fetchLogBatch(keyBatch);
-        logs.push(...logBatch);
-      }
+      // Fetch log data for these keys - but limit how many we actually fetch
+      const keysToFetch = keys.slice(0, Math.min(keys.length, remainingToFetch));
+      const logBatch = await fetchLogBatch(keysToFetch);
+      logs.push(...logBatch);
+      fetchedCount += logBatch.length;
       
-      // Check if there are more keys
-      cursor = listData.result_info?.cursor;
-      if (!cursor) {
-        console.log(`Finished fetching all keys for prefix: ${prefix}`);
+      console.log(`Fetched ${logBatch.length} logs, total: ${fetchedCount}`);
+      
+      // If we have enough logs or no more keys, stop
+      if (fetchedCount >= maxLogs || !listData.result_info?.cursor) {
         break;
       }
+      
+      cursor = listData.result_info?.cursor;
     }
     
+    console.log(`Finished fetching logs for prefix: ${prefix}, total: ${logs.length}`);
     return logs;
     
   } catch (error) {
