@@ -283,6 +283,18 @@ async function fetchLogBatch(keys: any[]): Promise<any[]> {
         const keyParts = key.name.split('_');
         const timestamp = keyParts.slice(2, -1).join('_'); // Everything between traffic_log_ and last _
         
+        // Debug: Log the first few entries to see what data we're getting
+        if (logs.length < 3) {
+          console.log(`DEBUG: Log entry ${logs.length + 1}:`, {
+            timestamp,
+            keyName: key.name,
+            userAgent: logData.userAgent ? logData.userAgent.substring(0, 50) + '...' : 'MISSING',
+            country: logData.country || 'MISSING',
+            decision: logData.decision || 'MISSING',
+            detectionReason: logData.detectionReason || 'MISSING'
+          });
+        }
+        
         logs.push({
           ...logData,
           timestamp: timestamp,

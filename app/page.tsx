@@ -4461,6 +4461,32 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 </svg>
                 Cleanup Now
               </button>
+              <button
+                onClick={async () => {
+                  if (confirm('This will delete the test record from KV. Continue?')) {
+                    try {
+                      const response = await fetch('/api/traffic-logs/cleanup-test', {
+                        method: 'DELETE'
+                      });
+                      const data = await response.json();
+                      if (data.success) {
+                        alert('✅ Test record deleted successfully!');
+                        fetchTrafficLogs(trafficLogPage || 1, trafficLogFilters);
+                      } else {
+                        alert('❌ Failed to delete test record: ' + data.error);
+                      }
+                    } catch (error) {
+                      alert('❌ Error deleting test record: ' + error);
+                    }
+                  }
+                }}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md text-sm font-medium transition-colors duration-200 flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+                Delete Test Record
+              </button>
             </div>
             
             <div className="flex justify-between items-center mb-4">
@@ -4593,8 +4619,16 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                             {log.isBot === false ? 'Real User Traffic' : 'Bot/Crawler Traffic'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-300 max-w-xs truncate" title={log.userAgent}>
-                          {log.userAgent}
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          <div className="text-xs text-gray-400 max-w-xs" title={log.userAgent || 'No user agent data'}>
+                            {log.userAgent ? (
+                              log.userAgent.length > 40 
+                                ? log.userAgent.substring(0, 40) + '...'
+                                : log.userAgent
+                            ) : (
+                              <span className="text-gray-500 italic">No UA data</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
