@@ -148,13 +148,27 @@ async function fetchLogsByDate(
     const endIndex = startIndex + limit;
     const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
     
-    // Calculate stats
+    // Calculate stats based on traffic decisions
+    const moneyPageRequests = filteredLogs.filter(log => log.decision === 'money_page').length;
+    const safePageRequests = filteredLogs.filter(log => log.decision === 'safe_page').length;
+    const botRequests = filteredLogs.filter(log => {
+      // Determine if bot based on detection reason
+      const reason = log.detectionReason || '';
+      return reason.includes('bot') || reason.includes('crawler') || 
+             reason.includes('curl') || reason.includes('wget') ||
+             reason.includes('python') || reason.includes('java');
+    }).length;
+    const realUserRequests = totalLogs - botRequests;
+    
     const stats = {
       totalRequests: totalLogs,
-      botRequests: filteredLogs.filter(log => log.isBot === true).length,
-      realUserRequests: filteredLogs.filter(log => log.isBot === false).length,
+      moneyPageRequests,
+      safePageRequests,
+      botRequests,
+      realUserRequests,
       uniqueCountries: Array.from(new Set(filteredLogs.map(log => log.country).filter(Boolean))).length,
-      uniqueDomains: Array.from(new Set(filteredLogs.map(log => log.domain).filter(Boolean))).length
+      uniqueDomains: Array.from(new Set(filteredLogs.map(log => log.domain).filter(Boolean))).length,
+      conversionRate: totalLogs > 0 ? Math.round((moneyPageRequests / totalLogs) * 100) : 0
     };
     
     return {

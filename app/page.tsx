@@ -240,6 +240,7 @@ export default function Home() {
   const [trafficLogPage, setTrafficLogPage] = useState(1);
   const [trafficLogTotalPages, setTrafficLogTotalPages] = useState(1);
   const [trafficLogLastUpdate, setTrafficLogLastUpdate] = useState<Date | null>(null);
+  const [trafficLogAutoRefresh, setTrafficLogAutoRefresh] = useState(false);
   
   // Check authentication on page load
   useEffect(() => {
@@ -262,6 +263,21 @@ export default function Home() {
       fetchTrafficLogs(1, trafficLogFilters);
     }
   }, [activeTab]);
+
+  // Auto-refresh traffic logs
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (trafficLogAutoRefresh && activeTab === 'trafficLogs') {
+      interval = setInterval(() => {
+        fetchTrafficLogs(trafficLogPage || 1, trafficLogFilters);
+      }, 30000); // Refresh every 30 seconds
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [trafficLogAutoRefresh, activeTab, trafficLogPage, trafficLogFilters]);
 
   // Removed auto-refresh for performance - manual refresh only
   
@@ -4414,6 +4430,15 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 {trafficLogsLoading ? 'Refreshing...' : 'Refresh Now'}
               </button>
               <button
+                onClick={() => setTrafficLogAutoRefresh(!trafficLogAutoRefresh)}
+                className={`px-4 py-2 ${trafficLogAutoRefresh ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'} text-white rounded-md text-sm font-medium transition-colors duration-200 flex items-center`}
+              >
+                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                </svg>
+                {trafficLogAutoRefresh ? '⏸️ Auto-Refresh ON' : '▶️ Auto-Refresh OFF'}
+              </button>
+              <button
                 onClick={() => cleanupOldTrafficLogs(true)}
                 className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md text-sm font-medium transition-colors duration-200 flex items-center"
               >
@@ -4440,8 +4465,9 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
             
             <div className="flex justify-between items-center mb-4">
               <div className="text-sm text-gray-400 flex items-center">
-                <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
+                <div className={`w-2 h-2 ${trafficLogAutoRefresh ? 'bg-blue-400 animate-pulse' : 'bg-green-400'} rounded-full mr-2`}></div>
                 📊 Showing logs from {trafficLogFilters.date === 'today' ? 'today' : trafficLogFilters.date === 'yesterday' ? 'yesterday' : 'today + yesterday'}
+                {trafficLogAutoRefresh && <span className="ml-2 text-blue-400 text-xs">• Auto-refreshing every 30s</span>}
               </div>
               <div className="text-xs text-gray-500">
                 Last updated: {trafficLogLastUpdate ? trafficLogLastUpdate.toLocaleTimeString() : 'Never'}
@@ -4456,26 +4482,25 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                 <thead className="bg-dark-lighter">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Time</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP Address</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Path</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Country</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP & Location</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Domain & Path</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Decision</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Detection Reason</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Risk Info</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">GCLID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Traffic Type</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User Agent</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-light">
                   {trafficLogsLoading ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                         Loading traffic logs...
                       </td>
                     </tr>
                   ) : trafficLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                         No traffic logs found. Traffic will appear here once your cloaked pages start receiving visitors.
                       </td>
                     </tr>
@@ -4483,34 +4508,81 @@ ${result.results.failed.length > 0 ? `Failed to delete ${result.results.failed.l
                     trafficLogs.map((log, index) => (
                       <tr key={index} className="hover:bg-dark-lighter/50">
                         <td className="px-4 py-3 text-sm text-gray-300">
-                          {new Date(log.timestamp).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-300 font-mono">
-                          {formatIP(log.ip)}
+                          <div className="font-medium">
+                            {new Date(log.timestamp).toLocaleTimeString()}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {new Date(log.timestamp).toLocaleDateString()}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.domain}
+                          <div className="font-mono text-xs">
+                            {formatIP(log.ip)}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {log.country ? `🌍 ${log.country}` : '🌍 Unknown'}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.path}
+                          <div className="font-medium">
+                            {log.domain}
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono">
+                            {log.path || '/'}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            log.isBot === false
+                            log.decision === 'money_page'
                               ? 'bg-green-900/30 text-green-300 border border-green-600' 
-                              : 'bg-blue-900/30 text-blue-300 border border-blue-600'
+                              : 'bg-red-900/30 text-red-300 border border-red-600'
                           }`}>
-                            {log.isBot === false ? '👤 Real User' : '🤖 Bot'}
+                            {log.decision === 'money_page' ? '💰 Money Page' : '🛡️ Safe Page'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300">
-                          {log.country || 'Unknown'}
+                          <div className="text-xs">
+                            {log.detectionReason ? (
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                log.detectionReason.includes('bot') || log.detectionReason.includes('crawler') 
+                                  ? 'bg-blue-900/30 text-blue-300'
+                                  : log.detectionReason.includes('geo')
+                                  ? 'bg-yellow-900/30 text-yellow-300'
+                                  : log.detectionReason.includes('risk')
+                                  ? 'bg-red-900/30 text-red-300'
+                                  : log.detectionReason.includes('proxy')
+                                  ? 'bg-purple-900/30 text-purple-300'
+                                  : log.detectionReason.includes('clean')
+                                  ? 'bg-green-900/30 text-green-300'
+                                  : 'bg-gray-900/30 text-gray-300'
+                              }`}>
+                                {log.detectionReason.replace(/_/g, ' ').toUpperCase()}
+                              </span>
+                            ) : (
+                              <span className="text-gray-500">Unknown</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300">
+                          <div className="text-xs space-y-1">
+                            {log.riskScore !== null && log.riskScore !== undefined && (
+                              <div className={`${log.riskScore > 60 ? 'text-red-400' : log.riskScore > 30 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                🎯 Risk: {log.riskScore}
+                              </div>
+                            )}
+                            {log.isProxy && (
+                              <div className="text-purple-400">🔗 Proxy</div>
+                            )}
+                            {log.isVpn && (
+                              <div className="text-blue-400">🛡️ VPN</div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-300">
                           {log.gclid ? (
-                            <span className="text-green-400 font-medium">✓ Has GCLID</span>
+                            <span className="text-green-400 font-medium text-xs">✓ Google Ads</span>
                           ) : (
-                            <span className="text-gray-400">No GCLID</span>
+                            <span className="text-gray-500 text-xs">Direct</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm">

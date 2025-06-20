@@ -1037,6 +1037,52 @@ async function handleRequest(request) {
 
 // --- CORE FUNCTIONS ---
 
+// Smart logging filter - determines what traffic is worth logging
+function shouldLogTrafficEvent(request, decision, details, userAgent, pathname) {
+  // Always log money page decisions (real users)
+  if (decision === 'money_page') {
+    return true;
+  }
+  
+  // Always log if there's a gclid (Google Ads traffic)
+  const url = new URL(request.url);
+  const gclid = url.searchParams.get('gclid');
+  if (gclid) {
+    return true;
+  }
+  
+  // Always log real user browsers (not bots)
+  const userAgentLower = userAgent.toLowerCase();
+  const isBot = userAgentLower.includes('bot') || 
+                userAgentLower.includes('crawler') || 
+                userAgentLower.includes('spider') || 
+                userAgentLower.includes('curl') || 
+                userAgentLower.includes('wget') || 
+                userAgentLower.includes('python') ||
+                userAgentLower.includes('java/') ||
+                userAgentLower.includes('go-http') ||
+                userAgentLower.includes('postman');
+  
+  if (!isBot) {
+    return true; // Log all real user visits
+  }
+  
+  // For bots, only log root/main page visits (not deep crawling)
+  const isRootOrMainPage = pathname === '/' || 
+                          pathname === '/index.html' || 
+                          pathname === '/index.htm' ||
+                          pathname === '' ||
+                          pathname.split('/').length <= 2; // Only 1 level deep
+  
+  if (isRootOrMainPage) {
+    return true; // Log bot visits to main pages
+  }
+  
+  // For bot deep crawling, use sampling (log 1 in 10 requests)
+  const shouldSample = Math.random() < 0.1; // 10% sampling rate
+  return shouldSample;
+}
+
 // Traffic logging function
 async function logTrafficEvent(request, decision, details = {}) {
   try {
@@ -1062,8 +1108,22 @@ async function logTrafficEvent(request, decision, details = {}) {
                    pathname.includes('/assets/') || pathname.includes('/fonts/') || 
                    pathname.includes('/images/') || pathname.includes('/css/') || pathname.includes('/js/');
     
-    if (isAsset) {
-      return; // Don't log asset requests
+    // Skip logging for internal worker paths
+    const isInternalPath = pathname === '/service-worker.js' || 
+                          pathname.startsWith('/r8/') || 
+                          pathname.includes('analytics') || 
+                          pathname.includes('tracking') ||
+                          pathname.includes('metrics') ||
+                          pathname.includes('beacon');
+    
+    if (isAsset || isInternalPath) {
+      return; // Don't log asset requests or internal paths
+    }
+    
+    // Smart logging: Only log meaningful traffic to reduce KV usage
+    const shouldLog = shouldLogTrafficEvent(request, decision, details, userAgent, pathname);
+    if (!shouldLog) {
+      return; // Skip logging for noise traffic
     }
     
     const logEntry = {
