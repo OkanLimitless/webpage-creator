@@ -188,71 +188,87 @@ async function fetchLogsByDate(
   }
 }
 
-// Simplified function to just get recent logs without complex date filtering
+// FAST streaming approach - get recent logs with aggressive limits
 async function fetchRecentLogsSimple(maxLogs: number): Promise<any[]> {
   try {
     const logs: any[] = [];
     let cursor: string | undefined;
-    let fetchedCount = 0;
+    let batchCount = 0;
+    const maxBatches = 3; // Limit to 3 batches max to prevent timeouts
     
-    console.log(`Fetching traffic logs (simple approach)...`);
+    console.log(`Fetching traffic logs (streaming approach, max ${maxLogs} logs)...`);
     
-    while (fetchedCount < maxLogs) {
-      const remainingToFetch = maxLogs - fetchedCount;
-      const batchLimit = Math.min(1000, remainingToFetch * 3); // Fetch more keys since not all will be traffic logs
+    while (logs.length < maxLogs && batchCount < maxBatches) {
+      // Small batch size to prevent timeouts
+      const batchLimit = 50; // Much smaller batches
       
-      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${batchLimit}`;
+      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/keys?limit=${batchLimit}&prefix=traffic_log_`;
       
       if (cursor) {
         listUrl += `&cursor=${encodeURIComponent(cursor)}`;
       }
       
-      console.log(`Fetching keys (limit: ${batchLimit})...`);
+      console.log(`Fetching batch ${batchCount + 1}/${maxBatches} (limit: ${batchLimit})...`);
       
-      const listResponse = await fetch(listUrl, {
-        headers: {
-          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!listResponse.ok) {
-        throw new Error(`Failed to list keys: ${listResponse.statusText}`);
-      }
-
-      const listData = await listResponse.json();
-      const keys = listData.result || [];
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
-      if (keys.length === 0) {
-        console.log('No more keys found');
-        break;
-      }
-      
-      console.log(`Found ${keys.length} keys`);
-      
-      // Filter only traffic log keys
-      const trafficLogKeys = keys.filter((key: any) => key.name.startsWith('traffic_log_'));
-      console.log(`Traffic log keys in batch: ${trafficLogKeys.length}`);
-      
-      // Fetch log data for traffic log keys only
-      const keysToFetch = trafficLogKeys.slice(0, Math.min(trafficLogKeys.length, remainingToFetch));
-      if (keysToFetch.length > 0) {
-        const logBatch = await fetchLogBatch(keysToFetch);
-        logs.push(...logBatch);
-        fetchedCount += logBatch.length;
+      try {
+        const listResponse = await fetch(listUrl, {
+          headers: {
+            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          signal: controller.signal
+        });
         
-        console.log(`Fetched ${logBatch.length} logs, total: ${fetchedCount}`);
+        clearTimeout(timeoutId);
+
+        if (!listResponse.ok) {
+          throw new Error(`Failed to list keys: ${listResponse.statusText}`);
+        }
+
+        const listData = await listResponse.json();
+        const keys = listData.result || [];
+        
+        if (keys.length === 0) {
+          console.log('No more keys found');
+          break;
+        }
+        
+        console.log(`Found ${keys.length} traffic log keys in batch ${batchCount + 1}`);
+        
+        // Process only what we need
+        const keysToProcess = keys.slice(0, Math.min(keys.length, maxLogs - logs.length));
+        
+        if (keysToProcess.length > 0) {
+          const logBatch = await fetchLogBatch(keysToProcess);
+          logs.push(...logBatch);
+          
+          console.log(`Processed ${logBatch.length} logs, total: ${logs.length}`);
+        }
+        
+        // Stop if we have enough logs or no more keys
+        if (logs.length >= maxLogs || !listData.result_info?.cursor) {
+          break;
+        }
+        
+        cursor = listData.result_info?.cursor;
+        batchCount++;
+        
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError?.name === 'AbortError') {
+          console.log(`Batch ${batchCount + 1} timed out, stopping fetch`);
+        } else {
+          console.error(`Error in batch ${batchCount + 1}:`, fetchError);
+        }
+        break; // Stop on any error to prevent infinite loops
       }
-      
-      // If we have enough logs or no more keys, stop
-      if (fetchedCount >= maxLogs || !listData.result_info?.cursor) {
-        break;
-      }
-      
-      cursor = listData.result_info?.cursor;
     }
     
-    console.log(`Finished fetching logs, total: ${logs.length}`);
+    console.log(`Finished fetching logs: ${logs.length} total, ${batchCount} batches processed`);
     return logs;
     
   } catch (error) {
@@ -264,46 +280,73 @@ async function fetchRecentLogsSimple(maxLogs: number): Promise<any[]> {
 async function fetchLogBatch(keys: any[]): Promise<any[]> {
   const logs: any[] = [];
   
-  // Fetch log data for each key
-  for (const key of keys) {
-    try {
-      const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/values/${encodeURIComponent(key.name)}`;
-      
-      const valueResponse = await fetch(valueUrl, {
-        headers: {
-          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`
-        }
-      });
-
-      if (valueResponse.ok) {
-        const logData = await valueResponse.json();
+  // Process keys in smaller chunks to prevent timeouts
+  const chunkSize = 10; // Process 10 keys at a time
+  
+  for (let i = 0; i < keys.length; i += chunkSize) {
+    const chunk = keys.slice(i, i + chunkSize);
+    
+    // Fetch log data for each key in this chunk (with timeout)
+    const chunkPromises = chunk.map(async (key) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout per key
         
-        // Extract timestamp from key name for sorting
-        // Key format: traffic_log_2025-06-19T14:05:25.797Z_randomString
-        const keyParts = key.name.split('_');
-        const timestamp = keyParts.slice(2, -1).join('_'); // Everything between traffic_log_ and last _
+        const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_NAMESPACE_ID}/values/${encodeURIComponent(key.name)}`;
         
-        // Debug: Log the first few entries to see what data we're getting
-        if (logs.length < 3) {
-          console.log(`DEBUG: Log entry ${logs.length + 1}:`, {
-            timestamp,
-            keyName: key.name,
-            userAgent: logData.userAgent ? logData.userAgent.substring(0, 50) + '...' : 'MISSING',
-            country: logData.country || 'MISSING',
-            decision: logData.decision || 'MISSING',
-            detectionReason: logData.detectionReason || 'MISSING'
-          });
-        }
-        
-        logs.push({
-          ...logData,
-          timestamp: timestamp,
-          keyName: key.name
+        const valueResponse = await fetch(valueUrl, {
+          headers: {
+            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`
+          },
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
+
+        if (valueResponse.ok) {
+          const logData = await valueResponse.json();
+          
+          // Extract timestamp from key name for sorting
+          // Key format: traffic_log_2025-06-19T14:05:25.797Z_randomString
+          const keyParts = key.name.split('_');
+          const timestamp = keyParts.slice(2, -1).join('_'); // Everything between traffic_log_ and last _
+          
+          return {
+            ...logData,
+            timestamp: timestamp,
+            keyName: key.name
+          };
+        }
+        return null;
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          console.log(`Timeout fetching key ${key.name}`);
+        } else {
+          console.error(`Error fetching log data for key ${key.name}:`, error);
+        }
+        return null;
       }
-    } catch (error) {
-      console.error(`Error fetching log data for key ${key.name}:`, error);
-      // Continue with other keys even if one fails
+    });
+    
+    // Wait for this chunk to complete
+    const chunkResults = await Promise.allSettled(chunkPromises);
+    
+    // Add successful results to logs
+    chunkResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) {
+        logs.push(result.value);
+      }
+    });
+    
+    // Debug log for first chunk only
+    if (i === 0 && logs.length > 0) {
+      console.log(`DEBUG: First log entry:`, {
+        timestamp: logs[0].timestamp,
+        userAgent: logs[0].userAgent ? logs[0].userAgent.substring(0, 50) + '...' : 'MISSING',
+        country: logs[0].country || 'MISSING',
+        decision: logs[0].decision || 'MISSING',
+        detectionReason: logs[0].detectionReason || 'MISSING'
+      });
     }
   }
   
