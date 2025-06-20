@@ -1037,50 +1037,53 @@ async function handleRequest(request) {
 
 // --- CORE FUNCTIONS ---
 
-// Smart logging filter - determines what traffic is worth logging
-function shouldLogTrafficEvent(request, decision, details, userAgent, pathname) {
-  // Always log money page decisions (real users)
-  if (decision === 'money_page') {
+// Professional session-based logging - one log per IP per hour
+async function shouldLogTrafficEvent(request, decision, details, userAgent, pathname, clientIP) {
+  // Skip asset and internal requests completely
+  const isAsset = pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.png') || 
+                 pathname.endsWith('.jpg') || pathname.endsWith('.ico') || pathname.endsWith('.woff') ||
+                 pathname.includes('/assets/') || pathname.includes('/fonts/') || pathname.includes('/images/');
+  
+  const isInternal = pathname === '/service-worker.js' || pathname.startsWith('/r8/') || 
+                    pathname.includes('analytics') || pathname.includes('tracking');
+  
+  if (isAsset || isInternal) {
+    return false; // Never log these
+  }
+  
+  // Only log main page visits (not deep crawling)
+  const isMainPage = pathname === '/' || pathname === '/index.html' || pathname === '' || 
+                    pathname.split('/').filter(p => p.length > 0).length <= 1;
+  
+  if (!isMainPage) {
+    return false; // Don't log deep page crawling
+  }
+  
+  // Create session key (IP + hour window)
+  const now = new Date();
+  const hourWindow = Math.floor(now.getTime() / (60 * 60 * 1000)); // Hour-based session
+  const sessionKey = 'session_' + clientIP + '_' + hourWindow;
+  
+  try {
+    // Check if we already logged this IP in this hour window
+    // @ts-ignore - TRAFFIC_LOGS is injected by Cloudflare Workers runtime with KV binding
+    const existingSession = await TRAFFIC_LOGS.get(sessionKey);
+    
+    if (existingSession) {
+      return false; // Already logged this IP in this hour
+    }
+    
+    // Mark this session as logged (expires in 2 hours)
+    // @ts-ignore - TRAFFIC_LOGS is injected by Cloudflare Workers runtime with KV binding
+    await TRAFFIC_LOGS.put(sessionKey, 'logged', {
+      expirationTtl: 2 * 60 * 60 // 2 hours
+    });
+    
+    return true; // Log this new session
+  } catch (error) {
+    // If session check fails, log anyway (better to have duplicate than miss)
     return true;
   }
-  
-  // Always log if there's a gclid (Google Ads traffic)
-  const url = new URL(request.url);
-  const gclid = url.searchParams.get('gclid');
-  if (gclid) {
-    return true;
-  }
-  
-  // Always log real user browsers (not bots)
-  const userAgentLower = userAgent.toLowerCase();
-  const isBot = userAgentLower.includes('bot') || 
-                userAgentLower.includes('crawler') || 
-                userAgentLower.includes('spider') || 
-                userAgentLower.includes('curl') || 
-                userAgentLower.includes('wget') || 
-                userAgentLower.includes('python') ||
-                userAgentLower.includes('java/') ||
-                userAgentLower.includes('go-http') ||
-                userAgentLower.includes('postman');
-  
-  if (!isBot) {
-    return true; // Log all real user visits
-  }
-  
-  // For bots, only log root/main page visits (not deep crawling)
-  const isRootOrMainPage = pathname === '/' || 
-                          pathname === '/index.html' || 
-                          pathname === '/index.htm' ||
-                          pathname === '' ||
-                          pathname.split('/').length <= 2; // Only 1 level deep
-  
-  if (isRootOrMainPage) {
-    return true; // Log bot visits to main pages
-  }
-  
-  // For bot deep crawling, use sampling (log 1 in 10 requests)
-  const shouldSample = Math.random() < 0.1; // 10% sampling rate
-  return shouldSample;
 }
 
 // Traffic logging function
@@ -1120,10 +1123,10 @@ async function logTrafficEvent(request, decision, details = {}) {
       return; // Don't log asset requests or internal paths
     }
     
-    // Smart logging: Only log meaningful traffic to reduce KV usage
-    const shouldLog = shouldLogTrafficEvent(request, decision, details, userAgent, pathname);
+    // Smart logging: Only log meaningful traffic to reduce KV usage (session-based)
+    const shouldLog = await shouldLogTrafficEvent(request, decision, details, userAgent, pathname, clientIP);
     if (!shouldLog) {
-      return; // Skip logging for noise traffic
+      return; // Skip logging for noise traffic or already logged this session
     }
     
     const logEntry = {
@@ -1139,7 +1142,8 @@ async function logTrafficEvent(request, decision, details = {}) {
       isProxy: details.isProxy || false,
       isVpn: details.isVpn || false,
       detectionReason: details.reason || null,
-      referer: request.headers.get('Referer') || null
+      referer: request.headers.get('Referer') || null,
+      sessionBased: true // Flag to indicate this is session-based logging
     };
     
     // Store in KV with timestamp-based key for easy retrieval
