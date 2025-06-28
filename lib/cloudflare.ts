@@ -1666,7 +1666,7 @@ async function handleRequest(request, event) {
 
   // 🎯 ROUTE 1: Handle asset requests BEFORE bot detection to prevent MIME type issues
   // Assets from safe pages need to load properly regardless of bot detection
-  const pathname = url.pathname.toLowerCase();
+  // (Reuse the existing pathname variable from analytics blocking section)
   const isAssetRequest = pathname.endsWith('.css') || pathname.endsWith('.js') || 
                         pathname.endsWith('.png') || pathname.endsWith('.jpg') || 
                         pathname.endsWith('.jpeg') || pathname.endsWith('.gif') || 
@@ -1699,22 +1699,22 @@ async function handleRequest(request, event) {
           statusText: response.statusText,
           headers: response.headers
         });
-      } catch (error) {
-        // If safe site asset fails, return appropriate empty response
-        if (pathname.endsWith('.css')) {
-          return new Response('/* Asset unavailable */', {
-            status: 200,
-            headers: { 'Content-Type': 'text/css' }
-          });
-        } else if (pathname.endsWith('.js')) {
-          return new Response('// Asset unavailable', {
-            status: 200,
-            headers: { 'Content-Type': 'application/javascript' }
-          });
-        } else {
-          return new Response('', { status: 404 });
-        }
-      }
+             } catch (error) {
+         // If safe site asset fails, return appropriate empty response
+         if (pathname.endsWith('.css')) {
+           return new Response('/* Asset unavailable */', {
+             status: 200,
+             headers: { 'Content-Type': 'text/css' }
+           });
+         } else if (pathname.endsWith('.js')) {
+           return new Response('// Asset unavailable', {
+             status: 200,
+             headers: { 'Content-Type': 'application/javascript' }
+           });
+         } else {
+           return new Response('', { status: 404 });
+         }
+       }
     }
   }
 
