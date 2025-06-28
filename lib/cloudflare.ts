@@ -1311,47 +1311,52 @@ async function isVisitorABot(request) {
       const isVpn = ipData.type === 'VPN' || (ipData.vpn && ipData.vpn === 'yes');
       const asn = parseInt(ipData.asn) || 0;
       
-      // USA-Optimized Detection: Can't use geo-blocking for USA traffic
-      if (TARGET_COUNTRIES.includes('US') && ipData.isocode === 'US') {
-        // For USA traffic, use enhanced detection since geo-blocking is useless
-        
-        // Check if this is Google's ASN (15169) - treat more carefully
-        if (asn === 15169) {
-          // Google's own infrastructure - increase threshold
-          if (riskScore > 75) {
-            botScore += 25;
-          }
-        } else {
-          // Non-Google USA traffic - standard thresholds
-          if (riskScore > 60) {
-            botScore += 20;
-          }
-        }
-        
-        // Check for datacenter ASNs (but be careful with Google's)
-        if (DATACENTER_ASNS.includes(asn) && asn !== 15169) {
-          botScore += 15;
-        }
-        
-      } else {
-        // Non-USA traffic - use geo-blocking
-        if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
-          await logTrafficEvent(request, 'safe_page', { 
-            reason: 'geo_block', 
-            country, 
-            riskScore, 
-            isProxy, 
-            isVpn,
-            asn 
-          });
-          return true; // Show safe page if not in target countries
-        }
-        
-        // Standard risk checking for allowed countries
-        if (riskScore > 60) {
-          botScore += 20;
-        }
-      }
+             // Check if visitor is from target countries first
+       if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
+         await logTrafficEvent(request, 'safe_page', { 
+           reason: 'geo_block', 
+           country, 
+           riskScore, 
+           isProxy, 
+           isVpn,
+           asn 
+         });
+         return true; // Show safe page if not in target countries
+       }
+       
+       // Visitor is from target country - apply country-specific detection logic
+       if (ipData.isocode === 'US') {
+         // USA-Optimized Detection: Enhanced logic since geo-blocking alone isn't effective
+         
+         // Check if this is Google's ASN (15169) - treat more carefully
+         if (asn === 15169) {
+           // Google's own infrastructure - increase threshold
+           if (riskScore > 75) {
+             botScore += 25;
+           }
+         } else {
+           // Non-Google USA traffic - standard thresholds
+           if (riskScore > 60) {
+             botScore += 20;
+           }
+         }
+         
+         // Check for datacenter ASNs (but be careful with Google's)
+         if (DATACENTER_ASNS.includes(asn) && asn !== 15169) {
+           botScore += 15;
+         }
+         
+       } else {
+         // Non-USA target countries - standard risk checking
+         if (riskScore > 60) {
+           botScore += 20;
+         }
+         
+         // Standard datacenter detection for non-USA countries
+         if (DATACENTER_ASNS.includes(asn)) {
+           botScore += 15;
+         }
+       }
       
       // Universal checks regardless of country
       if (isProxy) {
