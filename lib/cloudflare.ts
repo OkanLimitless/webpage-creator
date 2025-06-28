@@ -1100,6 +1100,12 @@ function hashIP(ip) {
 }
 
 // 🧹 ENHANCED CACHE CLEANUP: TTL expiration + LRU size management
+// 
+// 🔄 PROACTIVE CLEANUP STRATEGY: Called probabilistically on every request
+// - Prevents memory leaks during low-traffic or bot-heavy periods
+// - No dependency on specific code paths (intelligence scoring, etc.)
+// - Workers-compatible: No setInterval needed, purely request-driven
+//
 function cleanupCaches() {
   const now = Date.now();
   const intelligenceTTL = 60000; // 60 seconds for intelligence
@@ -1590,10 +1596,8 @@ async function calculateIntelligenceScore(clientIP) {
       timestamp: now
     });
     
-    // 🧹 STEP 4: Periodic cache cleanup (every 5 minutes)
-    if (now - lastCacheCleanup > 300000) {
-      cleanupCaches();
-    }
+    // 🧹 STEP 4: Cache cleanup now handled globally in handleRequest()
+    // (Removed local cleanup to prevent memory leaks during low intelligence scoring periods)
     
     return finalScore;
     
@@ -1617,6 +1621,24 @@ addEventListener('fetch', event => {
 
 async function handleRequest(request, event) {
   const url = new URL(request.url);
+
+  // 🧹 PROACTIVE CACHE MAINTENANCE: Prevent memory leaks during low traffic
+  // 
+  // 🚨 CRITICAL FIX: Cache cleanup was only triggered during intelligence scoring
+  // - Problem: Long periods of honey trap/UA bot traffic never cleaned caches
+  // - Risk: Memory bloat could crash workers during traffic droughts
+  // - Solution: Probabilistic cleanup on EVERY request (1% chance)
+  // 
+  // ✅ SMART FREQUENCY: 1% probability = ~every 100 requests = efficient
+  // ✅ TRAFFIC INDEPENDENT: Works regardless of bot detection patterns
+  // ✅ WORKERS COMPATIBLE: No setInterval dependency, pure request-driven
+  //
+  const now = Date.now();
+  // 🎯 SMART CLEANUP: Only if caches have content AND (random trigger OR time failsafe)
+  if ((intelligenceCache.size > 0 || proxyCheckCache.size > 0) && 
+      (Math.random() < 0.01 || (now - lastCacheCleanup > 600000))) {
+    cleanupCaches();
+  }
 
   // ROUTE 0: Block analytics and tracking requests with proper responses
   const pathname = url.pathname.toLowerCase();
