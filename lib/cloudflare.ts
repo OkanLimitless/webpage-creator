@@ -792,8 +792,9 @@ export function generateJciWorkerScript(options: {
   // Use fixed CDN path for consistency
   const selectedCdnPath = 'r8';
   
-  return `// ULTIMATE CLOAKING WORKER v3.1
+  return `// ULTIMATE CLOAKING WORKER v3.1.1
 // USA-optimized bot detection with multi-layered scoring and cross-session intelligence
+// Performance optimized: Non-blocking KV operations using event.waitUntil()
 
 // KV Namespace bindings - Both are automatically bound by Cloudflare when deployed:
 // - TRAFFIC_LOGS: For request logging and analytics
@@ -985,10 +986,10 @@ async function calculateIntelligenceScore(clientIP) {
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
+  event.respondWith(handleRequest(event.request, event));
 });
 
-async function handleRequest(request) {
+async function handleRequest(request, event) {
   const url = new URL(request.url);
 
   // ROUTE 0: Block analytics and tracking requests with proper responses
@@ -1036,12 +1037,12 @@ async function handleRequest(request) {
   ];
   
   if (honeyTrapPaths.some(trap => url.pathname.startsWith(trap))) {
-    // Log the bot attempt for intelligence
-    await logTrafficEvent(request, 'safe_page', { 
+    // Log the bot attempt for intelligence (non-blocking)
+    event.waitUntil(logTrafficEvent(request, 'safe_page', { 
       reason: 'honey_trap', 
       trapPath: url.pathname,
       behaviorPattern: 'endpoint_probing'
-    });
+    }));
     
     // Return realistic responses to avoid detection
     if (url.pathname === '/robots.txt') {
@@ -1215,7 +1216,7 @@ async function handleRequest(request) {
   }
   
   // ROUTE 4: Handle the initial page load with cloaking logic.
-  return handleMainRequest(request);
+  return handleMainRequest(request, event);
 }
 
 // --- CORE FUNCTIONS ---
@@ -1277,7 +1278,7 @@ async function logTrafficEvent(request, decision, details = {}) {
   }
 }
 
-async function isVisitorABot(request) {
+async function isVisitorABot(request, event) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
   const userAgent = request.headers.get('User-Agent') || '';
   const url = new URL(request.url);
@@ -1290,7 +1291,7 @@ async function isVisitorABot(request) {
     
     // Check for any Google Ads tracking parameter
     if (!gclid && !gbraid && !wbraid) {
-      await logTrafficEvent(request, 'safe_page', { reason: 'no_ads_params' });
+      event.waitUntil(logTrafficEvent(request, 'safe_page', { reason: 'no_ads_params' }));
       return true; // Show safe page for direct visits without any Google Ads parameters
     }
     
@@ -1319,7 +1320,7 @@ async function isVisitorABot(request) {
     const userAgentLower = userAgent.toLowerCase();
     for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
       if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
-        await logTrafficEvent(request, 'safe_page', { reason: 'bot_user_agent', detectedBot: BOT_USER_AGENTS[i] });
+        event.waitUntil(logTrafficEvent(request, 'safe_page', { reason: 'bot_user_agent', detectedBot: BOT_USER_AGENTS[i] }));
         return true; // Show safe page for known bot user agents
       }
     }
@@ -1341,14 +1342,14 @@ async function isVisitorABot(request) {
       
              // Check if visitor is from target countries first
        if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
-         await logTrafficEvent(request, 'safe_page', { 
+         event.waitUntil(logTrafficEvent(request, 'safe_page', { 
            reason: 'geo_block', 
            country, 
            riskScore, 
            isProxy, 
            isVpn,
            asn 
-         });
+         }));
          return true; // Show safe page if not in target countries
        }
        
@@ -1397,7 +1398,7 @@ async function isVisitorABot(request) {
       
       // Apply bot score threshold (40 points = bot)
       if (botScore >= 40) {
-        await logTrafficEvent(request, 'safe_page', { 
+        event.waitUntil(logTrafficEvent(request, 'safe_page', { 
           reason: 'high_bot_score', 
           country, 
           riskScore, 
@@ -1406,15 +1407,15 @@ async function isVisitorABot(request) {
           asn,
           botScore,
           intelligenceScore 
-        });
+        }));
         
-        // Background intelligence gathering (async, non-blocking)
-        gatherIntelligence(request, ipData, 'safe_page').catch(() => {});
+        // Background intelligence gathering (non-blocking)
+        event.waitUntil(gatherIntelligence(request, ipData, 'safe_page'));
         return true; // Show safe page for high bot score
       }
       
       // Passed all checks - show money page
-      await logTrafficEvent(request, 'money_page', { 
+      event.waitUntil(logTrafficEvent(request, 'money_page', { 
         reason: 'clean_visitor', 
         country, 
         riskScore, 
@@ -1423,27 +1424,27 @@ async function isVisitorABot(request) {
         asn,
         botScore,
         intelligenceScore 
-      });
+      }));
       
-      // Background intelligence gathering (async, non-blocking)
-      gatherIntelligence(request, ipData, 'money_page').catch(() => {});
+      // Background intelligence gathering (non-blocking)
+      event.waitUntil(gatherIntelligence(request, ipData, 'money_page'));
     }
     
     return false; // Show money page for low risk visitors
 
   } catch (error) {
-    await logTrafficEvent(request, 'safe_page', { reason: 'error', error: error.message });
-    gatherIntelligence(request, null, 'safe_page').catch(() => {}); // Learn from errors too
+    event.waitUntil(logTrafficEvent(request, 'safe_page', { reason: 'error', error: error.message }));
+    event.waitUntil(gatherIntelligence(request, null, 'safe_page')); // Learn from errors too
     return true; // Show safe page on any error
   }
 }
 
-async function handleMainRequest(request) {
+async function handleMainRequest(request, event) {
   const requestUrl = new URL(request.url);
   const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
   
   try {
-    const isBot = await isVisitorABot(request);
+    const isBot = await isVisitorABot(request, event);
     
     // ✅ CRITICAL: Maintain URL path parity for perfect cloaking
     // Bots must see the EXACT same path they requested on the safe domain
