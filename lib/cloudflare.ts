@@ -376,6 +376,8 @@ const cf = {
       }))
     };
     
+    console.log('🔧 Worker metadata being sent to Cloudflare:', JSON.stringify(metadata, null, 2));
+    
     formData.append('metadata', JSON.stringify(metadata));
 
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${scriptName}`, {
@@ -386,7 +388,10 @@ const cf = {
       body: formData,
     });
     
-    return response.json();
+    const result = await response.json();
+    console.log('🔧 Cloudflare worker creation response:', JSON.stringify(result, null, 2));
+    
+    return result;
   },
 };
 
@@ -2910,6 +2915,12 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
     console.log(`Creating worker script with KV bindings: ${scriptName}`);
     
     // Validate that INTELLIGENCE_STORE_NAMESPACE_ID is set
+    console.log('🔍 Environment variable check:', {
+      INTELLIGENCE_STORE_NAMESPACE_ID: process.env.INTELLIGENCE_STORE_NAMESPACE_ID ? '✅ Set' : '❌ Missing',
+      TRAFFIC_LOGS_NAMESPACE_ID: process.env.TRAFFIC_LOGS_NAMESPACE_ID ? '✅ Set' : '❌ Missing',
+      NODE_ENV: process.env.NODE_ENV
+    });
+    
     if (!process.env.INTELLIGENCE_STORE_NAMESPACE_ID) {
       throw new Error('INTELLIGENCE_STORE_NAMESPACE_ID environment variable is required for cross-session intelligence');
     }
@@ -2924,6 +2935,8 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
         namespace_id: process.env.INTELLIGENCE_STORE_NAMESPACE_ID
       }
     ];
+    
+    console.log('📦 KV Bindings being created:', kvBindings);
     
     const workerResult = await cf.createWorkerWithKVBinding(scriptName, workerScript, kvBindings);
     
