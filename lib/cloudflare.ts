@@ -1006,20 +1006,12 @@ function generateSmartCSP(targetUrl, isBot, nonce) {
     const targetDomain = new URL(targetUrl).hostname;
     
     if (isBot) {
-      // 🔒 PERMISSIVE SECURITY for bots viewing external safe pages
-      // - Safe pages are external sites with their own resource dependencies
-      // - Must allow external scripts, styles, images that safe pages require
-      // - Still maintains basic security protections against dangerous content
-      // - Focus on protecting YOUR bridge pages, not restricting external safe pages
-      return "default-src 'self' https: http: data: blob:; " +
-             "script-src 'self' 'nonce-" + nonce + "' 'unsafe-inline' https: http:; " +
-             "style-src 'self' 'nonce-" + nonce + "' 'unsafe-inline' https: http:; " +
-             "img-src 'self' data: blob: https: http:; " +
-             "font-src 'self' data: https: http:; " +
-             "connect-src 'self' https: http:; " +
-             "frame-src 'self' https: http:; " +
-             "object-src 'none'; " +
-             "base-uri 'self'";
+      // 🔒 FULLY PERMISSIVE for bots viewing external safe pages
+      // - Safe pages are external sites we don't control
+      // - Need maximum compatibility for their existing content
+      // - No nonce requirements since we're not injecting nonces
+      // - Focus security on bridge pages instead
+      return "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;";
     } else {
       // 🎯 SECURE BRIDGE PAGES for real users
       // - Nonce-based script security + affiliate functionality
@@ -1274,7 +1266,6 @@ function createHoneyTrapResponse(pathname) {
 async function createSafePageResponse(request, event) {
   try {
     const requestUrl = new URL(request.url);
-    const nonce = generateNonce();
     
     // ✅ CRITICAL: Maintain URL path parity for perfect cloaking
     // Bot requesting /nieuws/muziek/12345 gets achterhoeknieuws.nl/nieuws/muziek/12345
@@ -1310,7 +1301,7 @@ async function createSafePageResponse(request, event) {
         '<header><h1>Latest News</h1></header>' +
         '<main><article><h2>Loading Latest Stories...</h2>' +
         '<p>Please wait while we load the latest news stories.</p></article></main>' +
-        '<script nonce="' + nonce + '">console.log("Safe page loaded");</script>' +
+        '<script>console.log("Safe page loaded");</script>' +
         '</body></html>';
       
       return new Response(fallbackHTML, {
@@ -1318,23 +1309,43 @@ async function createSafePageResponse(request, event) {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
-          'Content-Security-Policy': generateSmartCSP(SAFE_URL, true, nonce)
+          'Content-Security-Policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;"
         }
       });
     }
     
-    // Process the safe page response with nonce injection
+    // Process the safe page response with URL rewriting and metadata cleaning
+    const safeOriginForRewriting = new URL(SAFE_URL).origin;
     const rewriter = new HTMLRewriter()
-      // 🔐 Inject nonce into ALL inline script tags for CSP security
-      .on('script:not([src])', {
-        element(script) {
-          script.setAttribute('nonce', nonce);
+      // 🔗 Fix relative image paths to point to original safe domain
+      .on('img', {
+        element(img) {
+          const src = img.getAttribute('src');
+          if (src && src.startsWith('/') && !src.startsWith('//')) {
+            img.setAttribute('src', safeOriginForRewriting + src);
+          }
+          const dataSrc = img.getAttribute('data-src');
+          if (dataSrc && dataSrc.startsWith('/') && !dataSrc.startsWith('//')) {
+            img.setAttribute('data-src', safeOriginForRewriting + dataSrc);
+          }
         }
       })
-      // 🔐 Also inject nonce into inline style tags
-      .on('style', {
-        element(style) {
-          style.setAttribute('nonce', nonce);
+      // 🔗 Fix relative links and stylesheets  
+      .on('link', {
+        element(link) {
+          const href = link.getAttribute('href');
+          if (href && href.startsWith('/') && !href.startsWith('//')) {
+            link.setAttribute('href', safeOriginForRewriting + href);
+          }
+        }
+      })
+      // 🔗 Fix relative script sources
+      .on('script[src]', {
+        element(script) {
+          const src = script.getAttribute('src');
+          if (src && src.startsWith('/') && !src.startsWith('//')) {
+            script.setAttribute('src', safeOriginForRewriting + src);
+          }
         }
       })
       // Clean metadata for perfect cloaking
@@ -1358,7 +1369,7 @@ async function createSafePageResponse(request, event) {
         'X-Frame-Options': 'SAMEORIGIN',
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'no-referrer',
-        'Content-Security-Policy': generateSmartCSP(SAFE_URL, true, nonce),
+        'Content-Security-Policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
@@ -1369,7 +1380,6 @@ async function createSafePageResponse(request, event) {
     
   } catch (error) {
     // Final fallback: Realistic news-like content (not synthetic "Loading...")
-    const nonce = generateNonce();
     const fallbackHTML = '<!DOCTYPE html><html><head>' +
       '<title>Local News Today</title>' +
       '<meta name="robots" content="noindex, nofollow">' +
@@ -1378,7 +1388,7 @@ async function createSafePageResponse(request, event) {
       '<header><h1>Community News</h1></header>' +
       '<main><h2>Breaking News Updates</h2>' +
       '<p>Stay informed with the latest local news and updates from your community.</p></main>' +
-      '<script nonce="' + nonce + '">console.log("News site loaded");</script>' +
+      '<script>console.log("News site loaded");</script>' +
       '</body></html>';
     
     return new Response(fallbackHTML, {
@@ -1386,7 +1396,7 @@ async function createSafePageResponse(request, event) {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
-        'Content-Security-Policy': generateSmartCSP(SAFE_URL, true, nonce)
+        'Content-Security-Policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;"
       }
     });
   }
