@@ -832,6 +832,74 @@ const DATACENTER_ASNS = [
   20473, 63949, 39351, 398324, 13414, 30633
 ];
 
+// 🔐 IP HASHING FUNCTION: Consistent hashing for both KV and in-memory storage
+// 
+// 🚨 SECURITY FIX: Prevents IPv6 memory bloat vulnerability
+// - IPv6 addresses can be 39+ characters (vs 15 for IPv4)  
+// - Raw IPv6 cache keys could cause OOM in high-traffic scenarios
+// - Hashed keys are always 16 characters regardless of IP type
+// - Same function used for both KV storage and in-memory caches
+// - Includes fallback for edge cases with invalid characters
+//
+function hashIP(ip) {
+  try {
+    return btoa(ip).slice(0, 16).replace(/[^a-zA-Z0-9]/g, '_');
+  } catch (error) {
+    // Fallback for invalid characters
+    return ip.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 16);
+  }
+}
+
+// Enhanced in-memory caches for massive performance boost
+const intelligenceCache = new Map();
+const proxyCheckCache = new Map();
+let lastCacheCleanup = Date.now();
+const MAX_CACHE_SIZE = 1000; // Prevent memory bloat
+
+// 🧹 ENHANCED CACHE CLEANUP: TTL expiration + LRU size management
+function cleanupCaches() {
+  const now = Date.now();
+  const intelligenceTTL = 60000; // 60 seconds for intelligence
+  const proxyCheckTTL = 300000; // 5 minutes for ProxyCheck.io
+  
+  // STEP 1: Remove expired entries from intelligence cache
+  for (const [key, value] of intelligenceCache.entries()) {
+    if (now - value.timestamp > intelligenceTTL) {
+      intelligenceCache.delete(key);
+    }
+  }
+  
+  // STEP 2: Remove expired entries from ProxyCheck cache
+  for (const [key, value] of proxyCheckCache.entries()) {
+    if (now - value.timestamp > proxyCheckTTL) {
+      proxyCheckCache.delete(key);
+    }
+  }
+  
+  // STEP 3: LRU eviction if cache size exceeded
+  if (intelligenceCache.size > MAX_CACHE_SIZE) {
+    const entries = Array.from(intelligenceCache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    const entriesToRemove = entries.slice(0, intelligenceCache.size - MAX_CACHE_SIZE);
+    for (const [key] of entriesToRemove) {
+      intelligenceCache.delete(key);
+    }
+  }
+  
+  if (proxyCheckCache.size > MAX_CACHE_SIZE) {
+    const entries = Array.from(proxyCheckCache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    const entriesToRemove = entries.slice(0, proxyCheckCache.size - MAX_CACHE_SIZE);
+    for (const [key] of entriesToRemove) {
+      proxyCheckCache.delete(key);
+    }
+  }
+  
+  lastCacheCleanup = now;
+}
+
 // Background Intelligence Gathering using KV Storage for true persistence
 async function gatherIntelligence(request, ipData, decision) {
   try {
@@ -1055,93 +1123,7 @@ function generateSmartCSP(targetUrl, isBot, nonce) {
 //    - 3 attempts with exponential backoff (100ms, 200ms, 400ms)
 //    - Resilient to transient KV failures, prevents data loss
 //
-// 4. CACHE SIZE LIMITS:
-//    - Max 1000 entries per cache with LRU eviction
-//    - Prevents memory bloat from unique IPv6 addresses
-//
-// Expected Performance Gains:
-// - 20-50ms faster response time per cached hit
-// - 80-90% reduction in KV operations for repeat visitors  
-// - 95%+ reduction in ProxyCheck.io API calls for bot traffic
-// - Much more reliable logging under high load conditions
-// - Significant cost savings on both KV reads and external API usage
-// - Protected against IPv6 memory bloat and OOM crashes
-//
-const intelligenceCache = new Map();
-const proxyCheckCache = new Map();
-let lastCacheCleanup = Date.now();
-const MAX_CACHE_SIZE = 1000; // Prevent memory bloat
 
-// 🔐 IP HASHING FUNCTION: Consistent hashing for both KV and in-memory storage
-// 
-// 🚨 SECURITY FIX: Prevents IPv6 memory bloat vulnerability
-// - IPv6 addresses can be 39+ characters (vs 15 for IPv4)  
-// - Raw IPv6 cache keys could cause OOM in high-traffic scenarios
-// - Hashed keys are always 16 characters regardless of IP type
-// - Same function used for both KV storage and in-memory caches
-// - Includes fallback for edge cases with invalid characters
-//
-function hashIP(ip) {
-  try {
-    return btoa(ip).slice(0, 16).replace(/[^a-zA-Z0-9]/g, '_');
-  } catch (error) {
-    // Fallback for invalid characters
-    return ip.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 16);
-  }
-}
-
-// 🧹 ENHANCED CACHE CLEANUP: TTL expiration + LRU size management
-// 
-// 🔄 PROACTIVE CLEANUP STRATEGY: Called probabilistically on every request
-// - Prevents memory leaks during low-traffic or bot-heavy periods
-// - No dependency on specific code paths (intelligence scoring, etc.)
-// - Workers-compatible: No setInterval needed, purely request-driven
-//
-function cleanupCaches() {
-  const now = Date.now();
-  const intelligenceTTL = 60000; // 60 seconds for intelligence
-  const proxyCheckTTL = 300000; // 5 minutes for ProxyCheck.io (data changes less frequently)
-  
-  // STEP 1: Remove expired entries from intelligence cache
-  for (const [key, value] of intelligenceCache.entries()) {
-    if (now - value.timestamp > intelligenceTTL) {
-      intelligenceCache.delete(key);
-    }
-  }
-  
-  // STEP 2: Remove expired entries from ProxyCheck cache
-  for (const [key, value] of proxyCheckCache.entries()) {
-    if (now - value.timestamp > proxyCheckTTL) {
-      proxyCheckCache.delete(key);
-    }
-  }
-  
-  // STEP 3: LRU eviction if cache size exceeded (prevents IPv6 memory bloat)
-  if (intelligenceCache.size > MAX_CACHE_SIZE) {
-    // Convert to array and sort by timestamp (oldest first)
-    const entries = Array.from(intelligenceCache.entries())
-      .sort((a, b) => a[1].timestamp - b[1].timestamp);
-    
-    // Remove oldest entries until we're under the limit
-    const entriesToRemove = entries.slice(0, intelligenceCache.size - MAX_CACHE_SIZE);
-    for (const [key] of entriesToRemove) {
-      intelligenceCache.delete(key);
-    }
-  }
-  
-  if (proxyCheckCache.size > MAX_CACHE_SIZE) {
-    // Same LRU logic for ProxyCheck cache
-    const entries = Array.from(proxyCheckCache.entries())
-      .sort((a, b) => a[1].timestamp - b[1].timestamp);
-    
-    const entriesToRemove = entries.slice(0, proxyCheckCache.size - MAX_CACHE_SIZE);
-    for (const [key] of entriesToRemove) {
-      proxyCheckCache.delete(key);
-    }
-  }
-  
-  lastCacheCleanup = now;
-}
 
 // 🚨 CRITICAL SECURITY FIX: Context-aware error handling for upstream failures
 //
