@@ -1049,6 +1049,85 @@ function cleanupCaches() {
   lastCacheCleanup = now;
 }
 
+// 🔍 HEADER FINGERPRINTING: Advanced bot detection via request header analysis
+// 
+// PHASE 1 IMPLEMENTATION: Conservative scoring for production safety
+// - Missing Accept-Language: 8 points (most critical)
+// - Missing Accept-Encoding: 6 points  
+// - Missing Accept header: 5 points
+// - Chrome without sec-ch-ua: 4 points
+// - UA/Accept mismatches: 3-4 points
+// - Suspicious language patterns: 2-3 points
+// - Perfect header ordering: 3 points
+// - Empty referer: 2 points
+// - Maximum: 15 points (won't overwhelm other signals)
+//
+// MONITORING: headerScore is logged in all traffic events for threshold tuning
+//
+function analyzeRequestHeaders(request) {
+  let headerScore = 0;
+  const headers = request.headers;
+  const userAgent = headers.get('User-Agent') || '';
+  const acceptLanguage = headers.get('Accept-Language');
+  const acceptEncoding = headers.get('Accept-Encoding');
+  const accept = headers.get('Accept');
+  const secChUa = headers.get('sec-ch-ua');
+  const referer = headers.get('Referer');
+  
+  // 🚩 RED FLAG 1: Missing standard browser headers (most critical)
+  if (!acceptLanguage) {
+    headerScore += 8; // 99%+ of real browsers send Accept-Language
+  }
+  
+  if (!acceptEncoding) {
+    headerScore += 6; // Real browsers always support gzip/deflate
+  }
+  
+  if (!accept) {
+    headerScore += 5; // Browsers always send Accept header
+  }
+  
+  // 🚩 RED FLAG 2: Modern browser inconsistencies
+  if (userAgent.includes('Chrome/') && !secChUa) {
+    headerScore += 4; // Modern Chrome always sends sec-ch-ua
+  }
+  
+  // 🚩 RED FLAG 3: Suspicious Accept-Language patterns
+  if (acceptLanguage) {
+    // Single language without country code (e.g., just "en" instead of "en-US,en;q=0.9")
+    if (acceptLanguage.length < 5 || !acceptLanguage.includes(',')) {
+      headerScore += 3;
+    }
+    // Perfect quality values (real browsers have slight variations)
+    if (acceptLanguage.includes('q=1.0') || acceptLanguage.includes('q=0.5')) {
+      headerScore += 2;
+    }
+  }
+  
+  // 🚩 RED FLAG 4: User-Agent vs Accept header mismatches
+  if (userAgent.includes('Safari/') && accept && !accept.includes('text/html')) {
+    headerScore += 4; // Safari always accepts HTML
+  }
+  
+  if (userAgent.includes('Chrome/') && accept && accept === '*/*') {
+    headerScore += 3; // Chrome has specific Accept patterns
+  }
+  
+  // 🚩 RED FLAG 5: Suspicious header ordering (bots often have perfect ordering)
+  const headerNames = Array.from(headers.keys()).join(',').toLowerCase();
+  if (headerNames === 'accept,accept-encoding,accept-language,user-agent') {
+    headerScore += 3; // Too perfect alphabetical ordering
+  }
+  
+  // 🚩 RED FLAG 6: Missing or suspicious referer patterns
+  if (referer === '') {
+    headerScore += 2; // Empty referer can indicate direct bot access
+  }
+  
+  // Cap header score at 15 points to prevent overwhelming other signals
+  return Math.min(headerScore, 15);
+}
+
 // Enhanced Bot Score Calculation with KV-based Intelligence + In-Flight Cache
 async function calculateIntelligenceScore(clientIP) {
   try {
@@ -1480,7 +1559,11 @@ async function isVisitorABot(request, event) {
       }
     }
 
-    // STEP 1: Quick user agent pattern check (fastest)
+    // STEP 1: Header fingerprinting analysis (fast and effective)
+    const headerScore = analyzeRequestHeaders(request);
+    botScore += headerScore;
+
+    // STEP 2: Quick user agent pattern check (fastest)
     const userAgentLower = userAgent.toLowerCase();
     for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
       if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
@@ -1489,7 +1572,7 @@ async function isVisitorABot(request, event) {
       }
     }
 
-    // STEP 2: Enhanced ProxyCheck.io analysis with ASN data + Caching
+    // STEP 3: Enhanced ProxyCheck.io analysis with ASN data + Caching
     const now = Date.now();
     
     // 🚀 Check ProxyCheck.io cache first (5-minute TTL)
@@ -1595,7 +1678,8 @@ async function isVisitorABot(request, event) {
           isVpn,
           asn,
           botScore,
-          intelligenceScore 
+          intelligenceScore,
+          headerScore
         }));
         
         // Background intelligence gathering (non-blocking)
@@ -1612,7 +1696,8 @@ async function isVisitorABot(request, event) {
         isVpn,
         asn,
         botScore,
-        intelligenceScore 
+        intelligenceScore,
+        headerScore
       }));
       
       // Background intelligence gathering (non-blocking)
