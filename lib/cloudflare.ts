@@ -1263,6 +1263,35 @@ function createHoneyTrapResponse(pathname) {
 // 
 // ✅ ANTI-FINGERPRINTING: Indistinguishable from normal safe page visits
 //
+// 🛡️ CONSOLIDATED FALLBACK GENERATOR: Prevents code drift between error handlers
+function createFallbackHTML(options) {
+  options = options || {};
+  const isNewsStyle = options.style === 'news';
+  const nonce = options.nonce || '';
+  const nonceAttr = nonce ? ' nonce="' + nonce + '"' : '';
+  const logMessage = options.logMessage || 'Safe page loaded';
+  
+  if (isNewsStyle) {
+    return '<!DOCTYPE html><html><head>' +
+      '<title>News - Breaking News Today</title>' +
+      '<meta name="robots" content="noindex, nofollow">' +
+      '<meta charset="UTF-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '</head><body>' +
+      '<header><h1>Latest News</h1></header>' +
+      '<main><article><h2>Loading Latest Stories...</h2>' +
+      '<p>Please wait while we load the latest news stories.</p></article></main>' +
+      '<script' + nonceAttr + '>console.log("Safe page loaded");</script>' +
+      '</body></html>';
+  } else {
+    return '<!DOCTYPE html><html><head><title>Loading</title>' +
+      '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">' +
+      '</head><body><h1>Loading...</h1><p>Please wait.</p>' +
+      '<script' + nonceAttr + '>console.log("' + logMessage + '");</script>' +
+      '</body></html>';
+  }
+}
+
 async function createSafePageResponse(request, event) {
   try {
     const requestUrl = new URL(request.url);
@@ -1291,18 +1320,8 @@ async function createSafePageResponse(request, event) {
     const response = await fetch(upstreamRequest);
     
     if (!response.ok) {
-      // Fallback: Return minimal but realistic safe content
-      const fallbackHTML = '<!DOCTYPE html><html><head>' +
-        '<title>News - Breaking News Today</title>' +
-        '<meta name="robots" content="noindex, nofollow">' +
-        '<meta charset="UTF-8">' +
-        '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-        '</head><body>' +
-        '<header><h1>Latest News</h1></header>' +
-        '<main><article><h2>Loading Latest Stories...</h2>' +
-        '<p>Please wait while we load the latest news stories.</p></article></main>' +
-        '<script>console.log("Safe page loaded");</script>' +
-        '</body></html>';
+      // Use consolidated fallback generator for news-style content
+      const fallbackHTML = createFallbackHTML({ style: 'news' });
       
       return new Response(fallbackHTML, {
         status: 200,
@@ -1370,16 +1389,7 @@ async function createSafePageResponse(request, event) {
     
   } catch (error) {
     // Final fallback: Realistic news-like content (not synthetic "Loading...")
-    const fallbackHTML = '<!DOCTYPE html><html><head>' +
-      '<title>Local News Today</title>' +
-      '<meta name="robots" content="noindex, nofollow">' +
-      '<meta charset="UTF-8">' +
-      '</head><body>' +
-      '<header><h1>Community News</h1></header>' +
-      '<main><h2>Breaking News Updates</h2>' +
-      '<p>Stay informed with the latest local news and updates from your community.</p></main>' +
-      '<script>console.log("News site loaded");</script>' +
-      '</body></html>';
+    const fallbackHTML = createFallbackHTML({ style: 'news' });
     
     return new Response(fallbackHTML, {
       status: 200,
@@ -2160,11 +2170,7 @@ async function handleMainRequest(request, event) {
         }
         
         // Fallback: Minimal safe content for bots (always 200) with nonce support
-        const fallbackHTML = '<!DOCTYPE html><html><head><title>Loading</title>' +
-          '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">' +
-          '</head><body><h1>Loading...</h1><p>Please wait.</p>' +
-          '<script nonce="' + nonce + '">console.log("Safe page loaded");</script>' +
-          '</body></html>';
+        const fallbackHTML = createFallbackHTML({ nonce: nonce });
         
         const fallbackResponse = new Response(fallbackHTML, {
           status: 200,
@@ -2284,11 +2290,7 @@ async function handleMainRequest(request, event) {
     
     if (isBot) {
       // 🤖 BOTS: Always get safe content with 200 status (no errors revealed) + nonce protection
-      const errorHTML = '<!DOCTYPE html><html><head><title>Loading</title>' +
-        '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">' +
-        '</head><body><h1>Loading...</h1><p>Please wait.</p>' +
-        '<script nonce="' + nonce + '">console.log("Error fallback with nonce");</script>' +
-        '</body></html>';
+      const errorHTML = createFallbackHTML({ nonce: nonce, logMessage: 'Error fallback with nonce' });
       
       return new Response(errorHTML, {
         status: 200,
