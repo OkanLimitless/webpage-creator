@@ -842,7 +842,7 @@ async function gatherIntelligence(request, ipData, decision) {
     const timestamp = Date.now();
     
     // 🎯 IPv6 OPTIMIZATION: Create consistent short key for both IPv4 and IPv6
-    const visitorKey = 'intel_' + btoa(clientIP).slice(0, 16).replace(/[^a-zA-Z0-9]/g, '_');
+    const visitorKey = 'intel_' + hashIP(clientIP);
     
     // Get existing intelligence from dedicated Intelligence KV storage
     // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
@@ -1010,10 +1010,15 @@ function generateSmartCSP(targetUrl, isBot) {
 // 2. IPv6 ADDRESS NORMALIZATION:
 //    - Hashed keys: Always 22 chars vs 39+ for IPv6 raw addresses
 //    - Lower KV costs, faster lookups, consistent performance
+//    - 🔒 MEMORY PROTECTION: In-memory caches also use hashed keys to prevent OOM
 //
 // 3. KV RETRY LOGIC:
 //    - 3 attempts with exponential backoff (100ms, 200ms, 400ms)
 //    - Resilient to transient KV failures, prevents data loss
+//
+// 4. CACHE SIZE LIMITS:
+//    - Max 1000 entries per cache with LRU eviction
+//    - Prevents memory bloat from unique IPv6 addresses
 //
 // Expected Performance Gains:
 // - 20-50ms faster response time per cached hit
@@ -1021,27 +1026,71 @@ function generateSmartCSP(targetUrl, isBot) {
 // - 95%+ reduction in ProxyCheck.io API calls for bot traffic
 // - Much more reliable logging under high load conditions
 // - Significant cost savings on both KV reads and external API usage
+// - Protected against IPv6 memory bloat and OOM crashes
 //
 const intelligenceCache = new Map();
 const proxyCheckCache = new Map();
 let lastCacheCleanup = Date.now();
+const MAX_CACHE_SIZE = 1000; // Prevent memory bloat
 
-// Cache cleanup function - removes expired entries from both caches
+// 🔐 IP HASHING FUNCTION: Consistent hashing for both KV and in-memory storage
+// 
+// 🚨 SECURITY FIX: Prevents IPv6 memory bloat vulnerability
+// - IPv6 addresses can be 39+ characters (vs 15 for IPv4)  
+// - Raw IPv6 cache keys could cause OOM in high-traffic scenarios
+// - Hashed keys are always 16 characters regardless of IP type
+// - Same function used for both KV storage and in-memory caches
+// - Includes fallback for edge cases with invalid characters
+//
+function hashIP(ip) {
+  try {
+    return btoa(ip).slice(0, 16).replace(/[^a-zA-Z0-9]/g, '_');
+  } catch (error) {
+    // Fallback for invalid characters
+    return ip.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 16);
+  }
+}
+
+// 🧹 ENHANCED CACHE CLEANUP: TTL expiration + LRU size management
 function cleanupCaches() {
   const now = Date.now();
   const intelligenceTTL = 60000; // 60 seconds for intelligence
   const proxyCheckTTL = 300000; // 5 minutes for ProxyCheck.io (data changes less frequently)
   
-  // Cleanup intelligence cache
+  // STEP 1: Remove expired entries from intelligence cache
   for (const [key, value] of intelligenceCache.entries()) {
     if (now - value.timestamp > intelligenceTTL) {
       intelligenceCache.delete(key);
     }
   }
   
-  // Cleanup ProxyCheck cache
+  // STEP 2: Remove expired entries from ProxyCheck cache
   for (const [key, value] of proxyCheckCache.entries()) {
     if (now - value.timestamp > proxyCheckTTL) {
+      proxyCheckCache.delete(key);
+    }
+  }
+  
+  // STEP 3: LRU eviction if cache size exceeded (prevents IPv6 memory bloat)
+  if (intelligenceCache.size > MAX_CACHE_SIZE) {
+    // Convert to array and sort by timestamp (oldest first)
+    const entries = Array.from(intelligenceCache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    // Remove oldest entries until we're under the limit
+    const entriesToRemove = entries.slice(0, intelligenceCache.size - MAX_CACHE_SIZE);
+    for (const [key] of entriesToRemove) {
+      intelligenceCache.delete(key);
+    }
+  }
+  
+  if (proxyCheckCache.size > MAX_CACHE_SIZE) {
+    // Same LRU logic for ProxyCheck cache
+    const entries = Array.from(proxyCheckCache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    const entriesToRemove = entries.slice(0, proxyCheckCache.size - MAX_CACHE_SIZE);
+    for (const [key] of entriesToRemove) {
       proxyCheckCache.delete(key);
     }
   }
@@ -1296,8 +1345,11 @@ async function calculateIntelligenceScore(clientIP) {
     const now = Date.now();
     const TTL = 60000; // 60 seconds
     
+    // 🔐 CONSISTENT HASHING: Use same hash for both in-memory and KV storage
+    const hashedIP = hashIP(clientIP);
+    
     // 🚀 STEP 1: Check in-flight cache first (massive performance boost!)
-    const cached = intelligenceCache.get(clientIP);
+    const cached = intelligenceCache.get(hashedIP);
     if (cached && (now - cached.timestamp) < TTL) {
       // Cache hit - return immediately without KV read
       return cached.score;
@@ -1305,7 +1357,7 @@ async function calculateIntelligenceScore(clientIP) {
     
     // 🔄 STEP 2: Cache miss or expired - fetch from KV storage
     // 🎯 IPv6 OPTIMIZATION: Hash IP to consistent short key (handles both IPv4 and IPv6)
-    const visitorKey = 'intel_' + btoa(clientIP).slice(0, 16).replace(/[^a-zA-Z0-9]/g, '_');
+    const visitorKey = 'intel_' + hashedIP;
     
     // Get intelligence from dedicated Intelligence KV storage
     // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
@@ -1313,7 +1365,7 @@ async function calculateIntelligenceScore(clientIP) {
     
     if (!existingData) {
       // 💾 Cache the "no data" result to avoid repeated KV lookups
-      intelligenceCache.set(clientIP, {
+      intelligenceCache.set(hashedIP, {
         score: 0,
         timestamp: now
       });
@@ -1349,7 +1401,7 @@ async function calculateIntelligenceScore(clientIP) {
     const finalScore = Math.min(intelScore, 30); // Cap at 30 points from intelligence
     
     // 💾 STEP 3: Cache the calculated score for future requests
-    intelligenceCache.set(clientIP, {
+    intelligenceCache.set(hashedIP, {
       score: finalScore,
       timestamp: now
     });
@@ -1365,7 +1417,7 @@ async function calculateIntelligenceScore(clientIP) {
     console.error('Intelligence calculation error:', error);
     
     // 💾 Cache error result to prevent repeated failed KV calls
-    intelligenceCache.set(clientIP, {
+    intelligenceCache.set(hashedIP, {
       score: 0,
       timestamp: now || Date.now()
     });
@@ -1703,9 +1755,12 @@ async function isVisitorABot(request, event) {
     // STEP 3: Enhanced ProxyCheck.io analysis with ASN data + Caching
     const now = Date.now();
     
+    // 🔐 CONSISTENT HASHING: Use same hash for both caches (prevents IPv6 memory bloat)
+    const hashedIP = hashIP(clientIP);
+    
     // 🚀 Check ProxyCheck.io cache first (5-minute TTL)
     let ipData = null;
-    const cached = proxyCheckCache.get(clientIP);
+    const cached = proxyCheckCache.get(hashedIP);
     if (cached && (now - cached.timestamp) < 300000) { // 5 minutes
       // Cache hit - use cached ProxyCheck data
       ipData = cached.data;
@@ -1719,9 +1774,9 @@ async function isVisitorABot(request, event) {
         const data = await response.json();
         ipData = data[clientIP];
         
-        // 💾 Cache the ProxyCheck.io result for 5 minutes
+        // 💾 Cache the ProxyCheck.io result for 5 minutes with hashed key
         if (ipData) {
-          proxyCheckCache.set(clientIP, {
+          proxyCheckCache.set(hashedIP, {
             data: ipData,
             timestamp: now
           });
