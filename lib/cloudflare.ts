@@ -1333,31 +1333,10 @@ async function createSafePageResponse(request, event) {
       });
     }
     
-    // Process the safe page response with PROXIED asset rewriting (same as money pages)
-    const safeOriginForRewriting = new URL(SAFE_URL).origin;
+    // ✅ SIMPLIFIED SAFE PAGE PROCESSING: Minimal rewriting to avoid breaking JavaScript
+    // Safe pages should work exactly like VPN traffic - clean and functional
     const rewriter = new HTMLRewriter()
-      // 🖼️ PROXY images through CDN path (prevents CORS/hotlinking issues)
-      .on('img', {
-        element(img) {
-          // Handle both src and data-src attributes
-          const srcRewriter = new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src');
-          const dataSrcRewriter = new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'data-src');
-          srcRewriter.element(img);
-          dataSrcRewriter.element(img);
-        }
-      })
-      // 🔗 PROXY stylesheets through CDN path  
-      .on('link[rel="stylesheet"]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'href'))
-      // 📜 PROXY scripts through CDN path
-      .on('script[src]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
-      // 🎥 PROXY media elements
-      .on('source', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
-      .on('video', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
-      .on('audio', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
-      // 🚀 PROXY preload/prefetch resources
-      .on('link[rel="preload"]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'href'))
-      .on('link[rel="prefetch"]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'href'))
-      // Clean metadata for perfect cloaking
+      // 🧹 ONLY strip metadata for cloaking (no asset rewriting that breaks JS)
       .on('link[rel="canonical"]', new MetadataStripper())
       .on('meta[property^="og:"]', new MetadataStripper())
       .on('meta[name="twitter:"]', new MetadataStripper())
