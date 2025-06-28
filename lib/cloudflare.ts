@@ -1049,6 +1049,85 @@ function cleanupCaches() {
   lastCacheCleanup = now;
 }
 
+// 🚨 CRITICAL SECURITY FIX: Context-aware error handling for upstream failures
+//
+// VULNERABILITY FIXED: Previously all upstream errors returned 404 to everyone
+// - Real users saw confusing 404s for 502/503/500 errors (bad UX)
+// - Bots could detect cloaking by seeing error patterns + debug info
+// - Debug info leaked actual upstream status codes
+//
+// NEW BEHAVIOR:
+// - BOTS: Always get 200 with safe content (perfect cloaking maintained)
+// - REAL USERS: Get proper status codes with helpful error messages
+// - NO DEBUG INFO: No upstream status leakage to anyone
+//
+// ERROR PAGE GENERATOR: Context-aware error handling for upstream failures
+function generateErrorPageForUsers(status, statusText) {
+  let title, heading, message, actionText;
+  
+  switch (status) {
+    case 500:
+      title = 'Internal Server Error';
+      heading = '500 - Internal Server Error';
+      message = 'The server encountered an internal error and was unable to complete your request.';
+      actionText = 'Please try again in a few minutes.';
+      break;
+    case 502:
+      title = 'Bad Gateway';
+      heading = '502 - Bad Gateway'; 
+      message = 'The server is temporarily unable to handle your request due to maintenance or overload.';
+      actionText = 'Please try again in a few minutes.';
+      break;
+    case 503:
+      title = 'Service Unavailable';
+      heading = '503 - Service Unavailable';
+      message = 'The service is temporarily unavailable due to maintenance.';
+      actionText = 'Please try again later.';
+      break;
+    case 504:
+      title = 'Gateway Timeout';
+      heading = '504 - Gateway Timeout';
+      message = 'The server took too long to respond.';
+      actionText = 'Please try again in a moment.';
+      break;
+    default:
+      title = 'Temporary Error';
+      heading = 'Temporary Error (' + status + ')';
+      message = 'The page is temporarily unavailable.';
+      actionText = 'Please try again later.';
+  }
+  
+  return '<!DOCTYPE html>' +
+'<html lang="en">' +
+'<head>' +
+    '<meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+    '<title>' + title + '</title>' +
+    '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">' +
+    '<style>' +
+        'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; ' +
+               'background: #f5f5f5; margin: 0; padding: 20px; }' +
+        '.container { max-width: 600px; margin: 100px auto; background: white; ' +
+                     'padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }' +
+        'h1 { color: #d73502; margin-bottom: 20px; }' +
+        'p { color: #666; line-height: 1.6; margin-bottom: 20px; }' +
+        '.action { color: #0066cc; font-weight: 500; }' +
+        '.retry { background: #0066cc; color: white; padding: 10px 20px; ' +
+                 'border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }' +
+        '.retry:hover { background: #0052a3; }' +
+    '</style>' +
+'</head>' +
+'<body>' +
+    '<div class="container">' +
+        '<h1>' + heading + '</h1>' +
+        '<p>' + message + '</p>' +
+        '<p class="action">' + actionText + '</p>' +
+        '<button class="retry" onclick="window.location.reload()">Try Again</button>' +
+    '</div>' +
+'</body>' +
+'</html>';
+}
+
 // 🔍 HEADER FINGERPRINTING: Advanced bot detection via request header analysis
 // 
 // PHASE 1 IMPLEMENTATION: Conservative scoring for production safety
@@ -1753,14 +1832,55 @@ async function handleMainRequest(request, event) {
     const response = await fetch(upstreamRequest);
     
     if (!response.ok) {
+      // 🛡️ CONTEXT-AWARE ERROR HANDLING: Different responses for bots vs real users
       
-      return new Response('<!DOCTYPE html><html><head><title>Page Not Found</title></head><body><h1>404 - Page Not Found</h1><p>The requested page could not be found.</p><p>Debug: ' + response.status + ' ' + response.statusText + '</p></body></html>', {
-        status: 404,
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet'
+      if (isBot) {
+        // 🤖 BOTS: Always get safe page content with 200 status
+        // Never reveal that upstream failed - perfect cloaking
+        try {
+          const safeOrigin = new URL(SAFE_URL).origin;
+          const safeFallbackUrl = safeOrigin + requestUrl.pathname + requestUrl.search;
+          const safeResponse = await fetch(safeFallbackUrl);
+          
+          if (safeResponse.ok) {
+            // Return safe page content with 200 status
+            return new Response(safeResponse.body, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet'
+              }
+            });
+          }
+        } catch (safeFetchError) {
+          // Safe page also failed - return minimal safe content
         }
-      });
+        
+        // Fallback: Minimal safe content for bots (always 200)
+        return new Response('<!DOCTYPE html><html><head><title>Loading</title></head><body><h1>Loading...</h1><p>Please wait.</p></body></html>', {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet'
+          }
+        });
+        
+      } else {
+        // 👤 REAL USERS: Get proper error pages with actual status codes
+        // Better UX with clear error messaging
+        
+        const errorPage = generateErrorPageForUsers(response.status, response.statusText);
+        
+        return new Response(errorPage, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
+            'Retry-After': response.status >= 500 ? '300' : undefined
+          }
+        });
+      }
     }
     
     // ✅ FIXED: Re-enable HTMLRewriter with safer, more conservative approach
@@ -1835,13 +1955,29 @@ async function handleMainRequest(request, event) {
     return finalResponse;
     
   } catch (error) {
-    return new Response('<!DOCTYPE html><html><head><title>Service Unavailable</title></head><body><h1>503 - Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body></html>', {
-      status: 503,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Retry-After': '300'
-      }
-    });
+    // 🛡️ CONTEXT-AWARE CATCH HANDLING: Different responses for fetch failures
+    
+    if (isBot) {
+      // 🤖 BOTS: Always get safe content with 200 status (no errors revealed)
+      return new Response('<!DOCTYPE html><html><head><title>Loading</title></head><body><h1>Loading...</h1><p>Please wait.</p></body></html>', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet'
+        }
+      });
+    } else {
+      // 👤 REAL USERS: Get proper 503 error page with helpful messaging
+      const errorPage = generateErrorPageForUsers(503, 'Service Unavailable');
+      
+      return new Response(errorPage, {
+        status: 503,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Retry-After': '300'
+        }
+      });
+    }
   }
 }
 
