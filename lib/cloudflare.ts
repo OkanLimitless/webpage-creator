@@ -1128,6 +1128,89 @@ function generateErrorPageForUsers(status, statusText) {
 '</html>';
 }
 
+// 🎯 UNIFIED EARLY BOT DETECTION: Consolidates honey trap + User-Agent checks
+// ✅ REFACTORING BENEFITS:
+//    • Single detection point for early bot identification (cleaner code)
+//    • Consistent logging format for all early exit events  
+//    • Reduced code duplication between honey trap and UA detection
+//    • Simplified main worker flow and better maintainability
+function createHoneyTrapResponse(pathname) {
+  if (pathname === '/robots.txt') {
+    return new Response('User-agent: *\\nDisallow:', {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  } else if (pathname === '/sitemap.xml') {
+    return new Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>', {
+      status: 200,
+      headers: { 'Content-Type': 'application/xml' }
+    });
+  } else {
+    // For other traps, return 404 to seem normal
+    return new Response('Not Found', { status: 404 });
+  }
+}
+
+function isBotEarlyExit(request, event) {
+  const url = new URL(request.url);
+  const userAgent = request.headers.get('User-Agent') || '';
+  
+  // 🍯 CHECK 1: Honey Trap System - Catch bots probing common endpoints
+  const honeyTrapPaths = [
+    '/robots.txt', '/sitemap.xml', '/wp-admin', '/wp-login.php', '/admin', 
+    '/login', '/phpmyadmin', '/.env', '/config', '/api', '/wp-content',
+    '/uploads', '/backup', '/test', '/dev', '/.git', '/vendor', '/node_modules',
+    '/.well-known', '/security.txt', '/humans.txt', '/ads.txt', '/app-ads.txt'
+  ];
+  
+  if (honeyTrapPaths.some(trap => url.pathname.startsWith(trap))) {
+    // Log unified bot detection event (non-blocking)
+    event.waitUntil(logTrafficEvent(request, 'safe_page', { 
+      reason: 'early_bot_detection',
+      subtype: 'honey_trap',
+      details: { 
+        trapPath: url.pathname,
+        behaviorPattern: 'endpoint_probing' 
+      }
+    }));
+    
+    return {
+      isBot: true,
+      response: createHoneyTrapResponse(url.pathname)
+    };
+  }
+  
+  // 🤖 CHECK 2: User-Agent Pattern Matching - Quick bot identification
+  const userAgentLower = userAgent.toLowerCase();
+  for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
+    if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
+      // Log unified bot detection event (non-blocking)
+      event.waitUntil(logTrafficEvent(request, 'safe_page', { 
+        reason: 'early_bot_detection',
+        subtype: 'bot_user_agent',
+        details: { 
+          detectedBot: BOT_USER_AGENTS[i],
+          userAgent: userAgent 
+        }
+      }));
+      
+      return {
+        isBot: true,
+        response: new Response('Loading...', { 
+          status: 200,
+          headers: { 
+            'Content-Type': 'text/html; charset=utf-8',
+            'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet' 
+          }
+        })
+      };
+    }
+  }
+  
+  // ✅ No early bot detection triggered
+  return { isBot: false };
+}
+
 // 🔍 HEADER FINGERPRINTING: Advanced bot detection via request header analysis
 // 
 // PHASE 1 IMPLEMENTATION: Conservative scoring for production safety
@@ -1335,37 +1418,10 @@ async function handleRequest(request, event) {
     }
   }
 
-  // ROUTE 1: Honey Trap System - Catch bots probing common endpoints
-  const honeyTrapPaths = [
-    '/robots.txt', '/sitemap.xml', '/wp-admin', '/wp-login.php', '/admin', 
-    '/login', '/phpmyadmin', '/.env', '/config', '/api', '/wp-content',
-    '/uploads', '/backup', '/test', '/dev', '/.git', '/vendor', '/node_modules',
-    '/.well-known', '/security.txt', '/humans.txt', '/ads.txt', '/app-ads.txt'
-  ];
-  
-  if (honeyTrapPaths.some(trap => url.pathname.startsWith(trap))) {
-    // Log the bot attempt for intelligence (non-blocking)
-    event.waitUntil(logTrafficEvent(request, 'safe_page', { 
-      reason: 'honey_trap', 
-      trapPath: url.pathname,
-      behaviorPattern: 'endpoint_probing'
-    }));
-    
-    // Return realistic responses to avoid detection
-    if (url.pathname === '/robots.txt') {
-      return new Response('User-agent: *\\nDisallow:', {
-        status: 200,
-        headers: { 'Content-Type': 'text/plain' }
-      });
-    } else if (url.pathname === '/sitemap.xml') {
-      return new Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>', {
-        status: 200,
-        headers: { 'Content-Type': 'application/xml' }
-      });
-    } else {
-      // For other traps, return 404 to seem normal
-      return new Response('Not Found', { status: 404 });
-    }
+  // 🎯 ROUTE 1: Unified Early Bot Detection - Honey traps + User-Agent patterns
+  const earlyBotCheck = isBotEarlyExit(request, event);
+  if (earlyBotCheck.isBot) {
+    return earlyBotCheck.response;
   }
 
   // ROUTE 2: Serve the advanced service worker with comprehensive blocking
@@ -1642,14 +1698,7 @@ async function isVisitorABot(request, event) {
     const headerScore = analyzeRequestHeaders(request);
     botScore += headerScore;
 
-    // STEP 2: Quick user agent pattern check (fastest)
-    const userAgentLower = userAgent.toLowerCase();
-    for (let i = 0; i < BOT_USER_AGENTS.length; i++) {
-      if (userAgentLower.includes(BOT_USER_AGENTS[i])) {
-        event.waitUntil(logTrafficEvent(request, 'safe_page', { reason: 'bot_user_agent', detectedBot: BOT_USER_AGENTS[i] }));
-        return true; // Show safe page for known bot user agents
-      }
-    }
+    // STEP 2: [REMOVED] User-Agent check now handled by unified early exit function
 
     // STEP 3: Enhanced ProxyCheck.io analysis with ASN data + Caching
     const now = Date.now();
