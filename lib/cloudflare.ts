@@ -1006,17 +1006,18 @@ function generateSmartCSP(targetUrl, isBot, nonce) {
     const targetDomain = new URL(targetUrl).hostname;
     
     if (isBot) {
-      // 🔒 MAXIMUM SECURITY for bots viewing safe pages
-      // - Nonce-only script execution (blocks Google bot script injection)
-      // - No 'unsafe-inline' = no unauthorized scripts can run
-      // - Perfect for controlled safe page content
-      return "default-src 'self'; " +
-             "script-src 'self' 'nonce-" + nonce + "'; " +
-             "style-src 'self' 'nonce-" + nonce + "' 'unsafe-inline'; " +
-             "img-src 'self' data: blob:; " +
-             "font-src 'self' data:; " +
-             "connect-src 'self'; " +
-             "frame-src 'none'; " +
+      // 🔒 PERMISSIVE SECURITY for bots viewing external safe pages
+      // - Safe pages are external sites with their own resource dependencies
+      // - Must allow external scripts, styles, images that safe pages require
+      // - Still maintains basic security protections against dangerous content
+      // - Focus on protecting YOUR bridge pages, not restricting external safe pages
+      return "default-src 'self' https: http: data: blob:; " +
+             "script-src 'self' 'nonce-" + nonce + "' 'unsafe-inline' https: http:; " +
+             "style-src 'self' 'nonce-" + nonce + "' 'unsafe-inline' https: http:; " +
+             "img-src 'self' data: blob: https: http:; " +
+             "font-src 'self' data: https: http:; " +
+             "connect-src 'self' https: http:; " +
+             "frame-src 'self' https: http:; " +
              "object-src 'none'; " +
              "base-uri 'self'";
     } else {
