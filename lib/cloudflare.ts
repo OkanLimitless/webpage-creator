@@ -1314,40 +1314,30 @@ async function createSafePageResponse(request, event) {
       });
     }
     
-    // Process the safe page response with URL rewriting and metadata cleaning
+    // Process the safe page response with PROXIED asset rewriting (same as money pages)
     const safeOriginForRewriting = new URL(SAFE_URL).origin;
     const rewriter = new HTMLRewriter()
-      // 🔗 Fix relative image paths to point to original safe domain
+      // 🖼️ PROXY images through CDN path (prevents CORS/hotlinking issues)
       .on('img', {
         element(img) {
-          const src = img.getAttribute('src');
-          if (src && src.startsWith('/') && !src.startsWith('//')) {
-            img.setAttribute('src', safeOriginForRewriting + src);
-          }
-          const dataSrc = img.getAttribute('data-src');
-          if (dataSrc && dataSrc.startsWith('/') && !dataSrc.startsWith('//')) {
-            img.setAttribute('data-src', safeOriginForRewriting + dataSrc);
-          }
+          // Handle both src and data-src attributes
+          const srcRewriter = new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src');
+          const dataSrcRewriter = new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'data-src');
+          srcRewriter.element(img);
+          dataSrcRewriter.element(img);
         }
       })
-      // 🔗 Fix relative links and stylesheets  
-      .on('link', {
-        element(link) {
-          const href = link.getAttribute('href');
-          if (href && href.startsWith('/') && !href.startsWith('//')) {
-            link.setAttribute('href', safeOriginForRewriting + href);
-          }
-        }
-      })
-      // 🔗 Fix relative script sources
-      .on('script[src]', {
-        element(script) {
-          const src = script.getAttribute('src');
-          if (src && src.startsWith('/') && !src.startsWith('//')) {
-            script.setAttribute('src', safeOriginForRewriting + src);
-          }
-        }
-      })
+      // 🔗 PROXY stylesheets through CDN path  
+      .on('link[rel="stylesheet"]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'href'))
+      // 📜 PROXY scripts through CDN path
+      .on('script[src]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
+      // 🎥 PROXY media elements
+      .on('source', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
+      .on('video', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
+      .on('audio', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'src'))
+      // 🚀 PROXY preload/prefetch resources
+      .on('link[rel="preload"]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'href'))
+      .on('link[rel="prefetch"]', new AssetRewriter(safeOriginForRewriting, CDN_PATH, 'href'))
       // Clean metadata for perfect cloaking
       .on('link[rel="canonical"]', new MetadataStripper())
       .on('meta[property^="og:"]', new MetadataStripper())
