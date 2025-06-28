@@ -1664,13 +1664,70 @@ async function handleRequest(request, event) {
     }
   }
 
-  // 🎯 ROUTE 1: Unified Early Bot Detection - Honey traps + User-Agent patterns
-  const earlyBotCheck = await isBotEarlyExit(request, event);
-  if (earlyBotCheck.isBot) {
-    return earlyBotCheck.response;
+  // 🎯 ROUTE 1: Handle asset requests BEFORE bot detection to prevent MIME type issues
+  // Assets from safe pages need to load properly regardless of bot detection
+  const pathname = url.pathname.toLowerCase();
+  const isAssetRequest = pathname.endsWith('.css') || pathname.endsWith('.js') || 
+                        pathname.endsWith('.png') || pathname.endsWith('.jpg') || 
+                        pathname.endsWith('.jpeg') || pathname.endsWith('.gif') || 
+                        pathname.endsWith('.svg') || pathname.endsWith('.woff') || 
+                        pathname.endsWith('.woff2') || pathname.endsWith('.ttf') || 
+                        pathname.endsWith('.ico') || pathname.endsWith('.webp') ||
+                        pathname.endsWith('.json') || pathname.endsWith('.xml');
+  
+  if (isAssetRequest) {
+    // For Googlebot and other bots requesting assets, proxy them properly
+    // This ensures CSS/JS files get correct MIME types instead of HTML
+    const userAgent = request.headers.get('User-Agent') || '';
+    const userAgentLower = userAgent.toLowerCase();
+    const isBotUA = BOT_USER_AGENTS.some(bot => userAgentLower.includes(bot));
+    
+    if (isBotUA) {
+      // Bot requesting asset - proxy it from the safe site to maintain functionality
+      const safeOrigin = new URL(SAFE_URL).origin;
+      const targetUrl = safeOrigin + url.pathname + url.search;
+      
+      try {
+        const response = await fetch(targetUrl, {
+          method: request.method,
+          headers: request.headers
+        });
+        
+        // Return the asset with correct MIME type
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers
+        });
+      } catch (error) {
+        // If safe site asset fails, return appropriate empty response
+        if (pathname.endsWith('.css')) {
+          return new Response('/* Asset unavailable */', {
+            status: 200,
+            headers: { 'Content-Type': 'text/css' }
+          });
+        } else if (pathname.endsWith('.js')) {
+          return new Response('// Asset unavailable', {
+            status: 200,
+            headers: { 'Content-Type': 'application/javascript' }
+          });
+        } else {
+          return new Response('', { status: 404 });
+        }
+      }
+    }
   }
 
-  // ROUTE 2: Serve the advanced service worker with comprehensive blocking
+  // 🎯 ROUTE 2: Unified Early Bot Detection - Honey traps + User-Agent patterns  
+  // (Only for non-asset requests to prevent MIME type issues)
+  if (!isAssetRequest) {
+    const earlyBotCheck = await isBotEarlyExit(request, event);
+    if (earlyBotCheck.isBot) {
+      return earlyBotCheck.response;
+    }
+  }
+
+  // ROUTE 3: Serve the advanced service worker with comprehensive blocking
   if (url.pathname === '/service-worker.js') {
     // 🔐 GENERATE NONCE for service worker installation script
     const swNonce = generateNonce();
@@ -1823,12 +1880,12 @@ async function handleRequest(request, event) {
     });
   }
 
-  // ROUTE 3: Handle proxied resource requests (for CSS, JS, images).
+  // ROUTE 4: Handle proxied resource requests (for CSS, JS, images).
   if (url.pathname.startsWith('/' + CDN_PATH + '/')) {
     return handleResourceRequest(request);
   }
   
-  // ROUTE 4: Handle the initial page load with cloaking logic.
+  // ROUTE 5: Handle the initial page load with cloaking logic.
   return handleMainRequest(request, event);
 }
 
