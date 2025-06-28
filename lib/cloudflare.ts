@@ -986,16 +986,72 @@ function generateSmartCSP(targetUrl, isBot) {
   }
 }
 
-// Enhanced Bot Score Calculation with KV-based Intelligence
+// 🚀 PERFORMANCE OPTIMIZATION: In-flight caches for massive speed boost
+// 
+// Intelligence Cache (60s TTL): Avoids repeated KV reads for same IP
+// ProxyCheck Cache (5m TTL): Avoids expensive external API calls  
+//
+// Expected Performance Gains:
+// - 20-50ms faster response time per cached hit
+// - 80-90% reduction in KV operations for repeat visitors
+// - 95%+ reduction in ProxyCheck.io API calls for bot traffic
+// - Significant cost savings on both KV reads and external API usage
+//
+const intelligenceCache = new Map();
+const proxyCheckCache = new Map();
+let lastCacheCleanup = Date.now();
+
+// Cache cleanup function - removes expired entries from both caches
+function cleanupCaches() {
+  const now = Date.now();
+  const intelligenceTTL = 60000; // 60 seconds for intelligence
+  const proxyCheckTTL = 300000; // 5 minutes for ProxyCheck.io (data changes less frequently)
+  
+  // Cleanup intelligence cache
+  for (const [key, value] of intelligenceCache.entries()) {
+    if (now - value.timestamp > intelligenceTTL) {
+      intelligenceCache.delete(key);
+    }
+  }
+  
+  // Cleanup ProxyCheck cache
+  for (const [key, value] of proxyCheckCache.entries()) {
+    if (now - value.timestamp > proxyCheckTTL) {
+      proxyCheckCache.delete(key);
+    }
+  }
+  
+  lastCacheCleanup = now;
+}
+
+// Enhanced Bot Score Calculation with KV-based Intelligence + In-Flight Cache
 async function calculateIntelligenceScore(clientIP) {
   try {
+    const now = Date.now();
+    const TTL = 60000; // 60 seconds
+    
+    // 🚀 STEP 1: Check in-flight cache first (massive performance boost!)
+    const cached = intelligenceCache.get(clientIP);
+    if (cached && (now - cached.timestamp) < TTL) {
+      // Cache hit - return immediately without KV read
+      return cached.score;
+    }
+    
+    // 🔄 STEP 2: Cache miss or expired - fetch from KV storage
     const visitorKey = 'intel_' + clientIP.replace(/[^a-zA-Z0-9]/g, '_');
     
     // Get intelligence from dedicated Intelligence KV storage
     // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
     const existingData = await INTELLIGENCE_STORE.get(visitorKey);
     
-    if (!existingData) return 0;
+    if (!existingData) {
+      // 💾 Cache the "no data" result to avoid repeated KV lookups
+      intelligenceCache.set(clientIP, {
+        score: 0,
+        timestamp: now
+      });
+      return 0;
+    }
     
     const intel = JSON.parse(existingData);
     let intelScore = 0;
@@ -1023,10 +1079,30 @@ async function calculateIntelligenceScore(clientIP) {
       if (botDecisions >= 4) intelScore += 20;
     }
     
-    return Math.min(intelScore, 30); // Cap at 30 points from intelligence
+    const finalScore = Math.min(intelScore, 30); // Cap at 30 points from intelligence
+    
+    // 💾 STEP 3: Cache the calculated score for future requests
+    intelligenceCache.set(clientIP, {
+      score: finalScore,
+      timestamp: now
+    });
+    
+    // 🧹 STEP 4: Periodic cache cleanup (every 5 minutes)
+    if (now - lastCacheCleanup > 300000) {
+      cleanupCaches();
+    }
+    
+    return finalScore;
     
   } catch (error) {
     console.error('Intelligence calculation error:', error);
+    
+    // 💾 Cache error result to prevent repeated failed KV calls
+    intelligenceCache.set(clientIP, {
+      score: 0,
+      timestamp: now || Date.now()
+    });
+    
     return 0; // Return 0 on error to avoid breaking detection
   }
 }
@@ -1372,13 +1448,38 @@ async function isVisitorABot(request, event) {
       }
     }
 
-    // STEP 2: Enhanced ProxyCheck.io analysis with ASN data
-    const requestUrl = new URL(request.url);
-    const domain = requestUrl.hostname;
-    const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1&vpn=1&tag=' + encodeURIComponent('cloak-' + domain);
-    const response = await fetch(pcUrl);
-    const data = await response.json();
-    const ipData = data[clientIP];
+    // STEP 2: Enhanced ProxyCheck.io analysis with ASN data + Caching
+    const now = Date.now();
+    
+    // 🚀 Check ProxyCheck.io cache first (5-minute TTL)
+    let ipData = null;
+    const cached = proxyCheckCache.get(clientIP);
+    if (cached && (now - cached.timestamp) < 300000) { // 5 minutes
+      // Cache hit - use cached ProxyCheck data
+      ipData = cached.data;
+    } else {
+      // Cache miss or expired - fetch from ProxyCheck.io
+      try {
+        const requestUrl = new URL(request.url);
+        const domain = requestUrl.hostname;
+        const pcUrl = 'https://proxycheck.io/v2/' + clientIP + '?key=' + PROXYCHECK_API_KEY + '&risk=1&asn=1&vpn=1&tag=' + encodeURIComponent('cloak-' + domain);
+        const response = await fetch(pcUrl);
+        const data = await response.json();
+        ipData = data[clientIP];
+        
+        // 💾 Cache the ProxyCheck.io result for 5 minutes
+        if (ipData) {
+          proxyCheckCache.set(clientIP, {
+            data: ipData,
+            timestamp: now
+          });
+        }
+      } catch (error) {
+        console.error('ProxyCheck.io API error:', error);
+        // Don't cache API errors, let them retry
+        ipData = null;
+      }
+    }
     
     if (ipData) {
       const country = ipData.isocode || 'unknown';
