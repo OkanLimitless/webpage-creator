@@ -939,6 +939,53 @@ async function gatherIntelligence(request, ipData, decision) {
   }
 }
 
+// Smart CSP Generator: Context-aware security policy
+function generateSmartCSP(targetUrl, isBot) {
+  try {
+    const targetDomain = new URL(targetUrl).hostname;
+    
+    if (isBot) {
+      // Strict CSP for bots viewing safe pages (we control the content)
+      return "default-src 'self'; " +
+             "script-src 'self' 'unsafe-inline'; " +
+             "style-src 'self' 'unsafe-inline'; " +
+             "img-src 'self' data: blob:; " +
+             "font-src 'self' data:; " +
+             "connect-src 'self'; " +
+             "frame-src 'none'; " +
+             "object-src 'none'; " +
+             "base-uri 'self'";
+    } else {
+      // Permissive CSP for real users on money pages (affiliate functionality)
+      // Allow common affiliate/marketing domains while blocking obvious leakage
+      return "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: " + targetDomain + "; " +
+             "script-src 'self' 'unsafe-inline' 'unsafe-eval' " + targetDomain + " " +
+               "*.googletagmanager.com *.google-analytics.com *.doubleclick.net " +
+               "*.googleapis.com *.gstatic.com *.facebook.com *.facebook.net " +
+               "*.twitter.com *.linkedin.com *.stripe.com *.paypal.com " +
+               "*.jsdelivr.net *.cdnjs.cloudflare.com *.unpkg.com; " +
+             "style-src 'self' 'unsafe-inline' " + targetDomain + " " +
+               "*.googleapis.com *.gstatic.com fonts.googleapis.com; " +
+             "img-src 'self' data: blob: https: " + targetDomain + "; " +
+             "font-src 'self' data: " + targetDomain + " " +
+               "*.googleapis.com *.gstatic.com fonts.gstatic.com; " +
+             "connect-src 'self' " + targetDomain + " " +
+               "*.google-analytics.com *.doubleclick.net *.facebook.com " +
+               "*.stripe.com *.paypal.com api.* *.api.*; " +
+             "frame-src 'self' " + targetDomain + " " +
+               "*.stripe.com *.paypal.com *.youtube.com *.vimeo.com; " +
+             "object-src 'none'; " +
+             "base-uri 'self' " + targetDomain + "; " +
+             "form-action 'self' " + targetDomain + " " +
+               "*.stripe.com *.paypal.com";
+    }
+  } catch (error) {
+    console.error('CSP generation error:', error);
+    // Fallback: No CSP rather than broken CSP
+    return null;
+  }
+}
+
 // Enhanced Bot Score Calculation with KV-based Intelligence
 async function calculateIntelligenceScore(clientIP) {
   try {
@@ -1538,8 +1585,11 @@ async function handleMainRequest(request, event) {
     finalResponse.headers.set('X-Content-Type-Options', 'nosniff');
     finalResponse.headers.set('Referrer-Policy', 'no-referrer');
     finalResponse.headers.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-    // Temporarily disable CSP to debug asset loading issues
-    // finalResponse.headers.set('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'");
+    // Smart CSP: Allow necessary functionality while preventing obvious leakage
+    const smartCSP = generateSmartCSP(baseTargetUrl, isBot);
+    if (smartCSP) {
+      finalResponse.headers.set('Content-Security-Policy', smartCSP);
+    }
     
     // Remove identifying headers that could leak source
     finalResponse.headers.delete('Server');
