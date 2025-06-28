@@ -832,8 +832,6 @@ const DATACENTER_ASNS = [
   20473, 63949, 39351, 398324, 13414, 30633
 ];
 
-const requestTracker = new Map();
-
 // Background Intelligence Gathering using KV Storage for true persistence
 async function gatherIntelligence(request, ipData, decision) {
   try {
