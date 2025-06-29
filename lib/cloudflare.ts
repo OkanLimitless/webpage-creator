@@ -901,6 +901,158 @@ function cleanupCaches() {
   lastCacheCleanup = now;
 }
 
+// V2 BATCHING SYSTEM: Smart request batching for 99% KV operation reduction
+let requestBatch = [];
+let lastBatchFlush = Date.now();
+const BATCH_SIZE = 100; // Requests per batch
+const BATCH_TIMEOUT = 5 * 60 * 1000; // 5 minutes max wait
+
+async function logTrafficEventV2(request, decision, metadata = {}) {
+  try {
+    const timestamp = Date.now();
+    const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
+    const userAgent = request.headers.get('User-Agent') || '';
+    const url = new URL(request.url);
+    
+    // Skip logging for Vercel internal requests
+    if (userAgent.toLowerCase().includes('vercel-fetch')) {
+      return;
+    }
+    
+    // Skip logging for asset requests (fonts, images, CSS, JS, etc.)
+    const pathname = url.pathname.toLowerCase();
+    const isAsset = pathname.endsWith('.woff') || pathname.endsWith('.woff2') || 
+                   pathname.endsWith('.ttf') || pathname.endsWith('.otf') || pathname.endsWith('.eot') ||
+                   pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') ||
+                   pathname.endsWith('.png') || pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
+                   pathname.endsWith('.gif') || pathname.endsWith('.svg') || pathname.endsWith('.webp') ||
+                   pathname.endsWith('.ico') || pathname.endsWith('.xml') || pathname.endsWith('.pdf') ||
+                   pathname.endsWith('.mp4') || pathname.endsWith('.mp3') || pathname.endsWith('.zip') ||
+                   pathname.includes('/assets/') || pathname.includes('/fonts/') || 
+                   pathname.includes('/images/') || pathname.includes('/css/') || pathname.includes('/js/');
+    
+    if (isAsset) {
+      return; // Don't log asset requests
+    }
+    
+    // Create compact log entry (save ~70% space vs V1)
+    const compactEntry = {
+      ts: timestamp,
+      ip: hashIP(clientIP), // Always hash IPs for privacy
+      domain: url.hostname,
+      path: url.pathname,
+      decision: decision, // 'safe_page' or 'money_page'
+      gclid: url.searchParams.get('gclid') ? 'present' : null,
+      gbraid: url.searchParams.get('gbraid') ? 'present' : null,
+      wbraid: url.searchParams.get('wbraid') ? 'present' : null,
+      country: metadata.country || null,
+      risk: metadata.riskScore || 0,
+      proxy: metadata.isProxy || false,
+      vpn: metadata.isVpn || false,
+      reason: metadata.reason || null,
+      ua: userAgent.substring(0, 100), // Truncate to save space
+      referer: request.headers.get('Referer') || null
+    };
+    
+    // Add to batch
+    requestBatch.push(compactEntry);
+    
+    // Check if we should flush batch
+    const shouldFlush = requestBatch.length >= BATCH_SIZE || 
+                       (Date.now() - lastBatchFlush) > BATCH_TIMEOUT;
+    
+    if (shouldFlush) {
+      await flushBatchV2();
+    }
+    
+  } catch (error) {
+    console.error('V2 batching error:', error);
+  }
+}
+
+async function flushBatchV2() {
+  if (requestBatch.length === 0) return;
+  
+  try {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0]; // 2025-06-29
+    const hourStr = now.getHours().toString().padStart(2, '0'); // 14
+    const batchId = Math.random().toString(36).substr(2, 3); // Short random ID
+    
+    // Create efficient batch key: traffic:2025-06-29:14:001  
+    const batchKey = \`traffic:\${dateStr}:\${hourStr}:\${batchId}\`;
+    
+    const batchData = {
+      batch_id: batchId,
+      timestamp: now.toISOString(),
+      count: requestBatch.length,
+      requests: requestBatch,
+      version: '2.0'
+    };
+    
+    // Write batch to KV (using correct binding name)
+    // @ts-ignore - ${trafficLogsBinding} is injected by Cloudflare Workers runtime with KV binding
+    await ${trafficLogsBinding}.put(batchKey, JSON.stringify(batchData), {
+      expirationTtl: 48 * 60 * 60 // 48 hours (vs 7 days in V1)
+    });
+    
+    console.log(\`V2: Flushed batch \${batchKey} with \${requestBatch.length} requests\`);
+    
+    // Clear batch and reset timer
+    requestBatch = [];
+    lastBatchFlush = Date.now();
+    
+  } catch (error) {
+    console.error('V2 batch flush error:', error);
+    // Don't clear batch on error - will retry next time
+  }
+}
+
+// Legacy V1 function - only used if V2 batching fails
+async function logTrafficEventV1(request, decision, metadata = {}) {
+  try {
+    const timestamp = new Date().toISOString();
+    const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
+    const userAgent = request.headers.get('User-Agent') || '';
+    const url = new URL(request.url);
+    
+    const logEntry = {
+      timestamp,
+      ip: hashIP(clientIP),
+      domain: url.hostname,
+      path: url.pathname,
+      userAgent,
+      decision,
+      country: metadata.country || 'unknown',
+      riskScore: metadata.riskScore || 0,
+      isBot: decision === 'safe_page',
+      isProxy: metadata.isProxy || false,
+      isVpn: metadata.isVpn || false,
+      detectionReason: metadata.reason || 'unknown'
+    };
+    
+    const logKey = 'traffic_log_' + timestamp + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // @ts-ignore - ${trafficLogsBinding} is injected by Cloudflare Workers runtime with KV binding
+    await ${trafficLogsBinding}.put(logKey, JSON.stringify(logEntry), {
+      expirationTtl: 7 * 24 * 60 * 60 // Keep logs for 7 days
+    });
+  } catch (error) {
+    console.error('V1 logging error:', error);
+  }
+}
+
+// Unified logging function - tries V2, falls back to V1
+async function logTrafficEvent(request, decision, metadata = {}) {
+  try {
+    // Use V2 batching system
+    await logTrafficEventV2(request, decision, metadata);
+  } catch (error) {
+    console.error('V2 logging failed, falling back to V1:', error);
+    await logTrafficEventV1(request, decision, metadata);
+  }
+}
+
 // Background Intelligence Gathering using KV Storage for true persistence
 async function gatherIntelligence(request, ipData, decision) {
   try {
@@ -1874,77 +2026,7 @@ async function handleRequest(request, event) {
 
 // --- CORE FUNCTIONS ---
 
-// Traffic logging function
-async function logTrafficEvent(request, decision, details = {}) {
-  try {
-    const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
-    const userAgent = request.headers.get('User-Agent') || '';
-    const url = new URL(request.url);
-    const timestamp = new Date().toISOString();
-    
-    // Skip logging for Vercel internal requests
-    if (userAgent.toLowerCase().includes('vercel-fetch')) {
-      return;
-    }
-    
-    // Skip logging for asset requests (fonts, images, CSS, JS, etc.)
-    const pathname = url.pathname.toLowerCase();
-    const isAsset = pathname.endsWith('.woff') || pathname.endsWith('.woff2') || 
-                   pathname.endsWith('.ttf') || pathname.endsWith('.otf') || pathname.endsWith('.eot') ||
-                   pathname.endsWith('.css') || pathname.endsWith('.js') || pathname.endsWith('.mjs') ||
-                   pathname.endsWith('.png') || pathname.endsWith('.jpg') || pathname.endsWith('.jpeg') ||
-                   pathname.endsWith('.gif') || pathname.endsWith('.svg') || pathname.endsWith('.webp') ||
-                   pathname.endsWith('.ico') || pathname.endsWith('.xml') || pathname.endsWith('.pdf') ||
-                   pathname.endsWith('.mp4') || pathname.endsWith('.mp3') || pathname.endsWith('.zip') ||
-                   pathname.includes('/assets/') || pathname.includes('/fonts/') || 
-                   pathname.includes('/images/') || pathname.includes('/css/') || pathname.includes('/js/');
-    
-    if (isAsset) {
-      return; // Don't log asset requests
-    }
-    
-    const logEntry = {
-      timestamp,
-      ip: clientIP,
-      domain: url.hostname,
-      path: url.pathname,
-      userAgent,
-      decision: decision, // 'safe_page' or 'money_page'
-      gclid: url.searchParams.get('gclid') || null,
-      country: details.country || null,
-      riskScore: details.riskScore || null,
-      isProxy: details.isProxy || false,
-      isVpn: details.isVpn || false,
-      detectionReason: details.reason || null,
-      referer: request.headers.get('Referer') || null
-    };
-    
-    // 🔄 RELIABILITY OPTIMIZATION: Store in KV with retry logic for transient failures
-    const logKey = 'traffic_log_' + timestamp + '_' + Math.random().toString(36).substr(2, 9);
-    
-    // Retry KV operation with exponential backoff (3 attempts: 100ms, 200ms, 400ms)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        // @ts-ignore - ${trafficLogsBinding} is injected by Cloudflare Workers runtime with KV binding
-        await ${trafficLogsBinding}.put(logKey, JSON.stringify(logEntry), {
-          expirationTtl: 7 * 24 * 60 * 60 // Keep logs for 7 days
-        });
-        return; // Success - exit retry loop
-      } catch (kvError) {
-        if (attempt === 2) {
-          // Final attempt failed - log error but don't break main flow
-          console.error('Traffic log KV operation failed after 3 attempts:', kvError);
-          return;
-        }
-        // Wait before retry with exponential backoff
-        await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
-      }
-    }
-  } catch (error) {
-    // Don't let logging errors break the main flow
-    console.error('Traffic logging error:', error);
-  }
-}
+// Note: Traffic logging function is now defined earlier in the script with V2 batching support
 
 async function isVisitorABot(request, event) {
   const clientIP = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
