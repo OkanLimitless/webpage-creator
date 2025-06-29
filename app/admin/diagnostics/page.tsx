@@ -1,4 +1,4 @@
-import DiagnosticsPanel from './components/DiagnosticsPanel';
+  import DiagnosticsPanel from './components/DiagnosticsPanel';
 
 export const metadata = {
   title: 'Domain Diagnostics',
@@ -15,7 +15,7 @@ export default function DiagnosticsPage() {
         This dashboard provides tools to help diagnose and fix domain routing issues, 
         including tools to test domain parsing, check DNS configurations, and fix common problems.
       </p>
-      <DiagnosticsPanel />
+              <DiagnosticsPanel />
     </div>
-  );
-} 
+      );
+  } 
