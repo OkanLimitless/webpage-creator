@@ -354,23 +354,34 @@ export async function PUT(request: NextRequest, { params }: Params) {
         const cloudflareModule = await import('@/lib/cloudflare');
         const { generateJciWorkerScript } = cloudflareModule;
         
-        // Generate updated worker script with latest code
-        // Use the stored safeUrl as whitePageUrl to ensure correct SAFE_URL in worker
+        // V2 SYSTEM DETECTION: Use same logic as new deployments
+        const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+        const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+        const INTELLIGENCE_STORE_NAMESPACE_ID = process.env.INTELLIGENCE_STORE_NAMESPACE_ID;
+        
+        if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID) {
+          throw new Error('Cloudflare API credentials not configured');
+        }
+        
+        if (!INTELLIGENCE_STORE_NAMESPACE_ID) {
+          throw new Error('INTELLIGENCE_STORE_NAMESPACE_ID environment variable is required');
+        }
+        
+        // Auto-detect V2 system (same as new deployments)
+        const trafficLogsNamespaceId = process.env.TRAFFIC_LOGS_V2_NAMESPACE_ID || '0b5157572fe24cc092500d70954ab67e';
+        const trafficLogsBinding = process.env.TRAFFIC_LOGS_V2_NAMESPACE_ID ? 'TRAFFIC_LOGS_V2' : 'TRAFFIC_LOGS';
+        
+        console.log(`Re-deploy using: ${trafficLogsBinding} (${trafficLogsNamespaceId})`);
+        
+        // Generate updated worker script with latest code + correct KV binding
         const workerScript = generateJciWorkerScript({
           safeUrl,
           moneyUrl: landingPage.moneyUrl!,
           whitePageUrl: landingPage.safeUrl, // Use stored safe URL if available
           targetCountries: landingPage.targetCountries!,
-          excludeCountries: landingPage.excludeCountries || []
+          excludeCountries: landingPage.excludeCountries || [],
+          trafficLogsBinding // ← KEY: Pass the detected binding name
         });
-        
-        // For re-deployment, we'll use the proper FormData approach for KV bindings
-        const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
-        const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
-        
-        if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID) {
-          throw new Error('Cloudflare API credentials not configured');
-        }
         
         // Create FormData for multipart request (needed for KV bindings)
         const formData = new FormData();
@@ -378,14 +389,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
         // Add the script content
         formData.append('script', new Blob([workerScript], { type: 'application/javascript' }));
         
-        // Add metadata with KV bindings
+        // Add metadata with DYNAMIC KV bindings (V1 or V2)
         const metadata = {
           body_part: 'script',
-          bindings: [{
-            name: 'TRAFFIC_LOGS',
-            type: 'kv_namespace',
-            namespace_id: '0b5157572fe24cc092500d70954ab67e'
-          }]
+          bindings: [
+            {
+              name: trafficLogsBinding, // ← DYNAMIC: TRAFFIC_LOGS or TRAFFIC_LOGS_V2
+              type: 'kv_namespace',
+              namespace_id: trafficLogsNamespaceId // ← DYNAMIC: V1 or V2 namespace
+            },
+            {
+              name: 'INTELLIGENCE_STORE',
+              type: 'kv_namespace',
+              namespace_id: INTELLIGENCE_STORE_NAMESPACE_ID
+            }
+          ]
         };
         
         formData.append('metadata', JSON.stringify(metadata));
