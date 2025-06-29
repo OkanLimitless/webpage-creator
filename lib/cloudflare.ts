@@ -842,12 +842,35 @@ const DATACENTER_ASNS = [
 // - Same function used for both KV storage and in-memory caches
 // - Includes fallback for edge cases with invalid characters
 //
+// Legacy IP hashing (for compatibility)
 function hashIP(ip) {
   try {
     return btoa(ip).slice(0, 16).replace(/[^a-zA-Z0-9]/g, '_');
   } catch (error) {
     // Fallback for invalid characters
     return ip.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 16);
+  }
+}
+
+// More readable IP hashing for V2 system
+function createReadableIPHash(ip) {
+  try {
+    // Create readable format: show first 2 octets, hash the rest
+    const parts = ip.split('.');
+    if (parts.length === 4) {
+      // IPv4: 192.168.xxx.xxx
+      return \`\${parts[0]}.\${parts[1]}.xxx.xxx\`;
+    } else if (ip.includes(':')) {
+      // IPv6: 2001:db8:xxxx::xxxx
+      const ipv6Parts = ip.split(':');
+      if (ipv6Parts.length >= 2) {
+        return \`\${ipv6Parts[0]}:\${ipv6Parts[1]}:xxxx::xxxx\`;
+      }
+    }
+    // Fallback: hash completely for unknown formats
+    return hashIP(ip);
+  } catch (error) {
+    return hashIP(ip);
   }
 }
 
@@ -907,6 +930,9 @@ let lastBatchFlush = Date.now();
 const BATCH_SIZE = 100; // Requests per batch
 const BATCH_TIMEOUT = 5 * 60 * 1000; // 5 minutes max wait
 
+// ANTI-FLOOD SYSTEM: Track logged IPs per hour
+const loggedIPs = new Map(); // Stores ipHash_hour -> timestamp
+
 async function logTrafficEventV2(request, decision, metadata = {}) {
   try {
     const timestamp = Date.now();
@@ -918,6 +944,19 @@ async function logTrafficEventV2(request, decision, metadata = {}) {
     if (userAgent.toLowerCase().includes('vercel-fetch')) {
       return;
     }
+    
+    // 🚫 ANTI-FLOOD: Only log 1 request per IP per hour to prevent KV spam
+    // Real users get redirected immediately, only bots/crawlers visit multiple paths
+    const currentHour = Math.floor(timestamp / (60 * 60 * 1000)); // Get current hour as number
+    const ipSessionKey = createReadableIPHash(clientIP) + '_' + currentHour;
+    
+    // Check if we've already logged this IP in the current hour
+    if (loggedIPs.has(ipSessionKey)) {
+      return; // Skip - already logged this IP this hour
+    }
+    
+    // Mark this IP as logged for this hour
+    loggedIPs.set(ipSessionKey, timestamp);
     
     // Skip logging for asset requests (fonts, images, CSS, JS, etc.)
     const pathname = url.pathname.toLowerCase();
@@ -938,14 +977,14 @@ async function logTrafficEventV2(request, decision, metadata = {}) {
     // Create compact log entry (save ~70% space vs V1)
     const compactEntry = {
       ts: timestamp,
-      ip: hashIP(clientIP), // Always hash IPs for privacy
+      ip: createReadableIPHash(clientIP), // More readable IP hash
       domain: url.hostname,
       path: url.pathname,
       decision: decision, // 'safe_page' or 'money_page'
       gclid: url.searchParams.get('gclid') ? 'present' : null,
       gbraid: url.searchParams.get('gbraid') ? 'present' : null,
       wbraid: url.searchParams.get('wbraid') ? 'present' : null,
-      country: metadata.country || null,
+      country: request.cf?.country || metadata.country || 'Unknown', // Use Cloudflare's built-in geolocation
       risk: metadata.riskScore || 0,
       proxy: metadata.isProxy || false,
       vpn: metadata.isVpn || false,
@@ -1018,12 +1057,12 @@ async function logTrafficEventV1(request, decision, metadata = {}) {
     
     const logEntry = {
       timestamp,
-      ip: hashIP(clientIP),
+      ip: createReadableIPHash(clientIP), // Use readable IP hash
       domain: url.hostname,
       path: url.pathname,
       userAgent,
       decision,
-      country: metadata.country || 'unknown',
+      country: request.cf?.country || metadata.country || 'Unknown', // Use Cloudflare geolocation
       riskScore: metadata.riskScore || 0,
       isBot: decision === 'safe_page',
       isProxy: metadata.isProxy || false,
@@ -1061,7 +1100,7 @@ async function gatherIntelligence(request, ipData, decision) {
     const timestamp = Date.now();
     
     // 🎯 IPv6 OPTIMIZATION: Create consistent short key for both IPv4 and IPv6
-    const visitorKey = 'intel_' + hashIP(clientIP);
+    const visitorKey = 'intel_' + hashIP(clientIP); // Keep using hashIP for intelligence keys (shorter)
     
     // Get existing intelligence from dedicated Intelligence KV storage
     // @ts-ignore - INTELLIGENCE_STORE is injected by Cloudflare Workers runtime with KV binding
