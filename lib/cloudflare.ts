@@ -750,8 +750,9 @@ export function generateJciWorkerScript(options: {
   whitePageUrl?: string;
   targetCountries: string[];
   excludeCountries?: string[];
+  trafficLogsBinding?: string;
 }): string {
-  const { moneyUrl, whitePageUrl, safeUrl } = options;
+  const { moneyUrl, whitePageUrl, safeUrl, trafficLogsBinding = 'TRAFFIC_LOGS' } = options;
   
   // Use white page URL if provided, otherwise use safe URL as fallback
   const safePageUrl = whitePageUrl || safeUrl;
@@ -797,7 +798,7 @@ export function generateJciWorkerScript(options: {
 // Performance optimized: Non-blocking KV operations using event.waitUntil()
 
 // KV Namespace bindings - Both are automatically bound by Cloudflare when deployed:
-// - TRAFFIC_LOGS: For request logging and analytics
+// - ${trafficLogsBinding}: For request logging and analytics
 // - INTELLIGENCE_STORE: For cross-session behavioral intelligence
 
 const TARGET_COUNTRIES = ${JSON.stringify(targetCountryCodes)};
@@ -1924,8 +1925,8 @@ async function logTrafficEvent(request, decision, details = {}) {
     // Retry KV operation with exponential backoff (3 attempts: 100ms, 200ms, 400ms)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        // @ts-ignore - TRAFFIC_LOGS is injected by Cloudflare Workers runtime with KV binding
-        await TRAFFIC_LOGS.put(logKey, JSON.stringify(logEntry), {
+        // @ts-ignore - ${trafficLogsBinding} is injected by Cloudflare Workers runtime with KV binding
+        await ${trafficLogsBinding}.put(logKey, JSON.stringify(logEntry), {
           expirationTtl: 7 * 24 * 60 * 60 // Keep logs for 7 days
         });
         return; // Success - exit retry loop
@@ -2897,27 +2898,34 @@ No domains found in your Cloudflare account. Please add ${rootDomain} to your Cl
     // 3. Generate unique worker script name
     const scriptName = `cloak-${domain.name.replace(/\./g, '-')}-${Date.now()}`;
     
-    // 4. Generate JCI worker script
+    // 4. Deploy worker to Cloudflare with both KV bindings
+    console.log(`Creating worker script with KV bindings: ${scriptName}`);
+    
+    // Validate that required environment variables are set
+    if (!process.env.INTELLIGENCE_STORE_NAMESPACE_ID) {
+      throw new Error('INTELLIGENCE_STORE_NAMESPACE_ID environment variable is required for cross-session intelligence');
+    }
+    
+    // Check for V2 namespace, fallback to V1 if not available
+    const trafficLogsNamespaceId = process.env.TRAFFIC_LOGS_V2_NAMESPACE_ID || '0b5157572fe24cc092500d70954ab67e';
+    const trafficLogsBinding = process.env.TRAFFIC_LOGS_V2_NAMESPACE_ID ? 'TRAFFIC_LOGS_V2' : 'TRAFFIC_LOGS';
+    
+    // Generate JCI worker script with correct KV binding
     const workerScript = generateJciWorkerScript({
       safeUrl,
       moneyUrl,
       whitePageUrl,
       targetCountries,
-      excludeCountries
+      excludeCountries,
+      trafficLogsBinding
     });
     
-    // 5. Deploy worker to Cloudflare with both KV bindings
-    console.log(`Creating worker script with KV bindings: ${scriptName}`);
-    
-    // Validate that INTELLIGENCE_STORE_NAMESPACE_ID is set
-    if (!process.env.INTELLIGENCE_STORE_NAMESPACE_ID) {
-      throw new Error('INTELLIGENCE_STORE_NAMESPACE_ID environment variable is required for cross-session intelligence');
-    }
+    console.log(`Using traffic logs: ${trafficLogsBinding} (${trafficLogsNamespaceId})`);
     
     const kvBindings = [
       {
-        name: 'TRAFFIC_LOGS',
-        namespace_id: '0b5157572fe24cc092500d70954ab67e'
+        name: trafficLogsBinding,
+        namespace_id: trafficLogsNamespaceId
       },
       {
         name: 'INTELLIGENCE_STORE',
