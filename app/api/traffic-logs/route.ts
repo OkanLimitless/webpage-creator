@@ -24,6 +24,7 @@ export const dynamic = 'force-dynamic';
 const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const TRAFFIC_LOGS_NAMESPACE_ID = process.env.TRAFFIC_LOGS_NAMESPACE_ID;
+const TRAFFIC_LOGS_V2_NAMESPACE_ID = process.env.TRAFFIC_LOGS_V2_NAMESPACE_ID;
 
 // Maximum number of recent logs to fetch (keep it reasonable for performance)
 const MAX_RECENT_LOGS = 1000; // Fetch recent logs (after cleanup, these should be truly recent)
@@ -40,22 +41,46 @@ export async function GET(request: NextRequest) {
     const countryFilter = searchParams.get('country') || '';
     const userTypeFilter = searchParams.get('userType') || ''; // 'bot', 'real'
 
-    if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID || !TRAFFIC_LOGS_NAMESPACE_ID) {
+    if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID) {
       return NextResponse.json({
         success: false,
         error: 'Missing Cloudflare configuration'
       }, { status: 500 });
     }
 
-    console.log(`Fetching traffic logs - Page: ${page}, Limit: ${limit}, Date: ${dateFilter}`);
-
-    // Get logs using efficient date-based filtering
-    const result = await fetchLogsByDate(dateFilter, domainFilter, countryFilter, userTypeFilter, page, limit);
-    
-    return NextResponse.json({
-      success: true,
-      data: result
-    });
+    // Auto-detect system version and route accordingly
+    if (TRAFFIC_LOGS_V2_NAMESPACE_ID) {
+      console.log(`Using Traffic Logs V2 system - Page: ${page}, Limit: ${limit}, Date: ${dateFilter}`);
+      
+      // Route to V2 logic with batched format
+      const result = await fetchBatchedLogsV2(dateFilter, domainFilter, countryFilter, userTypeFilter, page, limit);
+      
+      return NextResponse.json({
+        success: true,
+        data: result,
+        version: '2.0',
+        system: 'smart_batching'
+      });
+    } else {
+      console.log(`Using Traffic Logs V1 system - Page: ${page}, Limit: ${limit}, Date: ${dateFilter}`);
+      
+      if (!TRAFFIC_LOGS_NAMESPACE_ID) {
+        return NextResponse.json({
+          success: false,
+          error: 'No traffic logs namespace configured'
+        }, { status: 500 });
+      }
+      
+      // Route to V1 logic with individual log format
+      const result = await fetchLogsByDate(dateFilter, domainFilter, countryFilter, userTypeFilter, page, limit);
+      
+      return NextResponse.json({
+        success: true,
+        data: result,
+        version: '1.0',
+        system: 'individual_logs'
+      });
+    }
 
   } catch (error) {
     console.error('Traffic logs API error:', error);
@@ -172,6 +197,221 @@ async function fetchLogsByDate(
     console.error('Error in fetchLogsByDate:', error);
     throw error;
   }
+}
+
+// V2 System: Fetch batched logs with smart key scanning
+async function fetchBatchedLogsV2(
+  dateFilter: string,
+  domainFilter: string,
+  countryFilter: string,
+  userTypeFilter: string,
+  page: number,
+  limit: number
+) {
+  try {
+    // Generate date-based key prefixes for efficient scanning
+    const keyPrefixes = generateKeyPrefixesV2(dateFilter);
+    console.log(`V2: Scanning key prefixes: ${keyPrefixes.join(', ')}`);
+    
+    const allRequests: any[] = [];
+    let batchesScanned = 0;
+    
+    // Fetch batches for each key prefix
+    for (const prefix of keyPrefixes) {
+      const batches = await fetchBatchesByPrefixV2(prefix);
+      batchesScanned += batches.length;
+      
+      // Extract individual requests from batches
+      for (const batch of batches) {
+        try {
+          const batchData = JSON.parse(batch.value);
+          if (batchData.requests && Array.isArray(batchData.requests)) {
+            
+            // Convert compact format to readable format
+            const expandedRequests = batchData.requests.map((req: any) => ({
+              timestamp: new Date(req.ts).toISOString(),
+              ip: req.ip, // Already hashed
+              domain: req.domain,
+              path: req.path,
+              decision: req.decision,
+              isBot: req.decision === 'safe_page', // Convert decision to isBot for compatibility
+              hasGclid: req.gclid === 'present',
+              hasGbraid: req.gbraid === 'present', 
+              hasWbraid: req.wbraid === 'present',
+              country: req.country,
+              riskScore: req.risk,
+              isProxy: req.proxy,
+              isVpn: req.vpn,
+              detectionReason: req.reason,
+              userAgent: req.ua
+            }));
+            
+            allRequests.push(...expandedRequests);
+          }
+        } catch (parseError) {
+          console.warn(`Failed to parse batch ${batch.key}:`, parseError);
+        }
+      }
+      
+      // Break if we have enough data
+      if (allRequests.length >= page * limit * 2) {
+        break;
+      }
+    }
+    
+    console.log(`V2: Raw requests collected: ${allRequests.length}`);
+    
+    // Apply filters (same as V1 for compatibility)
+    let filteredLogs = allRequests;
+    
+    if (domainFilter) {
+      filteredLogs = filteredLogs.filter(log => 
+        log.domain && log.domain.toLowerCase().includes(domainFilter.toLowerCase())
+      );
+    }
+    
+    if (countryFilter) {
+      filteredLogs = filteredLogs.filter(log => 
+        log.country && log.country.toLowerCase().includes(countryFilter.toLowerCase())
+      );
+    }
+    
+    if (userTypeFilter) {
+      filteredLogs = filteredLogs.filter(log => {
+        if (userTypeFilter === 'bot') return log.isBot === true;
+        if (userTypeFilter === 'real') return log.isBot === false;
+        return true;
+      });
+    }
+    
+    // Sort by timestamp (newest first)
+    filteredLogs.sort((a, b) => {
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+    
+    // Calculate pagination
+    const totalLogs = filteredLogs.length;
+    const totalPages = Math.ceil(totalLogs / limit);
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
+    
+    // Calculate stats (compatible with V1 format)
+    const stats = {
+      totalRequests: totalLogs,
+      botRequests: filteredLogs.filter(log => log.isBot === true).length,
+      realUserRequests: filteredLogs.filter(log => log.isBot === false).length,
+      uniqueCountries: Array.from(new Set(filteredLogs.map(log => log.country).filter(Boolean))).length,
+      uniqueDomains: Array.from(new Set(filteredLogs.map(log => log.domain).filter(Boolean))).length,
+      batchesScanned: batchesScanned
+    };
+    
+    return {
+      logs: paginatedLogs,
+      stats,
+      pagination: {
+        page,
+        pages: totalPages,
+        total: totalLogs,
+        limit
+      }
+    };
+    
+  } catch (error) {
+    console.error('Error in fetchBatchedLogsV2:', error);
+    throw error;
+  }
+}
+
+async function fetchBatchesByPrefixV2(prefix: string) {
+  try {
+    const batches: any[] = [];
+    let cursor: string | undefined;
+    
+    while (batches.length < 50) { // Limit to prevent excessive memory usage
+      let listUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_V2_NAMESPACE_ID}/keys?prefix=${encodeURIComponent(prefix)}&limit=100`;
+      
+      if (cursor) {
+        listUrl += `&cursor=${encodeURIComponent(cursor)}`;
+      }
+      
+      const listResponse = await fetch(listUrl, {
+        headers: {
+          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!listResponse.ok) {
+        console.error(`Failed to list V2 keys: ${listResponse.status}`);
+        break;
+      }
+      
+      const listData = await listResponse.json();
+      
+      if (!listData.success || !listData.result) {
+        console.error('Invalid V2 list response:', listData);
+        break;
+      }
+      
+      const keys = listData.result.filter((key: any) => 
+        key.name.startsWith('traffic:') // Only traffic log keys
+      );
+      
+      if (keys.length === 0) {
+        break; // No more keys
+      }
+      
+      // Fetch values for these keys
+      for (const key of keys) {
+        try {
+          const valueUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${TRAFFIC_LOGS_V2_NAMESPACE_ID}/values/${encodeURIComponent(key.name)}`;
+          
+          const valueResponse = await fetch(valueUrl, {
+            headers: {
+              'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`
+            }
+          });
+          
+          if (valueResponse.ok) {
+            const value = await valueResponse.text();
+            batches.push({ key: key.name, value });
+          }
+        } catch (valueError) {
+          console.warn(`Failed to fetch value for ${key.name}:`, valueError);
+        }
+      }
+      
+      cursor = listData.result_info?.cursor;
+      if (!cursor) {
+        break; // No more pages
+      }
+    }
+    
+    return batches;
+  } catch (error) {
+    console.error('Error in fetchBatchesByPrefixV2:', error);
+    return [];
+  }
+}
+
+function generateKeyPrefixesV2(dateFilter: string): string[] {
+  const now = new Date();
+  const prefixes: string[] = [];
+  
+  if (dateFilter === 'today' || dateFilter === 'both') {
+    const today = now.toISOString().split('T')[0]; // 2025-06-29
+    prefixes.push(`traffic:${today}`);
+  }
+  
+  if (dateFilter === 'yesterday' || dateFilter === 'both') {
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    prefixes.push(`traffic:${yesterdayStr}`);
+  }
+  
+  return prefixes;
 }
 
 // Simplified function to just get recent logs without complex date filtering
